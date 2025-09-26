@@ -2,6 +2,15 @@
 <b>C</b>ontent-<b>A</b>ddressed <b>S</b>torage with <b>K</b>nowledge graph - <b>F</b>ile <b>S</b>ystem.
 
 
+# Quick Start - Local Development
+
+- Checkout this repo
+- Start the dev pg server: `./devops/start-dev.sh`
+- Init the database: `./devops/cli.sh init-pg`
+- Start using CASKFS: `./devops/cli.sh help`
+
+Notes.  The `./devops/cli.sh` script sets the `CASKFS_ROOT_DIR` to the `cache` directory in the repo.  This is where all CASKFS data will be stored.  You can change this by setting the `CASKFS_ROOT_DIR` environment variable to another path.  Additonally the `cli.sh` sets the connection to the local dev pg server and the `caskfs_db` database.  
+
 
 # General Concepts
 
