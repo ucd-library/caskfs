@@ -1,0 +1,35 @@
+{
+  "name": "@ucd-lib/caskfs",
+  "version": "0.0.1",
+  "description": "Content-Addressed Storage with Knowledge graph - File System",
+  "main": "index.js",
+  "type": "module",
+  "bin": {
+    "caskfs": "bin/cask.js"
+  },
+  "directories": {
+    "lib": "lib"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ucd-library/caskfs.git"
+  },
+  "author": "jrmerz@ucdavis.edu",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/ucd-library/caskfs/issues"
+  },
+  "homepage": "https://github.com/ucd-library/caskfs#readme",
+  "dependencies": {
+    "@ucd-lib/logger": "^0.0.7",
+    "commander": "^14.0.1",
+    "express": "^5.1.0",
+    "jsonld": "^8.3.3",
+    "mime": "^4.1.0",
+    "n3": "^1.26.0",
+    "pg": "^8.16.3"
+  }
+}
