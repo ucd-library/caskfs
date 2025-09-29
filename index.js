@@ -12,11 +12,11 @@ class CaskFs {
   constructor(opts={}) {
     this.dbClient = new Database({
       client: opts.dbClient,
-      type: opts.dbType
+      type: opts.dbType || config.database.client
     });
 
     this.rootDir = config.rootDir;
-    this.schema = config.pgSchema;
+    this.schema = config.database.schema;
     this.schemaPrefix = config.schemaPrefix;
 
     this.logger = getLogger('caskfs');
@@ -74,10 +74,12 @@ class CaskFs {
     let filePath = context.file;
 
     // open single connection to postgres and start a transaction
-    let dbClient = new Database({type: opts.dbType});
+    let dbClient = new Database({
+      type: opts.dbType || config.database.client
+    });
     await dbClient.connect();
 
-    let tmpFile, hashFile, digests, metadata, currentMetadata, fileId;
+    let hashFile, digests, metadata = {}, currentMetadata, fileId;
     let deletedHashValue, hashExists = false, fileExists = false;
 
     //any operations that fail should rollback the transaction and delete the temp file
@@ -88,6 +90,7 @@ class CaskFs {
       if( opts.replace === true && fileExists ) {
         this.logger.info(`Replacing existing file in CASKFS: ${filePath}`, context.logContext);
         context.update({file: await this.metadata(filePath)});
+        currentMetadata = context.file;
       } else if( opts.replace !== true && fileExists ) {
         throw new Error(`File already exists in CASKFS: ${filePath}`);
       }
@@ -136,7 +139,7 @@ class CaskFs {
 
       // create all directories in the path if they do not exist
       // and get the directory ID of the target directory
-      await this.directory.mkdir(fileParts.dir, {dbClient});
+      let directoryId = await this.directory.mkdir(fileParts.dir, {dbClient});
 
       // build the full set of partition keys
       let partitionKeySet = new Set(opts.partitionKeys || []);
@@ -150,52 +153,63 @@ class CaskFs {
       }
 
       // write the file record
-      if( !exists ) {
+      if( !fileExists ) {
         this.logger.info('Inserting new file record into CASKFS', context.logContext);
         let primaryDigest = config.digests[0];
-        fileId = await dbClient.insertFile(filePath, digests[primaryDigest], metadata, opts.partitionKeys);
+        fileId = await dbClient.insertFile(
+          directoryId,
+          filePath, 
+          context.stagedFile.digests[primaryDigest], 
+          metadata, 
+          context.stagedFile.digests,
+          context.stagedFile.size,
+          opts.partitionKeys
+        );
+        context.update({file: await this.metadata(filePath, {dbClient})});
       } else {
         this.logger.info('Updating existing file metadata in CASKFS', context.logContext);
         let resp = await this.patchMetadata(
           context, 
           {metadata, partitionKeys: opts.partitionKeys, onlyOnChange: true, dbClient: dbClient}
         );
-        fileId = resp.file_id;
+        context.update({file: await this.metadata(filePath, {dbClient})});
       }
 
       // if we have rdf data, process it now
       if( metadata.resource_type === 'rdf' ) {
-        if( exists ) {
+        if( !context?.stagedFile?.hashExists || !fileExists ) {
           // if replacing an existing file, delete old triples first
           this.logger.info('Replacing existing RDF file, deleting old triples', context.logContext);
-          await this.rdf.delete(fileId, {dbClient});
-        }
-        // insert the new triples
-        if( !hashExists || exists ) {
+          await this.rdf.delete(context, {dbClient});
+
           this.logger.info('Inserting RDF triples for file', context.logContext);
-          await this.rdf.insert(fileId, {dbClient, filepath: tmpFile});
+          await this.rdf.insert(context, {dbClient, filepath: context.stagedFile.tmpFile});
+        } else {
+          this.logger.info('RDF file already exists in CASKFS, skipping RDF processing', context.logContext);
         }
       }
 
       // finally commit the transaction
       await dbClient.query('COMMIT');
     } catch (err) {
+      context.error = err;
       this.logger.error('Error writing file to CASKFS, rolling back transaction', 
         {error: err.message, stack: err.stack, ...context.logContext}
       );
 
       // if any error, rollback the transaction and delete the temp file
       await dbClient.query('ROLLBACK');
-      if( tmpFile ) {
-        await this.cas.abortWrite(tmpFile);
-      }
-      await dbClient.end();
 
-      throw err;
+      if( context?.stagedFile?.tmpFile ) {
+        await this.cas.abortWrite(context.stagedFile.tmpFile);
+      }
+
+      await dbClient.end();
+      return 
     }
 
     // finalize the write to move the temp file to its final location
-    let copied = await this.cas.finalizeWrite(tmpFile, hashFile);
+    let copied = await this.cas.finalizeWrite(context.stagedFile.tmpFile, context.stagedFile.hashFile);
     this.logger.info(`File write to CASK FS complete: ${filePath}`, {copied}, context.logContext);
 
 
@@ -234,24 +248,32 @@ class CaskFs {
       throw new Error('FileContext with file path is required');
     }
 
+    let filePath;
+    if( typeof context.file === 'string' ) {
+      filePath = context.file;
+    } else {
+      filePath = context.file.filepath;
+    }
+
     if( opts.onlyOnChange ) {
-      let currentMetadata = await this.metadata(context.file);
+      let currentMetadata = await this.metadata(filePath);
       if( JSON.stringify(currentMetadata.metadata) === JSON.stringify(opts.metadata) &&
           JSON.stringify(currentMetadata.partition_keys) === JSON.stringify(opts.partitionKeys) ) {
         this.logger.debug('No changes to metadata or partition keys, skipping update', context.logContext);
-        return currentMetadata;
+        return {metadata: currentMetadata, updated: false};
       }
     }
 
-    let filePath = context.file;
     await (opts.dbClient || this.dbClient).updateFileMetadata(filePath, opts);
 
-    return this.metadata(filePath);
+    return {metadata: this.metadata(filePath), updated: true};
   }
 
   async metadata(filePath, opts={}) {
+    let dbClient = opts.dbClient || this.dbClient;
     let fileParts = path.parse(filePath);
-    let res = await this.dbClient.query(`
+
+    let res = await dbClient.query(`
       SELECT * FROM ${this.schema}.file_view WHERE directory = $1 AND filename = $2
     `, [fileParts.dir, fileParts.base]);
     
@@ -263,12 +285,12 @@ class CaskFs {
     data.fullPath = this.cas.diskPath(data.hash_value);
 
     if( opts.stats ) {
-      res = await this.dbClient.query(`
+      res = await dbClient.query(`
         SELECT COUNT(*) AS count FROM ${this.schema}.rdf_link WHERE file_id = $1
       `, [data.file_id]);
       data.rdfLinks = parseInt(res.rows[0].count);
 
-      res = await this.dbClient.query(`
+      res = await dbClient.query(`
         SELECT COUNT(*) AS count FROM ${this.schema}.rdf_node WHERE file_id = $1
       `, [data.file_id]);
       data.rdfNodes = parseInt(res.rows[0].count);

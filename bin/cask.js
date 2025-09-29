@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import fs from 'fs/promises';
 import CaskFs from '../index.js';
+import createContext from '../lib/context.js';
 import path from 'path';
 
 const program = new Command();
@@ -38,7 +39,9 @@ program
     opts.mimeType = mimeType;
     opts.replace = options.replace;
 
-    await cask.write(filePath, opts);
+
+    let context = await createContext({file: filePath});
+    await cask.write(context, opts);
 
     cask.dbClient.end();
   });
@@ -46,7 +49,7 @@ program
 program
   .command('cp <source-path> <dest-path>')
   .description('Copy a file within the CASKFS')
-  .option('-r, --replace', 'Replace the file if it already exists', false)
+  .option('-x, --replace', 'Replace the file if it already exists', false)
   .option('-d, --dry-run', 'Show what would be copied without actually copying', false)
   .action(async (sourcePath, destPath, options) => {
     if( !path.isAbsolute(sourcePath) ) {
@@ -67,7 +70,11 @@ program
       destPath = path.resolve(destPath, path.basename(sourcePath));
       console.log(`Copying file ${sourcePath} to ${destPath}`);
       if( !options.dryRun ) {
-        await cask.write(destPath, { readPath: sourcePath, replace: options.replace });
+        let context = await createContext({file: destPath});
+        await cask.write(context, { 
+          readPath: sourcePath, 
+          replace: options.replace 
+        });
       }
       cask.dbClient.end();
       return;
@@ -78,6 +85,7 @@ program
     files = files.filter(f => f.isFile()).map(f => path.join(f.path, f.name));
 
     let failed = [];
+    let context;
     for( let file of files ) {
       if( file.match(/\/\./) ) continue; // skip hidden files
 
@@ -85,7 +93,11 @@ program
       console.log(`Copying file ${file} to ${destFile}`);
       if( !options.dryRun ) {
         try {
-          await cask.write(destFile, { readPath: file, replace: options.replace });
+          context = await createContext({file: destFile});
+          await cask.write(context, { 
+            readPath: file, 
+            replace: options.replace 
+          });
         } catch (err) {
           console.error(`Failed to copy ${file} to ${destFile}: ${err.message}`);
           console.error(err.stack);

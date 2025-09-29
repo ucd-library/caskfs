@@ -3,7 +3,7 @@ import { Router } from 'express';
 const router = Router();
 
 
-// search for files
+// search for files, allow post of get req
 router.get('/', (req, res) => {
   res.status(404).json({ error: 'Not Found' });
 });
