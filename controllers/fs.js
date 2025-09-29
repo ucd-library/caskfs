@@ -8,8 +8,11 @@ router.get('/', (req, res) => {
   res.json({ status: 'CaskFS Filesystem Controller' });
 });
 
+// get file metadata
 router.get('*', (req, res) => {
-  if( req.headers.accept && req.headers.accept.includes(METADATA_ACCEPT) ) {
+  // get file metadata if header or query param requests it
+  if( (req.params?.metadata || '').trim().toLowerCase() === 'true' || 
+    req.headers.accept && req.headers.accept.includes(METADATA_ACCEPT)  ) {
     res.setHeader('Content-Type', METADATA_ACCEPT);
     return res.json({ error: 'Not Found' });
   }
@@ -17,7 +20,7 @@ router.get('*', (req, res) => {
   res.status(404).json({ error: 'Not Found' });
 });
 
-// only allow new
+// only allow new file
 router.post('*', (req, res) => {
   res.status(404).json({ error: 'Not Found' });
 });
@@ -32,6 +35,7 @@ router.patch('*', (req, res) => {
   res.status(404).json({ error: 'Not Found' });
 });
 
+// delete file
 router.delete('*', (req, res) => {
   res.status(404).json({ error: 'Not Found' });
 });

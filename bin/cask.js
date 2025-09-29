@@ -40,7 +40,7 @@ program
 
     await cask.write(filePath, opts);
 
-    cask.pgClient.end();
+    cask.dbClient.end();
   });
 
 program
@@ -69,7 +69,7 @@ program
       if( !options.dryRun ) {
         await cask.write(destPath, { readPath: sourcePath, replace: options.replace });
       }
-      cask.pgClient.end();
+      cask.dbClient.end();
       return;
     }
     
@@ -102,7 +102,7 @@ program
       failed.forEach(f => console.log(`  - ${f}`));
     }
     
-    cask.pgClient.end();
+    cask.dbClient.end();
     return;
   });
 
@@ -112,7 +112,7 @@ program
   .action(async (filePath) => {
     const cask = new CaskFs();
     console.log(await cask.metadata(filePath));
-    cask.pgClient.end();
+    cask.dbClient.end();
   });
 
 program
@@ -121,7 +121,7 @@ program
   .action(async (filePath) => {
     const cask = new CaskFs();
     process.stdout.write(await cask.read(filePath));
-    cask.pgClient.end();
+    cask.dbClient.end();
   });
 
 program
@@ -147,7 +147,7 @@ program
     } else {
       process.stdout.write(resp);
     }
-    cask.pgClient.end();
+    cask.dbClient.end();
   });
 
 program
@@ -174,7 +174,7 @@ program
     }
 
     console.log(await cask.links(filePath, options));
-    cask.pgClient.end();
+    cask.dbClient.end();
   });
 
 program
@@ -193,7 +193,7 @@ program
     }
 
     console.log(await cask.rdf.find(options));
-    cask.pgClient.end();
+    cask.dbClient.end();
   });
 
 program
@@ -204,7 +204,7 @@ program
     const cask = new CaskFs();
     const resp = await cask.delete(filePath, { softDelete: options.softDelete });
     console.log(resp);
-    cask.pgClient.end();
+    cask.dbClient.end();
   });
 
 program
@@ -236,7 +236,7 @@ program
       console.log(`f ${directory}${f.filename} `);
     });
 
-    caskfs.pgClient.end();
+    caskfs.dbClient.end();
   });
 
 program
@@ -245,7 +245,7 @@ program
   .action(async (filePath) => {
     const cask = new CaskFs();
     console.log(await cask.getPartitionKeysFromPath(filePath));
-    cask.pgClient.end();
+    cask.dbClient.end();
   });
 
 program
@@ -265,7 +265,7 @@ program
 
     const cask = new CaskFs();
     await cask.setAutoPathPartition(opts);
-    cask.pgClient.end();
+    cask.dbClient.end();
   });
 
 program
@@ -274,7 +274,7 @@ program
   .action(async () => {
     const caskfs = new CaskFs();
     console.log(await caskfs.stats());
-    caskfs.pgClient.end();
+    caskfs.dbClient.end();
   });
 
 program
@@ -282,8 +282,8 @@ program
   .description('Initialize the PostgreSQL database')
   .action(async () => {
     const cask = new CaskFs();
-    console.log(await cask.pgClient.init());
-    cask.pgClient.end();
+    console.log(await cask.dbClient.init());
+    cask.dbClient.end();
   });
 
 program.parse(process.argv);

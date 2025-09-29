@@ -11,7 +11,9 @@ CREATE TABLE IF NOT EXISTS caskfs.directory_acl (
     -- see below for adding this cyclic reference
     -- directory_id      UUID NOT NULL REFERENCES caskfs.directory(directory_id),
     read              VARCHAR(256)[],
-    write             VARCHAR(256)[]
+    write             VARCHAR(256)[],
+    created           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    modified          TIMESTAMPTZ NOT NULL DEFAULT NOW()
     -- UNIQUE(directory_id)
 );
 
@@ -24,7 +26,9 @@ CREATE TABLE IF NOT EXISTS caskfs.directory (
       ELSE REGEXP_REPLACE(TRIM(fullname), '/$', '') END
     ) STORED,
     parent_id      UUID REFERENCES caskfs.directory(directory_id),
-    directory_acl_id            UUID REFERENCES caskfs.directory_acl(directory_acl_id)
+    directory_acl_id            UUID REFERENCES caskfs.directory_acl(directory_acl_id),
+    created        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    modified       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_directory_name ON caskfs.directory(name);
 CREATE INDEX IF NOT EXISTS idx_directory_parent_id ON caskfs.directory(parent_id);
@@ -75,6 +79,8 @@ CREATE TABLE IF NOT EXISTS caskfs.file (
     hash_id         UUID NOT NULL REFERENCES caskfs.hash(hash_id),
     partition_keys  VARCHAR(256)[],
     metadata        JSONB NOT NULL DEFAULT '{}',
+    created         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    modified        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(directory_id, name)
 );
 CREATE INDEX IF NOT EXISTS idx_file_hash_id ON caskfs.file(hash_id);
@@ -106,15 +112,16 @@ CREATE OR REPLACE FUNCTION caskfs.insert_file(
     p_hash_value VARCHAR(256),
     p_filename VARCHAR(256),
     p_partition_keys VARCHAR(256)[],
+    p_digests JSONB DEFAULT '{}'::jsonb,
     p_metadata JSONB DEFAULT '{}'::jsonb
 ) RETURNS UUID AS $$
 DECLARE
     v_file_id UUID;
 BEGIN
     WITH hash_upsert AS (
-        INSERT INTO caskfs.hash (value) 
-        VALUES (p_hash_value)
-        ON CONFLICT (value) DO UPDATE SET value = EXCLUDED.value
+        INSERT INTO caskfs.hash (value, digests) 
+        VALUES (p_hash_value, p_digests)
+        ON CONFLICT (value) DO UPDATE SET value = EXCLUDED.value, digests = EXCLUDED.digests
         RETURNING hash_id
     )
     INSERT INTO caskfs.file (directory_id, name, hash_id, metadata, partition_keys)
@@ -132,6 +139,33 @@ CREATE OR REPLACE VIEW caskfs.unused_hashes AS
   FROM caskfs.hash h
   LEFT JOIN caskfs.file a ON h.hash_id = a.hash_id
   WHERE a.hash_id IS NULL;
+
+-- Trigger function to update modified timestamp
+CREATE OR REPLACE FUNCTION caskfs.update_modified_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.modified = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger for directory_acl table
+CREATE TRIGGER trigger_directory_acl_update_modified
+    BEFORE UPDATE ON caskfs.directory_acl
+    FOR EACH ROW
+    EXECUTE FUNCTION caskfs.update_modified_timestamp();
+
+-- Trigger for directory table
+CREATE TRIGGER trigger_directory_update_modified
+    BEFORE UPDATE ON caskfs.directory
+    FOR EACH ROW
+    EXECUTE FUNCTION caskfs.update_modified_timestamp();
+
+-- Trigger for file table
+CREATE TRIGGER trigger_file_update_modified
+    BEFORE UPDATE ON caskfs.file
+    FOR EACH ROW
+    EXECUTE FUNCTION caskfs.update_modified_timestamp();
 
 CREATE OR REPLACE VIEW caskfs.stats AS
 SELECT
