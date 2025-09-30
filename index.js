@@ -6,6 +6,7 @@ import Cas from "./lib/cas.js";
 import Rdf from "./lib/rdf.js";
 import Directory from "./lib/directory.js";
 import getLogger from "./lib/logger.js";
+import createContext from "./lib/context.js";
 
 class CaskFs {
 
@@ -14,6 +15,17 @@ class CaskFs {
       client: opts.dbClient,
       type: opts.dbType || config.database.client
     });
+
+    // override config options with opts
+    if( opts.rootDir ) {
+      config.rootDir = opts.rootDir;
+    }
+    if( opts.postgres ) {
+      config.postgres = {...config.postgres, ...opts.postgres};
+    }
+    if( opts.database ) {
+      config.database = {...config.database, ...opts.database};
+    }
 
     this.rootDir = config.rootDir;
     this.schema = config.database.schema;
@@ -33,6 +45,10 @@ class CaskFs {
       cas: this.cas
     });
     this.directory = new Directory({dbClient: this.dbClient});
+  }
+
+  createContext(obj) {
+    return createContext(obj);
   }
 
   /**
@@ -79,18 +95,20 @@ class CaskFs {
     });
     await dbClient.connect();
 
-    let hashFile, digests, metadata = {}, currentMetadata, fileId;
-    let deletedHashValue, hashExists = false, fileExists = false;
+    let metadata = {};
+    let fileExists = false;
+    context.primaryDigest = config.digests[0];
 
     //any operations that fail should rollback the transaction and delete the temp file
     try {
       await dbClient.query('BEGIN');
 
       fileExists = await dbClient.fileExists(filePath);
+
+      // currently we are opting in to replacing existing files
       if( opts.replace === true && fileExists ) {
         this.logger.info(`Replacing existing file in CASKFS: ${filePath}`, context.logContext);
         context.update({file: await this.metadata(filePath)});
-        currentMetadata = context.file;
       } else if( opts.replace !== true && fileExists ) {
         throw new Error(`File already exists in CASKFS: ${filePath}`);
       }
@@ -155,11 +173,10 @@ class CaskFs {
       // write the file record
       if( !fileExists ) {
         this.logger.info('Inserting new file record into CASKFS', context.logContext);
-        let primaryDigest = config.digests[0];
-        fileId = await dbClient.insertFile(
+        await dbClient.insertFile(
           directoryId,
           filePath, 
-          context.stagedFile.digests[primaryDigest], 
+          context.stagedFile.digests[context.primaryDigest], 
           metadata, 
           context.stagedFile.digests,
           context.stagedFile.size,
@@ -168,10 +185,11 @@ class CaskFs {
         context.update({file: await this.metadata(filePath, {dbClient})});
       } else {
         this.logger.info('Updating existing file metadata in CASKFS', context.logContext);
-        let resp = await this.patchMetadata(
+        await this.patchMetadata(
           context, 
           {metadata, partitionKeys: opts.partitionKeys, onlyOnChange: true, dbClient: dbClient}
         );
+        context.replacedFile = context.file;
         context.update({file: await this.metadata(filePath, {dbClient})});
       }
 
@@ -205,30 +223,25 @@ class CaskFs {
       }
 
       await dbClient.end();
-      return 
+      return context;
     }
 
     // finalize the write to move the temp file to its final location
-    let copied = await this.cas.finalizeWrite(context.stagedFile.tmpFile, context.stagedFile.hashFile);
-    this.logger.info(`File write to CASK FS complete: ${filePath}`, {copied}, context.logContext);
+    context.copied = await this.cas.finalizeWrite(context.stagedFile.tmpFile, context.stagedFile.hashFile);
+    this.logger.info(`File write to CASK FS complete: ${filePath}`, {copied: context.copied}, context.logContext);
 
 
     // if we replaced an existing file, and the hash value is no longer referenced, delete it
     // this function will only delete the hash file if no other references exist
-    if( copied && opts.softDelete !== true ) {
-      this.logger.info(`Checking for unreferenced hash value to delete: ${deletedHashValue}`, context.logContext);
-      await this.cas.delete(currentMetadata.hash_value);
+    if( context.copied && opts.softDelete !== true ) {
+      this.logger.info(`Checking for unreferenced hash value to delete: ${context.replacedFile.hash_value}`, context.logContext);
+      await this.cas.delete(context.replacedFile.hash_value);
     }
 
     // close the pg client socket connection
     await dbClient.end();
 
-    return {
-      copied,
-      diskpath: hashFile,
-      fileId,
-      metadata
-    };
+    return context;
   }
 
   /**
