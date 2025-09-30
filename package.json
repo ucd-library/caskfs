@@ -2,14 +2,12 @@
   "name": "@ucd-lib/caskfs",
   "version": "0.0.1",
   "description": "Content-Addressed Storage with Knowledge graph - File System",
-  "main": "index.js",
+  "main": "src/index.js",
   "type": "module",
   "bin": {
-    "caskfs": "bin/cask.js"
+    "caskfs": "src/bin/cask.js"
   },
-  "directories": {
-    "lib": "lib"
-  },
+  "directories": {},
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
