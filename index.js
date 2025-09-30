@@ -38,9 +38,9 @@ class CaskFs {
   /**
    * @method exists
    * @description Check if a file exists in the CASKFS.
-   * 
-   * @param {String} filePath file path to check 
-   * 
+   *
+   * @param {String} filePath file path to check
+   *
    * @returns {Boolean} true if the file exists, false otherwise
    */
   exists(filePath) {
@@ -50,7 +50,7 @@ class CaskFs {
   /**
    * @method write
    * @description Write a file to the CASKFS. Can write from a Buffer, Readable Stream, hash value or file path.
-   * 
+   *
    * @param {FileContext} context file context to write to in the CASKFS
    * @param {Buffer} data data buffer to write
    * @param {Object} opts options object
@@ -64,7 +64,7 @@ class CaskFs {
    * @param {String} opts.mimeType MIME type of the file being written. Default is auto-detected from file extension.
    * @param {String} opts.contentType same as mimeType, for compatibility with other systems
    * @param {Array} opts.partitionKeys array of partition keys to associate with the file
-   * 
+   *
    * @returns {Object} result object with copied (boolean) and fileId (string)
    */
   async write(context, opts={}) {
@@ -122,10 +122,10 @@ class CaskFs {
       }
 
       // determine resource type based on mime type or file extension
-      if( metadata.mimeType === this.nquadsMimeType || 
-          metadata.mimeType === this.jsonLdMimeType || 
+      if( metadata.mimeType === this.nquadsMimeType ||
+          metadata.mimeType === this.jsonLdMimeType ||
           metadata.mimeType === this.n3MimeType ||
-          metadata.mimeType === this.turtleMimeType || 
+          metadata.mimeType === this.turtleMimeType ||
           opts.readPath?.endsWith(this.jsonldExt) ) {
         this.logger.debug('Detected RDF file based on mime type or file extension');
         metadata.resource_type = 'rdf';
@@ -158,9 +158,9 @@ class CaskFs {
         let primaryDigest = config.digests[0];
         fileId = await dbClient.insertFile(
           directoryId,
-          filePath, 
-          context.stagedFile.digests[primaryDigest], 
-          metadata, 
+          filePath,
+          context.stagedFile.digests[primaryDigest],
+          metadata,
           context.stagedFile.digests,
           context.stagedFile.size,
           opts.partitionKeys
@@ -169,7 +169,7 @@ class CaskFs {
       } else {
         this.logger.info('Updating existing file metadata in CASKFS', context.logContext);
         let resp = await this.patchMetadata(
-          context, 
+          context,
           {metadata, partitionKeys: opts.partitionKeys, onlyOnChange: true, dbClient: dbClient}
         );
         context.update({file: await this.metadata(filePath, {dbClient})});
@@ -193,7 +193,7 @@ class CaskFs {
       await dbClient.query('COMMIT');
     } catch (err) {
       context.error = err;
-      this.logger.error('Error writing file to CASKFS, rolling back transaction', 
+      this.logger.error('Error writing file to CASKFS, rolling back transaction',
         {error: err.message, stack: err.stack, ...context.logContext}
       );
 
@@ -205,7 +205,7 @@ class CaskFs {
       }
 
       await dbClient.end();
-      return 
+      return
     }
 
     // finalize the write to move the temp file to its final location
@@ -234,13 +234,13 @@ class CaskFs {
   /**
    * @method patchMetadata
    * @description Update the metadata and/or partition keys for a file in the CASKFS.
-   * 
-   * @param {String} filePath file path to update 
-   * @param {Object} opts 
+   *
+   * @param {String} filePath file path to update
+   * @param {Object} opts
    * @param {Object} opts.metadata metadata object to merge with existing metadata
    * @param {String|Array} opts.partitionKeys partition key or array of partition keys to add
    * @param {Boolean} opts.onlyOnChange if true, only update if metadata or partition keys are different than existing. Default: false
-   * 
+   *
    * @returns {Promise<Object>} updated metadata object
    */
   async patchMetadata(context, opts={}) {
@@ -276,7 +276,7 @@ class CaskFs {
     let res = await dbClient.query(`
       SELECT * FROM ${this.schema}.file_view WHERE directory = $1 AND filename = $2
     `, [fileParts.dir, fileParts.base]);
-    
+
     if( res.rows.length === 0 ) {
       throw new Error(`File not found in CASK FS: ${filePath}`);
     }
@@ -302,12 +302,12 @@ class CaskFs {
   /**
    * @method read
    * @description Read a file contents from the CASKFS. Can return as a stream or buffer.
-   * 
+   *
    * @param {String} filePath file path to read
    * @param {Object} opts options object
    * @param {Boolean} opts.stream if true, return a stream. If false, return a Promise to content. Default: false
    * @param {String} opts.encoding encoding to use when reading the file. Default: null (buffer)
-   * 
+   *
    * @returns {Promise<Buffer>|Stream} file contents as a Buffer or Stream
    */
   async read(filePath, opts={}) {
@@ -334,10 +334,10 @@ class CaskFs {
   /**
    * @method ls
    * @description List files in the CASKFS. Can filter by directory, partition keys, or hash value.
-   * 
+   *
    * @param {Object} opts query options
    * @param {String} opts.directory directory to list
-   * 
+   *
    * @returns {Object} result object with query and files array
    */
   async ls(opts={}) {
@@ -349,8 +349,8 @@ class CaskFs {
       throw new Error('Directory is required');
     }
 
-    let dir = await this.directory.get(opts.directory);
-    let childDirs = await this.directory.getChildren(opts.directory);
+    let dir = await this.directory.get(opts.directory, {dbClient: this.dbClient});
+    let childDirs = await this.directory.getChildren(opts.directory, {dbClient: this.dbClient});
 
     let res = await this.dbClient.query(`
       SELECT * FROM ${this.schema}.file_view WHERE directory_id = $1 ORDER BY directory, filename
@@ -377,12 +377,12 @@ class CaskFs {
    * @method delete
    * @description Delete a file from the CASKFS. Removes the file record, partition keys, RDF triples, and
    * then calls the CAS delete method to remove the file from storage if no other references exist.
-   * 
-   * @param {String} filePath file path to delete 
+   *
+   * @param {String} filePath file path to delete
    * @param {Objects} opts options object
    * @param {DatabaseClient} opts.dbClient optional database client to use
    * @param {Boolean} opts.softDelete if true, perform a soft delete removing the file from db but leaving hash
-   *                                  file on disk even if no other references exist. Default: false 
+   *                                  file on disk even if no other references exist. Default: false
    * @returns {Promise<Object>} result object with metadata, fileDeleted (boolean), referencesRemaining (int)
    */
   async delete(filePath, opts={}) {
