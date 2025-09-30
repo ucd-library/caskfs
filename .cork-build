@@ -1,0 +1,11 @@
+{
+  "registry" : "us-west1-docker.pkg.dev/aggie-experts/docker",
+
+  "repositories" : {},
+
+  "images" : {
+    "caskfs" : {
+      "contextPath" : "."
+    }
+  }
+}
