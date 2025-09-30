@@ -205,6 +205,7 @@ class Cas {
     let fileParts = path.parse(filepath);
     let metadataFile = path.join(config.rootDir, fileParts.dir, fileParts.base + '.json');
 
+    await fsp.mkdir(path.dirname(metadataFile), {recursive: true});
     await fsp.writeFile(metadataFile, JSON.stringify(fileMetadata, null, 2));
   }
 

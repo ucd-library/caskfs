@@ -1,3 +1,5 @@
+#! /usr/bin/env -S node
+
 import { Command } from 'commander';
 import fs from 'fs/promises';
 import CaskFs from '../index.js';

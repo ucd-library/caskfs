@@ -75,6 +75,17 @@ class Database {
     return res.rows.length > 0;
   }
 
+  async pathExists(filePath) {
+    let fileParts = path.parse(filePath);
+    let res = await this.client.query(`
+      SELECT 1 FROM ${this.schema}.directory WHERE fullname = $1
+      UNION
+      SELECT 1 FROM ${this.schema}.file_view WHERE directory = $2 AND filename = $3
+    `, [filePath, fileParts.dir, fileParts.base]);
+
+    return res.rows.length > 0;
+  }
+
   /**
    * @method getFile
    * @description Get a file record from the database by file ID or file path.
@@ -284,7 +295,7 @@ class Database {
       WHERE ${nodeWhere.join(' AND ')}`;
     }
 
-    let resp = await this.dbClient.query(`
+    let resp = await this.client.query(`
       with files as (
         SELECT DISTINCT file_id FROM ${config.database.schema}.rdf_link_view
         WHERE ${linkWhere.join(' AND ')}
@@ -353,13 +364,13 @@ class Database {
 
     let nodes = [];
     if( !opts.object ) {
-      nodes = await this.dbClient.query(`
+      nodes = await this.client.query(`
         SELECT * FROM ${config.database.schema}.rdf_node_view WHERE ${where.join(' AND ')} ${limit}
       `, args);
       nodes = nodes.rows;
     }
 
-    let links = await this.dbClient.query(`
+    let links = await this.client.query(`
       SELECT * FROM ${config.database.schema}.rdf_link_view WHERE ${where.join(' AND ')} ${limit}
     `, args);
     links = links.rows;

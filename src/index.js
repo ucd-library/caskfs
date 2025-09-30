@@ -59,8 +59,11 @@ class CaskFs {
    *
    * @returns {Boolean} true if the file exists, false otherwise
    */
-  exists(filePath) {
-    return this.dbClient.fileExists(filePath);
+  exists(filePath, opts={}) {
+    if( opts.file === true) {
+      return this.dbClient.fileExists(filePath);
+    }
+    return this.dbClient.pathExists(filePath);
   }
 
   /**
@@ -107,7 +110,7 @@ class CaskFs {
 
       // currently we are opting in to replacing existing files
       if( opts.replace === true && fileExists ) {
-        this.logger.info(`Replacing existing file in CASKFS: ${filePath}`, context.logContext);
+        this.logger.info(`Starting replacement of existing file in CASKFS: ${filePath}`, context.logContext);
         context.update({file: await this.metadata(filePath)});
       } else if( opts.replace !== true && fileExists ) {
         throw new Error(`File already exists in CASKFS: ${filePath}`);
@@ -184,7 +187,6 @@ class CaskFs {
         );
         context.update({file: await this.metadata(filePath, {dbClient})});
       } else {
-        this.logger.info('Updating existing file metadata in CASKFS', context.logContext);
         await this.patchMetadata(
           context, 
           {metadata, partitionKeys: opts.partitionKeys, onlyOnChange: true, dbClient: dbClient}
@@ -233,7 +235,7 @@ class CaskFs {
 
     // if we replaced an existing file, and the hash value is no longer referenced, delete it
     // this function will only delete the hash file if no other references exist
-    if( context.copied && opts.softDelete !== true ) {
+    if( context.copied && opts.softDelete !== true && context.replacedFile ) {
       this.logger.info(`Checking for unreferenced hash value to delete: ${context.replacedFile.hash_value}`, context.logContext);
       await this.cas.delete(context.replacedFile.hash_value);
     }
@@ -272,11 +274,12 @@ class CaskFs {
       let currentMetadata = await this.metadata(filePath);
       if( JSON.stringify(currentMetadata.metadata) === JSON.stringify(opts.metadata) &&
           JSON.stringify(currentMetadata.partition_keys) === JSON.stringify(opts.partitionKeys) ) {
-        this.logger.debug('No changes to metadata or partition keys, skipping update', context.logContext);
+        this.logger.info('No changes to metadata or partition keys, skipping update', context.logContext);
         return {metadata: currentMetadata, updated: false};
       }
     }
 
+    this.logger.info('Updating existing file metadata in CASKFS', context.logContext);
     await (opts.dbClient || this.dbClient).updateFileMetadata(filePath, opts);
 
     return {metadata: this.metadata(filePath), updated: true};
@@ -482,6 +485,10 @@ class CaskFs {
     });
 
     return partitions;
+  }
+
+  close() {
+    return this.dbClient.end();
   }
 }
 
