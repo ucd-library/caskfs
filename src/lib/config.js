@@ -30,6 +30,12 @@ const config = {
     user : env.CASKFS_PG_USER || 'postgres',
     password : env.CASKFS_PG_PASSWORD || 'postgres',
     database : env.CASKFS_PG_DATABASE || 'postgres',
+  },
+
+  webapp : {
+    port : env.CASKFS_WEBAPP_PORT || 3000,
+    isDevEnv : env.CASKFS_WEBAPP_ENV === 'dev',
+    bundleName: 'caskfs-webapp.js'
   }
 
 }
