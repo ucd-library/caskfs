@@ -5,6 +5,7 @@
 # Quick Start - Local Development
 
 - Checkout this repo
+- Install npm dependencies: `npm i`
 - Start the dev pg server: `./devops/start-dev.sh`
 - Init the database: `./devops/cli.sh init-pg`
 - Start using CASKFS: `./devops/cli.sh help`

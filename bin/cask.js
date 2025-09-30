@@ -17,7 +17,7 @@ program
   .action(async (filePath, options) => {
     let opts = {};
     const cask = new CaskFs();
-    
+
     if (options.dataFile === '-') {
       opts.readStream = process.stdin;
     } else {
@@ -61,7 +61,7 @@ program
 * Dry run mode, no files will be copied
 ****\n`);
     }
-    
+
     const cask = new CaskFs();
 
     // is the source path a file or directory?
@@ -71,15 +71,15 @@ program
       console.log(`Copying file ${sourcePath} to ${destPath}`);
       if( !options.dryRun ) {
         let context = await createContext({file: destPath});
-        await cask.write(context, { 
-          readPath: sourcePath, 
-          replace: options.replace 
+        await cask.write(context, {
+          readPath: sourcePath,
+          replace: options.replace
         });
       }
       cask.dbClient.end();
       return;
     }
-    
+
     // recursively get all files in sourcePath
     let files = await fs.readdir(sourcePath, { withFileTypes: true, recursive: true });
     files = files.filter(f => f.isFile()).map(f => path.join(f.path, f.name));
@@ -94,9 +94,9 @@ program
       if( !options.dryRun ) {
         try {
           context = await createContext({file: destFile});
-          await cask.write(context, { 
-            readPath: file, 
-            replace: options.replace 
+          await cask.write(context, {
+            readPath: file,
+            replace: options.replace
           });
         } catch (err) {
           console.error(`Failed to copy ${file} to ${destFile}: ${err.message}`);
@@ -113,7 +113,7 @@ program
       console.log(`\nThe following files failed to copy:`);
       failed.forEach(f => console.log(`  - ${f}`));
     }
-    
+
     cask.dbClient.end();
     return;
   });
@@ -180,7 +180,7 @@ program
     if( options.predicate ) {
       options.predicate = options.predicate.split(',').map(k => k.trim());
     }
-    
+
     if( options.ignorePredicate ) {
       options.ignorePredicate = options.ignorePredicate.split(',').map(k => k.trim());
     }
@@ -294,7 +294,7 @@ program
   .description('Initialize the PostgreSQL database')
   .action(async () => {
     const cask = new CaskFs();
-    console.log(await cask.dbClient.init());
+    await cask.dbClient.init();
     cask.dbClient.end();
   });
 
