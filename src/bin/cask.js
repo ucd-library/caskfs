@@ -302,8 +302,9 @@ program
 program
   .command('serve')
   .description('Start the CaskFs web application')
-  .action(async () => {
-    startServer();
+  .option('-p, --port <port>', 'Port to run the web application on')
+  .action((options) => {
+    startServer(options);
   });
 
 program.parse(process.argv);

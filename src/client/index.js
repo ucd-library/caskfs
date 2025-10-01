@@ -11,9 +11,10 @@ app.use(express.json());
 app.use('/api', apiRoutes);
 staticRoutes(app);
 
-function startServer() {
-  app.listen(config.webapp.port, () => {
-    logger.info(`CaskFs web application running on port ${config.webapp.port}`);
+function startServer(opts={}) {
+  const port = opts.port || config.webapp.port;
+  app.listen(port, () => {
+    logger.info(`CaskFs web application running on port ${port}`);
   });
 }
 
