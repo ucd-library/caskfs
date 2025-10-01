@@ -32,6 +32,13 @@ const config = {
     database : env.CASKFS_PG_DATABASE || 'postgres',
   },
 
+
+  webapp : {
+    port : env.CASKFS_WEBAPP_PORT || 3000,
+    isDevEnv : env.CASKFS_WEBAPP_ENV === 'dev',
+    bundleName: 'caskfs-webapp.js'
+  }
+
   cloudStorage : {
     enabled : (env.CASKFS_CLOUD_STORAGE_ENABLED === 'true'),
     defaultBucket : env.CASKFS_CLOUD_STORAGE_DEFAULT_BUCKET || 'caskfs',

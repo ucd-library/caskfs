@@ -278,4 +278,13 @@ program
     cask.dbClient.end();
   });
 
+program
+  .command('serve')
+  .description('Start the CaskFs web application')
+  .option('-p, --port <port>', 'Port to run the web application on')
+  .action(async (options) => {
+    const { startServer } = await import('../client/index.js');
+    startServer(options);
+  });
+
 program.parse(process.argv);
