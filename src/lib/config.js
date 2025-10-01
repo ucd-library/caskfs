@@ -37,7 +37,7 @@ const config = {
     port : env.CASKFS_WEBAPP_PORT || 3000,
     isDevEnv : env.CASKFS_WEBAPP_ENV === 'dev',
     bundleName: 'caskfs-webapp.js'
-  }
+  },
 
   cloudStorage : {
     enabled : (env.CASKFS_CLOUD_STORAGE_ENABLED === 'true'),
