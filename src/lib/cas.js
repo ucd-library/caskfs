@@ -311,7 +311,7 @@ class Cas {
 
       this.logger.info(`Deleting unreferenced file with hash ${hash} at path ${fullPath}`);
 
-      if( !( await this.storage.exists(fullPath) ) ) {
+      if( await this.storage.exists(fullPath) ) {
         await this.storage.unlink(fullPath);
       }
 

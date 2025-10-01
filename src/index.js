@@ -8,7 +8,7 @@ import Directory from "./lib/directory.js";
 import getLogger from "./lib/logger.js";
 import createContext from "./lib/context.js";
 import AutoPathBucket from "./lib/auto-path/bucket.js";
-import AutoPathPartition from "./lib/auto-path/parition.js";
+import AutoPathPartition from "./lib/auto-path/partition.js";
 
 class CaskFs {
 
