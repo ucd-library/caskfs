@@ -5,3 +5,4 @@ dist
 .DS_Store
 /src/client/public/js
 icons.html.js
+service-account.json

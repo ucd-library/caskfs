@@ -131,7 +131,7 @@ class Rdf {
    * @returns {Promise<Object>} JSON-LD dataset of nodes and links that match the query
    */
   async query(opts={}) {
-    return this.dbClient.queryRdf(opts);
+    return this.dbClient.findRdfNodes(opts);
   }
 
   /**

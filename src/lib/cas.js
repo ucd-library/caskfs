@@ -6,12 +6,31 @@ import path from 'path';
 import crypto from "crypto";
 import Database from './database/index.js';
 import createLogger from './logger.js';
+import GCSStorage from './storage/gcs.js';
+import FSStorage from './storage/fs.js';
 
 class Cas {
 
   constructor(opts={}) {
+    this.cloudStorageEnabled = opts.cloudStorageEnabled || config.cloudStorage.enabled;
     this.dbClient = opts.dbClient || new Database();
     this.logger = createLogger('cas');
+    this.pathPrefix = '';
+  }
+
+  init() {
+    if( this.storage ) {
+      return this.storage;
+    }
+
+    if( this.cloudStorageEnabled ) {
+      this.storage = new GCSStorage({ dbClient: this.dbClient });
+      this.pathPrefix = 'gs:/';
+      return this.storage.init();
+    }
+
+    this.storage = new FSStorage();
+    return Promise.resolve();
   }
 
   async stageWrite(context, opts) {
@@ -45,7 +64,7 @@ class Cas {
     // if the hash exists, we can use the cas file otherwise use the tmp file
     let statsFile;
     let primaryHash = config.digests[0];
-    let hashFile = path.join(config.rootDir, this._getHashFilePath(digests[primaryHash]));
+    let hashFile = this.diskPath(digests[primaryHash]);
     let fileExists = false;
 
     if( fs.existsSync(hashFile) ) {
@@ -76,16 +95,18 @@ class Cas {
    * 
    * @param {String} tmpFile path to the temp file
    * @param {String} hashFile path to the final file location based on hash
+   * @param {Object} opts copy options, mostly for bucket storage backends.
    * 
    * @returns {Promise<Boolean>} resolves with true if the file was copied, false if it already existed
    */
-  async finalizeWrite(tmpFile, hashFile) {
+  async finalizeWrite(tmpFile, hashFile, opts={}) {
     let copied = false;
+    await this.init();
 
-    if( !fs.existsSync(hashFile) ) {
+    if( !await this.storage.exists(hashFile, opts) ) {
       copied = true;
-      await fsp.mkdir(path.dirname(hashFile), {recursive: true});
-      await fsp.copyFile(tmpFile, hashFile);
+      await this.storage.mkdir(path.dirname(hashFile), {recursive: true});
+      await this.storage.copyFile(tmpFile, hashFile, opts);
     }
 
     if( fs.existsSync(tmpFile) ) {
@@ -154,11 +175,13 @@ class Cas {
   }
 
   async writeHash(opts) {
+    await this.init();
+
     // just using an existing hash, so no file operations needed
-    fullPath = path.join(config.rootDir, this._getHashFilePath(opts.hash));
+    fullPath = this.diskPath(opts.hash);
 
     // just ensure the file exists
-    if( !fs.existsSync(fullPath) ) {
+    if( !await this.exists(fullPath) ) {
       throw new Error(`File with hash ${opts.hash} does not exist in CASKFS`);
     }
 
@@ -176,6 +199,8 @@ class Cas {
    * @returns {Promise} 
    */
   async writeMetadata(hash) {
+    await this.init();
+
     let fileMetadata = {
       hash_id: null,
       value: null,
@@ -203,9 +228,16 @@ class Cas {
 
     let filepath = this._getHashFilePath(hash);
     let fileParts = path.parse(filepath);
-    let metadataFile = path.join(config.rootDir, fileParts.dir, fileParts.base + '.json');
 
-    await fsp.writeFile(metadataFile, JSON.stringify(fileMetadata, null, 2));
+    let metadataFile;
+    if( this.cloudStorageEnabled ) {
+      metadataFile = path.join(fileParts.dir, fileParts.base + '.json');
+    } else {
+      metadataFile = path.join(config.rootDir, fileParts.dir, fileParts.base + '.json');
+    }
+
+    await this.storage.mkdir(path.dirname(metadataFile), {recursive: true});
+    await this.storage.writeFile(metadataFile, JSON.stringify(fileMetadata, null, 2));
   }
 
   /**
@@ -219,19 +251,30 @@ class Cas {
    *  
    * @returns {Promise<Buffer>|ReadableStream} resolves with a buffer or a readable stream
    */
-  read(hash, opts={}) {
-    const hashedFilePath = this._getHashFilePath(hash);
-    const fullPath = path.join(config.rootDir, hashedFilePath);
+  async read(hash, opts={}) {
+    await this.init();
 
-    if( !fs.existsSync(fullPath) ) {
+    const fullPath = this.diskPath(hash);
+
+    if( !await this.storage.exists(fullPath) ) {
       throw new Error(`File with hash ${hash} does not exist in CASK FS`);
     }
 
     if( opts.stream === true ) {
-      return fs.createReadStream(fullPath, {encoding: opts.encoding || null});
+      return this.storage.createReadStream(fullPath, {encoding: opts.encoding || null});
     }
 
-    return fsp.readFile(fullPath, {encoding: opts.encoding || null});
+    return this.storage.readFile(fullPath, {encoding: opts.encoding || null});
+  }
+
+  async getLocation(bucket) {
+    await this.init();
+    if( this.storage instanceof FSStorage ) {
+      return 'fs';
+    }
+    if( this.storage instanceof GCSStorage ) {
+      return `gs://${bucket || config.cloudStorage.defaultBucket}`;
+    }
   }
 
   /**
@@ -246,6 +289,8 @@ class Cas {
    * @returns {Promise}
    */
   async delete(hash, opts={}) {
+    await this.init();
+
     let dbClient = opts.dbClient || this.dbClient;
 
     // check if any other files reference this hash
@@ -262,14 +307,16 @@ class Cas {
 
     let fileDeleted = false;
     if( res.rows[0].count === '0' ) {
-      let fullPath = path.join(config.rootDir, this._getHashFilePath(hash));
+      let fullPath = this.diskPath(hash);
 
-      if( !fs.existsSync(fullPath) ) {
-        await fsp.unlink(fullPath);
+      this.logger.info(`Deleting unreferenced file with hash ${hash} at path ${fullPath}`);
+
+      if( await this.storage.exists(fullPath) ) {
+        await this.storage.unlink(fullPath);
       }
 
-      if( fs.existsSync(fullPath + '.json') ) {
-        await fsp.unlink(fullPath + '.json');
+      if( await this.storage.exists(fullPath + '.json') ) {
+        await this.storage.unlink(fullPath + '.json');
       }
       fileDeleted = true;
     } else {
@@ -295,6 +342,9 @@ class Cas {
   }
 
   diskPath(hash) {
+    if( this.cloudStorageEnabled ) {
+      return this._getHashFilePath(hash);
+    } 
     return path.join(config.rootDir, this._getHashFilePath(hash));
   }
 

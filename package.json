@@ -25,6 +25,7 @@
   },
   "homepage": "https://github.com/ucd-library/caskfs#readme",
   "dependencies": {
+    "@google-cloud/storage": "^7.17.1",
     "@ucd-lib/logger": "^0.0.7",
     "@ucd-lib/spa-router-middleware": "^0.2.4",
     "commander": "^14.0.1",

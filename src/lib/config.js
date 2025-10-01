@@ -32,10 +32,18 @@ const config = {
     database : env.CASKFS_PG_DATABASE || 'postgres',
   },
 
+
   webapp : {
     port : env.CASKFS_WEBAPP_PORT || 3000,
     isDevEnv : env.CASKFS_WEBAPP_ENV === 'dev',
     bundleName: 'caskfs-webapp.js'
+  }
+
+  cloudStorage : {
+    enabled : (env.CASKFS_CLOUD_STORAGE_ENABLED === 'true'),
+    defaultBucket : env.CASKFS_CLOUD_STORAGE_DEFAULT_BUCKET || 'caskfs',
+    project : env.CASKFS_CLOUD_STORAGE_PROJECT || null,
+    serviceAccountFile : env.CASKFS_CLOUD_STORAGE_SERVICE_ACCOUNT_FILE || env.GOOGLE_APPLICATION_CREDENTIALS || null,
   }
 
 }
