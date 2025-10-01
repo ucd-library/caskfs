@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS caskfs.hash (
   hash_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   value         VARCHAR(256) NOT NULL UNIQUE,
   digests       JSONB NOT NULL DEFAULT '{}'::jsonb,
+  bucket        VARCHAR(256),
   size          BIGINT,
   created       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

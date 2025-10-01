@@ -117,6 +117,19 @@ class Database {
     return resp.rows[0] || null;
   }
 
+  async getFileBucket(hashFilePath) {
+    let hash = path.parse(hashFilePath).name;
+    let resp = await this.client.query(`
+      SELECT bucket FROM ${this.schema}.hash WHERE value = $1
+    `, [hash]);
+
+    if( resp.rows.length === 0 ) {
+      throw new Error(`File not found: ${hashFilePath}`);
+    }
+
+    return resp.rows[0].bucket || null;
+  }
+
   /**
    * @method getFiles
    * @description Get all files with the given hash value.
@@ -132,7 +145,9 @@ class Database {
     return resp.rows || [];
   }
 
-  async insertFile(directoryId, filePath, hashValue, metadata={}, digests={}, size=0, partitionKeys=[]) {
+  async insertFile(opts) {
+    let {directoryId, filePath, hash, metadata={}, digests={}, size=0, partitionKeys=[], bucket} = opts;
+
     let fileParts = path.parse(filePath);
     let resp = await this.client.query(`
       SELECT * FROM ${this.schema}.insert_file(
@@ -142,9 +157,10 @@ class Database {
         p_metadata := $4::JSONB,
         p_digests := $5::JSONB,
         p_size := $6::BIGINT,
-        p_partition_keys := $7::VARCHAR[]
+        p_partition_keys := $7::VARCHAR[],
+        p_bucket := $8::VARCHAR
       ) AS file_id
-    `, [directoryId, fileParts.base, hashValue, metadata, digests, size, partitionKeys]);
+    `, [directoryId, fileParts.base, hash, metadata, digests, size, partitionKeys, bucket]);
 
     return resp.rows[0].file_id;
   }
@@ -164,7 +180,10 @@ class Database {
     let fileParts = path.parse(filePath);
     if( opts.metadata ) {
       await this.client.query(`
-        UPDATE ${this.schema}.file SET metadata = $1::JSONB WHERE directory = $2 AND filename = $3
+        with directory as (
+          select directory_id from ${this.schema}.directory where fullname = $2
+        )
+        UPDATE ${this.schema}.file SET metadata = $1::JSONB WHERE directory_id = (select directory_id from directory) AND name = $3
         RETURNING *
       `, [opts.metadata, fileParts.dir, fileParts.base]);
     }
@@ -175,8 +194,11 @@ class Database {
       }
 
       await this.client.query(`
-          UPDATE ${this.schema}.file SET partition_keys = partition_keys
-        WHERE directory = $2 AND filename = $3
+        with directory as (
+          select directory_id from ${this.schema}.directory where fullname = $2
+        )
+          UPDATE ${this.schema}.file SET partition_keys = $1::VARCHAR[]
+        WHERE directory_id = (select directory_id from directory) AND name = $3
         RETURNING *
         `, [opts.partitionKeys || {}, fileParts.dir, fileParts.base]);
     }
