@@ -1,0 +1,92 @@
+@font-face {
+  font-family: "Font Awesome 5 Free";
+  font-style: normal;
+  font-weight: 900;
+  font-display: block;
+  src: url("https://files.library.ucdavis.edu/fonts/brand-icons/fa-solid-900.eot");
+  src: url("https://files.library.ucdavis.edu/fonts/brand-icons/fa-solid-900.eot?#iefix") format("embedded-opentype"),
+        url("https://files.library.ucdavis.edu/fonts/brand-icons/fa-solid-900.woff2") format("woff2"),
+        url("https://files.library.ucdavis.edu/fonts/brand-icons/fa-solid-900.woff") format("woff"),
+        url("https://files.library.ucdavis.edu/fonts/brand-icons/fa-solid-900.ttf") format("truetype"),
+        url("https://files.library.ucdavis.edu/fonts/brand-icons/fa-solid-900.svg#fontawesome") format("svg");
+}
+.fa,
+.fas {
+  font-family: "Font Awesome 5 Free";
+  font-weight: 900;
+}
+
+@font-face {
+font-family: Proxima-Nova;
+src:
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-regular-webfont.woff2") format("woff2"),
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-regular-webfont.eot?#iefix") format("embedded-opentype"),
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-regular-webfont.woff") format("woff"),
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-regular-webfont.ttf") format("truetype"),
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-regular-webfont.svg#Proxima-Nova") format("svg");
+font-weight: 400;
+font-style: normal;
+font-display: swap
+}
+
+@font-face {
+font-family: Proxima-Nova;
+src:
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-bold-webfont.woff2") format("woff2"),
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-bold-webfont.eot?#iefix") format("embedded-opentype"),
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-bold-webfont.woff") format("woff"),
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-bold-webfont.ttf") format("truetype"),
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-bold-webfont.svg#Proxima-Nova") format("svg");
+font-weight: 700;
+font-style: normal;
+font-display:swap
+}
+
+@font-face {
+font-family: Proxima-Nova;
+src:
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-regularit-webfont.woff2") format("woff2"),
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-regularit-webfont.eot?#iefix") format("embedded-opentype"),
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-regularit-webfont.woff") format("woff"),
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-regularit-webfont.ttf") format("truetype"),
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-regularit-webfont.svg#Proxima-Nova") format("svg");
+font-weight: 400;
+font-style: italic;
+font-display:swap}
+
+@font-face {
+font-family: Proxima-Nova;
+src:
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-boldit-webfont.woff2") format("woff2"),
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-boldit-webfont.eot?#iefix") format("embedded-opentype"),
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-boldit-webfont.woff") format("woff"),
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-boldit-webfont.ttf") format("truetype"),
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-boldit-webfont.svg#Proxima-Nova") format("svg");
+font-weight: 700;
+font-style: italic;
+font-display:swap}
+
+@font-face {
+font-family: proxima-nova;
+src:
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-black-webfont.woff2") format("woff2"),
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-black-webfont.eot?#iefix") format("embedded-opentype"),
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-black-webfont.woff") format("woff"),
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-black-webfont.ttf") format("truetype"),
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-black-webfont.svg#proxima-nova") format("svg");
+font-weight: 900;
+font-style: normal;
+font-display:swap
+}
+@font-face {
+font-family: proxima-nova;
+src:
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-extrabold-webfont.woff2") format("woff2"),
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-extrabold-webfont.eot?#iefix") format("embedded-opentype"),
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-extrabold-webfont.woff") format("woff"),
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-extrabold-webfont.ttf") format("truetype"),
+  url("https://files.library.ucdavis.edu/fonts/proximanova/proximanova-extrabold-webfont.svg#proxima-nova") format("svg");
+font-weight: 800;
+font-style: normal;
+font-display:swap
+}

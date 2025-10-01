@@ -1,1 +1,2 @@
-console.log('CaskFs web app!');
+import './css/index.js';
+import './elements/caskfs-app.js';

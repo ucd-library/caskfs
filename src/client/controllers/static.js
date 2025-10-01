@@ -2,6 +2,7 @@ import path from 'path';
 import spaMiddleware from '@ucd-lib/spa-router-middleware';
 import { fileURLToPath } from 'url';
 import loaderHtml from '../html/loader.html.js';
+import preloadedIcons from '../html/icons.html.js';
 import logger from '../logger.js';
 import config from '../../lib/config.js';
 import fs from 'fs';
@@ -27,8 +28,7 @@ export default (app) => {
   `<script src='/js/dev/${config.webapp.bundleName}?v=${(new Date()).toISOString()}'></script>` : 
   `<script src='/js/dist/${config.webapp.bundleName}?v=${bundleVersion}'></script>`; 
 
-  const preloadedIcons = ``; // todo - can do as part of build step - sp 2025-09-30
-  const routes = [];
+  const routes = ['directory', 'file-search', 'config'];
   const appTitle = 'CaskFs';
 
   spaMiddleware({

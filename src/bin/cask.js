@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import CaskFs from '../index.js';
 import createContext from '../lib/context.js';
 import path from 'path';
+import { startServer } from '../client/index.js';
 
 const program = new Command();
 
@@ -296,6 +297,13 @@ program
     const cask = new CaskFs();
     await cask.dbClient.init();
     cask.dbClient.end();
+  });
+
+program
+  .command('serve')
+  .description('Start the CaskFs web application')
+  .action(async () => {
+    startServer();
   });
 
 program.parse(process.argv);
