@@ -3,7 +3,6 @@ import fs from 'fs/promises';
 import CaskFs from '../index.js';
 import createContext from '../lib/context.js';
 import path from 'path';
-import { startServer } from '../client/index.js';
 
 const program = new Command();
 
@@ -303,7 +302,8 @@ program
   .command('serve')
   .description('Start the CaskFs web application')
   .option('-p, --port <port>', 'Port to run the web application on')
-  .action((options) => {
+  .action(async (options) => {
+    const { startServer } = await import('../client/index.js');
     startServer(options);
   });
 
