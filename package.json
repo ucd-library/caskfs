@@ -11,7 +11,8 @@
   "scripts": {
     "client-watch": "cd ./src/client/build && node ./icons.js && webpack --config webpack-watch.config.js --watch",
     "client-build-dev": "cd ./src/client/build && node ./icons.js && webpack --config webpack-watch.config.js",
-    "client-build-dist": "cd ./src/client/build && node ./icons.js && webpack --config webpack-dist.config.js"
+    "client-build-dist": "cd ./src/client/build && node ./icons.js && webpack --config webpack-dist.config.js",
+    "prepublishOnly": "npm run client-build-dist"
   },
   "repository": {
     "type": "git",
