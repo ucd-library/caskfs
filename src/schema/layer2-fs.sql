@@ -105,7 +105,8 @@ SELECT
     f.partition_keys,
     f.created,
     f.modified,
-    h.size AS size
+    h.size AS size,
+    h.bucket AS bucket
 FROM caskfs.file f
 JOIN caskfs.hash h ON f.hash_id = h.hash_id
 LEFT JOIN caskfs.directory d ON f.directory_id = d.directory_id;
@@ -118,15 +119,19 @@ CREATE OR REPLACE FUNCTION caskfs.insert_file(
     p_partition_keys VARCHAR(256)[],
     p_digests JSONB DEFAULT '{}'::jsonb,
     p_size BIGINT DEFAULT 0,
-    p_metadata JSONB DEFAULT '{}'::jsonb
+    p_metadata JSONB DEFAULT '{}'::jsonb,
+    p_bucket VARCHAR(256) DEFAULT NULL
 ) RETURNS UUID AS $$
 DECLARE
     v_file_id UUID;
 BEGIN
     WITH hash_upsert AS (
-        INSERT INTO caskfs.hash (value, digests, size) 
-        VALUES (p_hash_value, p_digests, p_size)
-        ON CONFLICT (value) DO UPDATE SET value = EXCLUDED.value, digests = EXCLUDED.digests, size = EXCLUDED.size
+        INSERT INTO caskfs.hash (value, digests, size, bucket) 
+        VALUES (p_hash_value, p_digests, p_size, p_bucket)
+        ON CONFLICT (value) DO UPDATE SET 
+            value = EXCLUDED.value, 
+            digests = EXCLUDED.digests, 
+            size = EXCLUDED.size
         RETURNING hash_id
     )
     INSERT INTO caskfs.file (directory_id, name, hash_id, metadata, partition_keys)

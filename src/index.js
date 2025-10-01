@@ -7,6 +7,8 @@ import Rdf from "./lib/rdf.js";
 import Directory from "./lib/directory.js";
 import getLogger from "./lib/logger.js";
 import createContext from "./lib/context.js";
+import AutoPathBucket from "./lib/auto-path/bucket.js";
+import AutoPathPartition from "./lib/auto-path/partition.js";
 
 class CaskFs {
 
@@ -25,6 +27,9 @@ class CaskFs {
     }
     if( opts.database ) {
       config.database = {...config.database, ...opts.database};
+    }
+    if( opts.cloudStorage ) {
+      config.cloudStorage = {...config.cloudStorage, ...opts.cloudStorage};
     }
 
     this.rootDir = config.rootDir;
@@ -45,6 +50,11 @@ class CaskFs {
       cas: this.cas
     });
     this.directory = new Directory({dbClient: this.dbClient});
+
+    this.authPath = {
+      bucket: new AutoPathBucket({dbClient: this.dbClient, schema: this.schema}),
+      partition: new AutoPathPartition({dbClient: this.dbClient, schema: this.schema})
+    };
   }
 
   createContext(obj) {
@@ -82,6 +92,7 @@ class CaskFs {
    *                                  on disk even if no other references exist. Default: false
    * @param {String} opts.mimeType MIME type of the file being written. Default is auto-detected from file extension.
    * @param {String} opts.contentType same as mimeType, for compatibility with other systems
+   * @param {String} opts.bucket GCS bucket to use if using GCS storage backend
    * @param {Array} opts.partitionKeys array of partition keys to associate with the file
    *
    * @returns {Object} result object with copied (boolean) and fileId (string)
@@ -162,29 +173,30 @@ class CaskFs {
       // and get the directory ID of the target directory
       let directoryId = await this.directory.mkdir(fileParts.dir, {dbClient});
 
-      // build the full set of partition keys
-      let partitionKeySet = new Set(opts.partitionKeys || []);
-      let autoPartitions = await this.getPartitionKeysFromPath(filePath);
-      // add any auto-detected partition keys
-      autoPartitions.forEach(part => partitionKeySet.add(part));
-      opts.partitionKeys = Array.from(partitionKeySet);
-      // if no partition keys, set to null so we store as empty array
-      if( opts.partitionKeys.length === 0 ) {
-        opts.partitionKeys = null;
+      // build partition keys and bucket from both path and opts
+      let autoPathKeys = await this.getAutoPathValues(filePath, opts);
+      opts.partitionKeys = autoPathKeys.partitionKeys || null;
+
+      if( this.cas.cloudStorageEnabled ) {
+        context.bucket = autoPathKeys.bucket;
+        if( !context.bucket ) {
+          context.bucket = config.cloudStorage.defaultBucket;
+        }
       }
 
       // write the file record
       if( !fileExists ) {
         this.logger.info('Inserting new file record into CASKFS', context.logContext);
-        await dbClient.insertFile(
+        await dbClient.insertFile({
           directoryId,
           filePath, 
-          context.stagedFile.digests[context.primaryDigest], 
+          hash: context.stagedFile.digests[context.primaryDigest], 
           metadata, 
-          context.stagedFile.digests,
-          context.stagedFile.size,
-          opts.partitionKeys
-        );
+          bucket: context.bucket,
+          digests: context.stagedFile.digests,
+          size: context.stagedFile.size,
+          partitionKeys: opts.partitionKeys
+      });
         context.update({file: await this.metadata(filePath, {dbClient})});
       } else {
         await this.patchMetadata(
@@ -209,6 +221,13 @@ class CaskFs {
         }
       }
 
+      // finalize the write to move the temp file to its final location
+      context.copied = await this.cas.finalizeWrite(
+        context.stagedFile.tmpFile, 
+        context.stagedFile.hashFile, 
+        {bucket: metadata.bucket, dbClient}
+      );
+
       // finally commit the transaction
       await dbClient.query('COMMIT');
     } catch (err) {
@@ -228,10 +247,7 @@ class CaskFs {
       return context;
     }
 
-    // finalize the write to move the temp file to its final location
-    context.copied = await this.cas.finalizeWrite(context.stagedFile.tmpFile, context.stagedFile.hashFile);
     this.logger.info(`File write to CASK FS complete: ${filePath}`, {copied: context.copied}, context.logContext);
-
 
     // if we replaced an existing file, and the hash value is no longer referenced, delete it
     // this function will only delete the hash file if no other references exist
@@ -422,69 +438,48 @@ class CaskFs {
     };
   }
 
-  async getAutoPathPartions(force=false) {
-    if( this.autoPathPartitions && !force ) {
-      return this.autoPathPartitions;
-    }
-
-    let resp = await this.dbClient.query(`
-      SELECT * FROM ${this.schema}.auto_path_partition
-    `);
-
-    resp.rows.forEach(row => {
-      if( row.filter_regex ) {
-        row.filter_regex = new RegExp(row.filter_regex);
-      }
-    });
-    this.autoPathPartitions = resp.rows;
-
-    return this.autoPathPartitions;
+  /**
+   * @method getCasLocation
+   * 
+   * 
+   * @param {*} filePath 
+   * @param {*} opts 
+   * @returns 
+   */
+  async getCasLocation(filePath, opts={}) {
+    let values = await this.getAutoPathValues(filePath, opts);
+    return await this.cas.getLocation(values.bucket);
   }
 
-  async setAutoPathPartition(opts={}) {
-    if( !opts.name ) {
-      throw new Error('Name is required');
+  async getAutoPathValues(filePath, opts={}) {
+    let results = {};
+    for( let type in this.authPath ) {
+      results[type] = await this.authPath[type].getFromPath(filePath);
     }
 
-    if( !opts.filterRegex && !opts.index ) {
-      throw new Error('Either filterRegex or position is required');
+    // override bucket if passed in opts
+    if( opts.bucket ) {
+      results.bucket = opts.bucket;
+    } else if( results.bucket.length > 0 ) {
+      results.bucket = results.bucket[0]; // take the first bucket if multiple matched
+    } else {
+      results.bucket = null;
     }
 
-    if( opts.index < 1 ) {
-      throw new Error('Position is required and must be greater than 0');
+    // combine all partition keys into a single array
+    if( results.partition ) {
+      if( !opts.partitionKeys ) {
+        opts.partitionKeys = [];
+      }
+      if( !Array.isArray(opts.partitionKeys) ) {
+        opts.partitionKeys = [opts.partitionKeys];
+      }
+      results.partitionKeys = new Set([...opts.partitionKeys, ...results.partition]);
+      results.partitionKeys = Array.from(results.partitionKeys);
+      delete results.partition;
     }
 
-    await this.dbClient.query(`
-      INSERT INTO ${this.schema}.auto_path_partition (name, index, filter_regex)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (name) DO UPDATE SET index = EXCLUDED.index, filter_regex = EXCLUDED.filter_regex
-    `, [opts.name, opts.index || null, opts.filterRegex ? opts.filterRegex : null]);
-  }
-
-  async getPartitionKeysFromPath(filePath) {
-    let fileParts = path.parse(filePath);
-    let dirParts = fileParts.dir.split('/').filter(p => p !== '');
-
-    let partitions = [];
-    (await this.getAutoPathPartions()).forEach(part => {
-      if( part.index === 'string' ) {
-        part.index = parseInt(part.index);
-      }
-
-      if( part.index && dirParts.length >= part.index ) {
-        dirParts = [dirParts[part.index - 1]];
-      }
-
-      if( part.filter_regex ) {
-        dirParts = dirParts.filter(p => part.filter_regex.test(p));
-      }
-
-      if( dirParts.length > 0 ) {
-        partitions.push(part.name+'-'+dirParts[0]);
-      }
-    });
-
-    return partitions;
+    return results;
   }
 
   close() {

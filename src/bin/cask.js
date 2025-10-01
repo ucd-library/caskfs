@@ -53,6 +53,7 @@ program
   .description('Copy a file within the CASKFS')
   .option('-x, --replace', 'Replace the file if it already exists', false)
   .option('-d, --dry-run', 'Show what would be copied without actually copying', false)
+  .option('-b, --bucket <bucket>', 'Target bucket when copying to GCS')
   .action(async (sourcePath, destPath, options) => {
     if( !path.isAbsolute(sourcePath) ) {
       sourcePath = path.resolve(process.cwd(), sourcePath);
@@ -65,12 +66,14 @@ program
     }
 
     const cask = new CaskFs();
+    let location;
 
     // is the source path a file or directory?
     let stat = await fs.stat(sourcePath);
     if( !stat.isDirectory() ) {
       destPath = path.resolve(destPath, path.basename(sourcePath));
-      console.log(`Copying file ${sourcePath} to ${destPath}`);
+      location = await cask.getCasLocation(destPath, {bucket: options.bucket});
+      console.log(`Copying file ${sourcePath} to (${location}) ${destPath}`);
       if( !options.dryRun ) {
         let context = await createContext({file: destPath});
         await cask.write(context, {
@@ -92,7 +95,8 @@ program
       if( file.match(/\/\./) ) continue; // skip hidden files
 
       let destFile = path.join(destPath, path.relative(sourcePath, file));
-      console.log(`Copying file ${file} to ${destFile}`);
+      location = await cask.getCasLocation(destFile, {bucket: options.bucket});
+      console.log(`Copying file ${file} to (${location}) ${destFile}`);
       if( !options.dryRun ) {
         try {
           context = await createContext({file: destFile});
@@ -134,7 +138,7 @@ program
   .description('Read a file from the CASKFS and output to stdout')
   .action(async (filePath) => {
     const cask = new CaskFs();
-    process.stdout.write(await cask.read(filePath));
+    console.log(await cask.read(filePath, { encoding: 'utf8' }));
     cask.dbClient.end();
   });
 
@@ -253,34 +257,8 @@ program
     caskfs.dbClient.end();
   });
 
-program
-  .command('auto-partition <file-path>')
-  .description('Get partition keys for a file in the CASK FS')
-  .action(async (filePath) => {
-    const cask = new CaskFs();
-    console.log(await cask.getPartitionKeysFromPath(filePath));
-    cask.dbClient.end();
-  });
+program.command('auto-path', 'Manage auto-path rules');
 
-program
-  .command('set-auto-partition')
-  .requiredOption('-n, --name <name>', 'Name of the auto-partition rule')
-  .option('-p, --position <position>', 'Position in the path to extract the partition key from (1-based index)')
-  .option('-f, --filter-regex <regex>', 'Regular expression to filter the partition key')
-  .description('Set an auto-partition rule for extracting partition keys from file paths')
-  .action(async (options) => {
-    let opts = {
-      name: options.name,
-      index: options.position,
-      filterRegex: options.filterRegex
-    };
-
-    console.log('Setting auto-partition rule:', options);
-
-    const cask = new CaskFs();
-    await cask.setAutoPathPartition(opts);
-    cask.dbClient.end();
-  });
 
 program
   .command('stats')
