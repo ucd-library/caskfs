@@ -49,8 +49,8 @@
      - Authorization (string, required): Bearer token for authentication.
    - Body:
      - JSON object containing the metadata fields to update.
-     - partitionKeys (string, optional): Array of partition keys to associate with the file.
-     - metadata (string, optional): JSON string containing additional metadata to associate with the file.
+     - partitionKeys (array, optional): Array of partition keys to associate with the file.
+     - metadata (object, optional): Object containing additional key/value metadata to associate with the file.
    - Responses:
      - 200 OK: The metadata was successfully updated.
      - 400 Bad Request: Invalid parameters or request body.
