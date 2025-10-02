@@ -31,7 +31,7 @@ function renderHeader(){
         slogan="Cask File System">
       </ucdlib-branding-bar>
       <ucd-theme-primary-nav>
-        <ul link-text='Filesystem'>
+        <ul link-text='File System'>
           <li><a href='/directory'>Directory</a></li>
           <li><a href='/file-search'>File Search</a></li>
         </ul>
