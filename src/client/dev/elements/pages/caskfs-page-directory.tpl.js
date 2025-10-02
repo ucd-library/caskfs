@@ -1,4 +1,5 @@
 import { html, css } from 'lit';
+import '../components/caskfs-directory-controls.js';
 
 export function styles() {
   const elementStyles = css`
@@ -13,13 +14,8 @@ export function styles() {
 export function render() { 
 return html`
   <div>
-    <div><h1 class="page-title">Directory</h1></div>
-    <ol class="breadcrumbs"><li>Directory</li></ol>
-    <div class="l-container l-basic--flipped">
-      <div class="l-content">
-      </div>
-      <div class="l-sidebar-second">
-      </div>
+    <div class="l-container u-space-mt--large">
+      <caskfs-directory-controls></caskfs-directory-controls>
     </div>
   </div>
 `;}

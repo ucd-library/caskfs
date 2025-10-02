@@ -12,6 +12,14 @@
 
 Notes.  The `./devops/cli.sh` script sets the `CASKFS_ROOT_DIR` to the `cache` directory in the repo.  This is where all CASKFS data will be stored.  You can change this by setting the `CASKFS_ROOT_DIR` environment variable to another path.  Additonally the `cli.sh` sets the connection to the local dev pg server and the `caskfs_db` database.  
 
+## Webapp
+- Start the webapp: `./devops/cli.sh serve`
+- Start the watch process: `npm run client-watch`
+- Add an icon:
+  - edit icons array in `src/client/build/icons.js`
+  - restart watch process
+  - restart server
+
 
 # General Concepts
 

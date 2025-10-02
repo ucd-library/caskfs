@@ -9,7 +9,8 @@ import path from 'path';
 const program = new Command();
 
 program
-  .command('write <file-path>')
+  .command('write')
+  .argument('<file-path>', 'Full path (including filename) where the file will be written in the CASKFS')
   .requiredOption('-d, --data-file <data-file>', 'Path to the data file to write. Use "-" to read from stdin')
   .option('-r, --replace', 'Replace the file if it already exists', false)
   .option('-p, --partition-keys <keys>', 'comma-separated list of partition keys')

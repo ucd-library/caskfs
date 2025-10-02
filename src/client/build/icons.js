@@ -9,8 +9,18 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export function buildIconsets(){
 
   const icons = [
-    { name: 'fontawesome-7.0-solid', aliases: ['fas'], preload: ['check', 'xmark', 'plug-circle-exclamation']}, 
-    { name: 'ucdlib-core', preload: ['ucdlib-logo']} 
+    {
+      name: 'fontawesome-7.0-solid', 
+      aliases: ['fas'], 
+      preload: [
+        'caret-down', 'caret-up', 'check', 'file-circle-plus', 
+        'folder-plus', 'plug-circle-exclamation', 
+        'sort', 'turn-up', 'xmark'
+      ]
+    }, 
+    { name: 'ucdlib-core', 
+      preload: ['ucdlib-logo']
+    } 
   ];
   const scriptTag = preload(icons);
   const outFile = path.join(__dirname, '../html/icons.html.js');
