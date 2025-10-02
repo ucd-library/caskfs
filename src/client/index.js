@@ -3,10 +3,12 @@ import config from '../lib/config.js';
 import apiRoutes from '../controllers/index.js';
 import staticRoutes from './controllers/static.js';
 import logger from './logger.js';
+import {logReqMiddleware} from '@ucd-lib/logger';
 
 const app = express();
 
 app.use(express.json());
+app.use(logReqMiddleware(logger));
 
 app.use('/api', apiRoutes);
 staticRoutes(app);

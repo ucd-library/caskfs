@@ -15,7 +15,8 @@ class CaskFs {
   constructor(opts={}) {
     this.dbClient = new Database({
       client: opts.dbClient,
-      type: opts.dbType || config.database.client
+      type: opts.dbType || config.database.client,
+      pool: !!opts.dbPool
     });
 
     // override config options with opts
