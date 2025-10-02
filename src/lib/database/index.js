@@ -440,6 +440,68 @@ class Database {
     return data;
   }
 
+  // setAcl(role, directory, permission) {
+  //   return this.client.query(`
+  // }
+
+  addUserRole(userId, role) {
+    return this.client.query(`
+      WITH upsert_user AS (
+        INSERT INTO caskfs.acl_user (user_id)
+        VALUES ($1::UUID)
+        ON CONFLICT DO NOTHING
+        RETURNING user_id
+      ),
+      upsert_role AS (
+        INSERT INTO caskfs.acl_role (role)
+        VALUES ($2::VARCHAR)
+        ON CONFLICT DO NOTHING
+        RETURNING role_id
+      )
+      INSERT INTO caskfs.user_role (user_id, role_id)
+      VALUES ($1::UUID, $2::VARCHAR)
+      ON CONFLICT DO NOTHING
+    `, [userId, role]);
+  }
+
+  addPermissionToDirectory(role, directory, permission) {
+    return this.client.query(`
+      WITH dir AS (
+        SELECT directory_id FROM caskfs.directory WHERE fullname = $1
+      ),
+      WITH root_acl AS (
+        INSERT INTO caskfs.root_directory_acl (directory_id)
+        SELECT directory_id FROM dir
+        ON CONFLICT (directory_id) DO NOTHING
+        RETURNING root_directory_acl_id
+      ),
+      upsert_role AS (
+        INSERT INTO caskfs.acl_role (role)
+        VALUES ($2::VARCHAR)
+        ON CONFLICT DO NOTHING
+        RETURNING role_id
+      ),
+      perm AS (
+        INSERT INTO caskfs.acl_permission (root_directory_acl_id, permission, role_id)
+        SELECT r.root_directory_acl_id, $3::caskfs.permission, (SELECT role_id FROM upsert_role)
+        FROM root_acl r
+        ON CONFLICT DO NOTHING
+        RETURNING acl_permission_id
+      )
+      INSERT INTO caskfs.directory_acl (directory_id, acl_permission_id)
+      SELECT (SELECT directory_id FROM dir), p.acl_permission_id
+      FROM perm p
+      ON CONFLICT DO NOTHING
+    `, [directory, role, permission]);
+  }
+
+
+  onAclChange() {
+    return this.client.query(`
+      REFRESH MATERIALIZED VIEW caskfs.directory_user_permissions_lookup
+    `);
+  }
+
 }
 
 export default Database;

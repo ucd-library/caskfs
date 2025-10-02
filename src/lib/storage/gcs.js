@@ -1,6 +1,6 @@
 import config from '../config.js';
 import fs from 'fs';
-import getLogger from '../logger.js'
+import { getLogger } from '../logger.js';
 
 class GCSStorage {
 

@@ -5,7 +5,7 @@ import mime from "mime";
 import Cas from "./lib/cas.js";
 import Rdf from "./lib/rdf.js";
 import Directory from "./lib/directory.js";
-import getLogger from "./lib/logger.js";
+import { getLogger } from "./lib/logger.js";
 import createContext from "./lib/context.js";
 import AutoPathBucket from "./lib/auto-path/bucket.js";
 import AutoPathPartition from "./lib/auto-path/partition.js";

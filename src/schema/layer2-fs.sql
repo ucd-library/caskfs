@@ -5,17 +5,44 @@ SET search_path TO caskfs;
 -- Layer 2: Filesystem with directories and ACLs
 ---
 
--- Directory ACLs
-CREATE TABLE IF NOT EXISTS caskfs.directory_acl (
-    directory_acl_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    -- see below for adding this cyclic reference
-    -- directory_id      UUID NOT NULL REFERENCES caskfs.directory(directory_id),
-    read              VARCHAR(256)[],
-    write             VARCHAR(256)[],
-    created           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    modified          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    -- UNIQUE(directory_id)
+CREATE TYPE caskfs.permission AS ENUM ('read', 'write', 'admin');
+
+CREATE TABLE IF NOT EXISTS caskfs.acl_role (
+  role_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name       VARCHAR(256) NOT NULL UNIQUE,
+  created    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE INDEX IF NOT EXISTS idx_role_name ON caskfs.acl_role(name);
+
+CREATE TABLE IF NOT EXISTS caskfs.acl_user (
+  user_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name      VARCHAR(256) NOT NULL UNIQUE,
+  created   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_user_name ON caskfs.acl_user(name);
+
+CREATE TABLE IF NOT EXISTS caskfs.acl_role_user (
+  acl_role_user_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  role_id          UUID NOT NULL REFERENCES caskfs.acl_role(role_id),
+  user_id          UUID NOT NULL REFERENCES caskfs.acl_user(user_id),
+  created         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(role_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_acl_role_user_role_id ON caskfs.acl_role_user(role_id);
+CREATE INDEX IF NOT EXISTS idx_acl_role_user_user_id ON caskfs.acl_role_user(user_id);
+
+-- Directory ACLs
+CREATE TABLE IF NOT EXISTS caskfs.acl_permission (
+    acl_permission_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    root_directory_acl_id      UUID NOT NULL REFERENCES caskfs.root_directory_acl(root_directory_acl_id),
+    permission        caskfs.permission NOT NULL,
+    role_id           UUID REFERENCES caskfs.acl_role(role_id),
+    created           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    modified          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(permission, role_id)
+);
+CREATE INDEX IF NOT EXISTS idx_directory_acl_read ON caskfs.directory_acl USING GIN(read);
+CREATE INDEX IF NOT EXISTS idx_directory_acl_write ON caskfs.directory_acl USING GIN(write);
 
 -- Directory
 CREATE TABLE IF NOT EXISTS caskfs.directory (
@@ -26,23 +53,67 @@ CREATE TABLE IF NOT EXISTS caskfs.directory (
       ELSE REGEXP_REPLACE(TRIM(fullname), '/$', '') END
     ) STORED,
     parent_id      UUID REFERENCES caskfs.directory(directory_id),
-    directory_acl_id            UUID REFERENCES caskfs.directory_acl(directory_acl_id),
     created        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     modified       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_directory_name ON caskfs.directory(name);
 CREATE INDEX IF NOT EXISTS idx_directory_parent_id ON caskfs.directory(parent_id);
 
+CREATE TABLE IF NOT EXISTS caskfs.directory_acl (
+    directory_acl_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    directory_id          UUID NOT NULL REFERENCES caskfs.directory(directory_id),
+    root_directory_acl_id UUID REFERENCES caskfs.root_directory_acl(root_directory_acl_id)
+);
+
+CREATE TABLE IF NOT EXISTS caskfs.root_directory_acl (
+    root_directory_acl_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    directories_id         UUID NOT NULL REFERENCES caskfs.directory(directory_id),
+    public                 BOOLEAN NOT NULL DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_root_directory_acl_directories_id ON caskfs.root_directory_acl
+
+CREATE OR REPLACE VIEW caskfs.acl_user_roles_view AS
+SELECT
+    u.user_id,
+    u.name AS username,
+    r.role_id,
+    r.name AS rolename
+FROM caskfs.acl_user u
+LEFT JOIN caskfs.acl_role_user ru ON u.user_id = ru.user_id
+LEFT JOIN caskfs.acl_role r ON ru.role_id = r.role_id;
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS caskfs.directory_user_permissions_lookup AS
+SELECT
+    d.directory_id,
+    u.user_id,
+    p.permission
+FROM caskfs.directory d
+JOIN caskfs.directory_acl da ON d.directory_id = da.directory_id
+JOIN caskfs.root_directory_acl rda ON da.root_directory_acl_id = rda.root_directory_acl_id
+JOIN caskfs.directory_permission dp ON rda.root_directory_acl_id = dp.root_directory_acl_id
+JOIN caskfs.acl_permission p ON dp.acl_permission_id = p.acl_permission_id
+JOIN caskfs.acl_role r ON p.role_id = r.role_id
+JOIN caskfs.acl_role_user ru ON r.role_id = ru.role_id
+JOIN caskfs.acl_user u ON ru.user_id = u.user_id;
+
+-- Create indexes for the materialized view
+CREATE INDEX IF NOT EXISTS idx_directory_user_permissions_lookup_directory_id 
+    ON caskfs.directory_user_permissions_lookup(directory_id);
+CREATE INDEX IF NOT EXISTS idx_directory_user_permissions_lookup_user_id 
+    ON caskfs.directory_user_permissions_lookup(user_id);
+CREATE INDEX IF NOT EXISTS idx_directory_user_permissions_lookup_permission 
+    ON caskfs.directory_user_permissions_lookup(permission);
+
 -- Manually add directory_id to directory_acl as its cyclic reference
-ALTER TABLE caskfs.directory_acl ADD COLUMN IF NOT EXISTS directory_id UUID NOT NULL REFERENCES caskfs.directory(directory_id);
-DO $$
-BEGIN
-    ALTER TABLE caskfs.directory_acl ADD CONSTRAINT unique_directory_id UNIQUE(directory_id);
-EXCEPTION
-    WHEN others THEN NULL;
-END;
-$$;
-CREATE INDEX IF NOT EXISTS idx_directory_acl_directory_id ON caskfs.directory_acl(directory_id);
+-- ALTER TABLE caskfs.directory_acl ADD COLUMN IF NOT EXISTS directory_id UUID NOT NULL REFERENCES caskfs.directory(directory_id);
+-- DO $$
+-- BEGIN
+--     ALTER TABLE caskfs.directory_acl ADD CONSTRAINT unique_directory_id UNIQUE(directory_id);
+-- EXCEPTION
+--     WHEN others THEN NULL;
+-- END;
+-- $$;
+-- CREATE INDEX IF NOT EXISTS idx_directory_acl_directory_id ON caskfs.directory_acl(directory_id);
 
 -- Ensure root directory exists
 INSERT INTO caskfs.directory (fullname, parent_id) VALUES ('/', NULL) ON CONFLICT (fullname) DO NOTHING;
@@ -128,11 +199,10 @@ BEGIN
     WITH hash_upsert AS (
         INSERT INTO caskfs.hash (value, digests, size, bucket) 
         VALUES (p_hash_value, p_digests, p_size, p_bucket)
-        ON CONFLICT (value) DO UPDATE SET 
-            value = EXCLUDED.value, 
-            digests = EXCLUDED.digests, 
-            size = EXCLUDED.size
-        RETURNING hash_id
+        ON CONFLICT (value) DO NOTHING
+    ), 
+    hash_select AS (
+        SELECT hash_id FROM caskfs.hash WHERE value = p_hash_value
     )
     INSERT INTO caskfs.file (directory_id, name, hash_id, metadata, partition_keys)
     SELECT p_directory_id, p_filename, hash_id, p_metadata, p_partition_keys
