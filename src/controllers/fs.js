@@ -2,7 +2,7 @@ import { Router } from 'express';
 
 const router = Router();
 
-const METADATA_ACCEPT = 'sapplication/vnd.caskfs.file-metadata+json';
+const METADATA_ACCEPT = 'application/vnd.caskfs.file-metadata+json';
 
 router.get('/', (req, res) => {
   res.json({ status: 'CaskFS Filesystem Controller' });
