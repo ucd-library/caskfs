@@ -16,12 +16,16 @@ import './pages/caskfs-page-home.js';
 import './pages/caskfs-page-directory.js';
 import './pages/caskfs-page-file-search.js';
 import './pages/caskfs-page-partitions.js';
+import './components/cork-app-error.js';
+import './components/cork-app-loader.tpl.js';
+import './components/cork-app-toast.js';
 
 // icon elements
 import '@ucd-lib/cork-icon';
 
 // cork models
 import '../../../api/models/AppStateModel.js';
+import '../../../api/models/DirectoryModel.js';
 Registry.ready();
 
 import ScrollController from '../controllers/ScrollController.js';

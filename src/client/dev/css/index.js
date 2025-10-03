@@ -6,6 +6,7 @@ import headings from './headings.css';
 
 // mainDomElement styles from lit component elements
 // if done in the element itself, it creates a style tag for each instance
+import { styles as directoryListStyles } from '../elements/components/caskfs-directory-list.tpl.js';
 
 function getLitStyles(styles){
   return styles().map(s => s.cssText).join('\n');
@@ -26,6 +27,7 @@ const styles = `
   ${brandCssProps}
   ${fonts}
   ${headings}
+  ${getLitStyles(directoryListStyles)}
 `;
 
 let sharedStyleElement = document.createElement('style');

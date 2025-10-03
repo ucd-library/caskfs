@@ -2,6 +2,9 @@ import { LitElement } from 'lit';
 import {render, styles} from "./caskfs-directory-controls.tpl.js";
 import { LitCorkUtils, Mixin } from '@ucd-lib/cork-app-utils';
 
+import DirectoryPathController from '../../controllers/DirectoryPathController.js';
+import QueryStringController from '../../controllers/QueryStringController.js';
+
 export default class CaskfsDirectoryControls extends Mixin(LitElement)
   .with(LitCorkUtils) {
 
@@ -9,8 +12,9 @@ export default class CaskfsDirectoryControls extends Mixin(LitElement)
     return {
       sortOptions: {type: Array },
       sortValue: { type: String },
-      sortIsDesc: { type: Boolean }
-    }
+      sortIsDesc: { type: Boolean },
+      pathStartIndex: { type: Number, attribute: 'path-start-index' }
+    };
   }
 
   static get styles() {
@@ -20,6 +24,7 @@ export default class CaskfsDirectoryControls extends Mixin(LitElement)
   constructor() {
     super();
     this.render = render.bind(this);
+    this.pathStartIndex = 0;
 
     this.sortOptions = [
       { label: 'Name', value: 'name' },
@@ -27,11 +32,19 @@ export default class CaskfsDirectoryControls extends Mixin(LitElement)
     ];
     this.sortValue = '';
     this.sortIsDesc = false;
+
+    this.directoryPathCtl = new DirectoryPathController(this, 'pathStartIndex');
+    this.qsCtl = new QueryStringController(this);
   }
 
   _onSortOptionSelect(e){
-    this.sortValue = e.detail.value;
-    this.sortIsDesc = e.detail.isDesc;
+    this.qsCtl.setParam('sort', e.detail.value);
+    if ( e.detail.isDesc ) {
+      this.qsCtl.setParam('sortDirection', 'desc');
+    } else {
+      this.qsCtl.deleteParam('sortDirection');
+    }
+    this.qsCtl.setLocation();
   }
 
 }
