@@ -12,7 +12,7 @@ export default class QueryStringController {
     this.query = {};
     this.scrollTo = null;
 
-    this.queryIsSet = Promise.resolve();
+    this.updateComplete = Promise.resolve();
   }
 
   setParam(key, value){
@@ -67,9 +67,9 @@ export default class QueryStringController {
 
     // create a promise that resolves when query is set
     // important if want to use query in appStateUpdate handlers elsewhere
-    let resolveQueryIsSet;
-    const deferred = new Promise(res => { resolveQueryIsSet = res; });
-    this.queryIsSet = Promise.all([Promise.resolve(), deferred]).then(() => undefined);
+    let resolveUpdateComplete;
+    const deferred = new Promise(res => { resolveUpdateComplete = res; });
+    this.updateComplete = Promise.all([Promise.resolve(), deferred]).then(() => undefined);
 
     // set query params based on location and default types
     try {
@@ -95,7 +95,7 @@ export default class QueryStringController {
 
     } finally {
       // signal that query is set
-      resolveQueryIsSet?.();
+      resolveUpdateComplete?.();
     }
   }
 

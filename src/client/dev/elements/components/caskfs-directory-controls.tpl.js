@@ -34,13 +34,15 @@ return html`
     <cork-icon-button
       icon='fas.turn-up'
       title='Up One Level'
+      ?disabled=${this.directoryPathCtl.path.length <= 1}
+      @click=${() => this.directoryPathCtl.moveUp()}
       link-aria-label='Up One Level'>
     </cork-icon-button>
     <cork-sort-button 
       .options=${this.sortOptions} 
       @option-select=${this._onSortOptionSelect}
-      .value=${this.sortValue} 
-      .isDesc=${this.sortIsDesc}>
+      .value=${this.qsCtl.query.sort || ''} 
+      .isDesc=${this.qsCtl.query.sortDirection === 'desc'}>
     </cork-sort-button>
   </div>
 

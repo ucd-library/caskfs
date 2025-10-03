@@ -132,7 +132,6 @@ class AppStateModelImpl extends AppStateModel {
   showError(opts){
     this._errorVisible = true;
     this.store.emit(this.store.events.APP_ERROR_UPDATE, {show: true, opts});
-    console.log('AppStateModelImpl.showError', opts);
   }
 
   hideError(){

@@ -13,6 +13,9 @@ export function styles() {
 export function render() { 
 return html`
   ${renderHeader()}
+  <cork-app-loader></cork-app-loader>
+  <cork-app-error></cork-app-error>
+  <cork-app-toast></cork-app-toast>
   <ucdlib-pages
     selected=${this.page}
     attr-for-selected='page-id'>
