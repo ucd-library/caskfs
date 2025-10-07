@@ -21,7 +21,7 @@ export default class CorkAppDialogModal extends Mixin(LitElement)
       data: {type: Object},
       actionCallback: {state: true},
       contentMaxHeight: {type: String},
-      _loading: {type: Boolean},
+      loading: {type: Boolean},
       _isOpen: {type: Boolean}
     }
   }
@@ -40,7 +40,7 @@ export default class CorkAppDialogModal extends Mixin(LitElement)
     this.data = {};
     this.actionCallback = null;
     this.contentMaxHeight = '';
-    this._loading = false;
+    this.loading = false;
     this._isOpen = false;
     this.wait = new WaitController(this);
 
@@ -93,10 +93,10 @@ export default class CorkAppDialogModal extends Mixin(LitElement)
   */
   _onAppDialogOpen(e){
     if ( !e.reloadLast ){
-      this.modalTitle = e.title;
+      this.modalTitle = e.title || '';
       this.modalContent = e.content;
-      this.actions = e.actions;
-      this.data = e.data;
+      this.actions = e.actions || [];
+      this.data = e.data || {};
       this.actionCallback = e.actionCallback;
     }
     this._loading = false;
@@ -105,7 +105,8 @@ export default class CorkAppDialogModal extends Mixin(LitElement)
     this.open();
   }
 
-  _onAppDialogClose(){
+  _onAppDialogClose(e){
+    if ( e.fromSelf ) return;
     this.close();
   }
 
@@ -121,7 +122,7 @@ export default class CorkAppDialogModal extends Mixin(LitElement)
   async _onButtonClick(actionValue){
     const action = this.actions.find(a => a.value === actionValue);
     if ( !action ) return;
-    if ( action.disableOnLoading && this._loading ){
+    if ( action.disableOnLoading && this.loading ){
       return;
     }
     if ( this.actionCallback ){
@@ -131,7 +132,9 @@ export default class CorkAppDialogModal extends Mixin(LitElement)
       }
       if ( cb?.abortModalAction ) return;
     }
-    this.close();
+    if ( !action.disableClose ){
+      this.close();
+    }
     this.logger.info(`Dialog action: ${actionValue}`, this.data);
     this.AppStateModel.emit('app-dialog-action', {action, data: this.data});
   }
@@ -147,6 +150,7 @@ export default class CorkAppDialogModal extends Mixin(LitElement)
     this.dialogRef.value.close();
     this._isOpen = false;
     document.body.style.overflow = '';
+    this.AppStateModel.emit('app-dialog-close', {fromSelf: true});
   }
 
 }

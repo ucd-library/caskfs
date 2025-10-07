@@ -34,6 +34,27 @@ class DirectoryService extends BaseService {
     return store.get(id);
   }
 
+  async deleteFile(path, options={}) {
+    let ido = { path, ...options };
+    let id = payload.getKey(ido);
+    const store = this.store.data.deleteFile;
+
+    await this.checkRequesting(
+      id, store,
+      () => this.request({
+        url : `${this.baseUrl}${path}`,
+        qs: options,
+        fetchOptions: { method: 'DELETE' },
+        onUpdate : resp => this.store.set(
+          payload.generate(ido, resp),
+          store
+        )
+      })
+    );
+
+    return store.get(id);
+  }
+
 }
 
 const service = new DirectoryService();

@@ -29,6 +29,15 @@ export default class DirectoryPathController {
   moveUp(){
     if ( this.path.length <= 1 ) return;
     this.path.pop();
+    this.setLocation();
+  }
+
+  setLocation(path){
+    if ( Array.isArray(path) ) {
+      this.path = path;
+    } else if ( typeof path === 'string' ) {
+      this.path = ['/', ...path.split('/').filter(Boolean)];
+    } 
     const currentLocation = this.AppStateModel.store.data.location;
     const newPath = "/" + [ currentLocation.path.slice(0, this.pathStartIndex), ...this.path.slice(1) ].filter(Boolean).join('/');
     const queryString = (new URLSearchParams(currentLocation.query)).toString();

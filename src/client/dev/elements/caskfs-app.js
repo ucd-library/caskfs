@@ -19,6 +19,7 @@ import './pages/caskfs-page-partitions.js';
 import './components/cork-app-error.js';
 import './components/cork-app-loader.tpl.js';
 import './components/cork-app-toast.js';
+import './components/cork-app-dialog-modal.js';
 
 // icon elements
 import '@ucd-lib/cork-icon';

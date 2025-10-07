@@ -15,7 +15,8 @@ export function buildIconsets(){
       preload: [
         'caret-down', 'caret-up', 'check', 'file-circle-plus', 
         'folder-plus', 'plug-circle-exclamation', 
-        'sort', 'turn-up', 'xmark', 'folder', 'file'
+        'sort', 'turn-up', 'xmark', 'folder', 'file', 'trash',
+        'spinner'
       ]
     }, 
     { name: 'ucdlib-core', 

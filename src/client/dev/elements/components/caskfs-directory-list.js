@@ -41,7 +41,7 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
 
   async listContents() {
     this.selectedItems = [];
-    
+
     await this.directoryPathCtl.updateComplete;
     await this.qsCtl.updateComplete;
 
@@ -55,14 +55,16 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
       contents.push({
         data: file,
         name: file.filename,
-        lastModified: new Date(file.modified)
+        lastModified: new Date(file.modified),
+        size: Number(file.size)
       });
     }
     for ( const dir of res.payload.directories ) {
       contents.push({
         data: dir,
         name: dir.name.split('/').filter(Boolean).pop(),
-        lastModified: new Date(dir.modified)
+        lastModified: new Date(dir.modified),
+        size: 0
       });
     }
 
@@ -78,6 +80,14 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
     }
 
     this.contents = contents;
+  }
+
+  _onItemClick(e){
+    if ( e.detail.isDirectory ) {
+      this.directoryPathCtl.setLocation(e.detail.data.name);
+      return;
+    }
+    console.log('File clicked', e.detail);
   }
 
 }

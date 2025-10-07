@@ -12,6 +12,12 @@ export function styles() {
       gap: .5rem;
       align-items: center;
       flex-wrap: wrap;
+      justify-content: space-around;
+    }
+    @media (min-width: 480px) {
+      .container {
+        justify-content: flex-start;
+      }
     }
   `;
 

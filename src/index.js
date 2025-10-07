@@ -9,6 +9,7 @@ import getLogger from "./lib/logger.js";
 import createContext from "./lib/context.js";
 import AutoPathBucket from "./lib/auto-path/bucket.js";
 import AutoPathPartition from "./lib/auto-path/partition.js";
+import { MissingResourceError } from "./lib/errors.js";
 
 class CaskFs {
 
@@ -311,7 +312,7 @@ class CaskFs {
     `, [fileParts.dir, fileParts.base]);
 
     if( res.rows.length === 0 ) {
-      throw new Error(`File not found in CASK FS: ${filePath}`);
+      throw new MissingResourceError('File', filePath);
     }
 
     let data = res.rows[0];
@@ -423,7 +424,7 @@ class CaskFs {
     let metadata = await this.metadata(filePath);
 
     // remove RDF triples first
-    this.rdf.delete(metadata.file_id);
+    this.rdf.delete({file: metadata});
 
     // remove the file record
     await dbClient.query(`

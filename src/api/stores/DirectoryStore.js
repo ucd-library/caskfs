@@ -7,13 +7,17 @@ class DirectoryStore extends BaseStore {
     super();
 
     this.data = {
-      list: new LruStore({name: 'directory.list'})
+      list: new LruStore({name: 'directory.list'}),
+      deleteFile: new LruStore({name: 'directory.deleteFile'})
     };
     this.events = {};
 
     this.errorSettings = {
       'directory.list': {
         message: 'Unable to list directory contents'
+      },
+      'directory.deleteFile': {
+        message: 'Unable to delete file'
       }
     }
   }

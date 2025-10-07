@@ -21,7 +21,14 @@ export function render() {
     <div>
       <ol class='breadcrumbs'>${this.directoryPathCtl.breadcrumbs.map(crumb => crumb.currentPage ? html`<li>${crumb.name}</li>` : html`<li><a href="${crumb.url}">${crumb.name}</a></li>`)}</ol>
       <div>
-        <div ?hidden=${!this.contents.length}>${this.contents.map(item => html`<caskfs-directory-item .data=${item.data}></caskfs-directory-item>`)}</div>
+        <div ?hidden=${!this.contents.length}>
+          ${this.contents.map(item => html`
+            <caskfs-directory-item 
+              @item-click=${e => this._onItemClick(e)}
+              .data=${item.data}>
+            </caskfs-directory-item>
+          `)}
+        </div>
         <div ?hidden=${this.contents.length}>This directory is empty</div>
       </div>
     </div>

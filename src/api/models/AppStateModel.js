@@ -172,11 +172,12 @@ class AppStateModelImpl extends AppStateModel {
     if ( !options.content ) {
       options.content = '';
     }
+    console.log('showDialogModal', options);
     this.store.emit('app-dialog-open', options);
   }
 
-  closeDialogModal(){
-    this.store.emit('app-dialog-close');
+  closeDialogModal(opts={}){
+    this.store.emit('app-dialog-close', opts);
   }
 
   requestDialogUpdate(){

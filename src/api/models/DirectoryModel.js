@@ -20,6 +20,18 @@ class DirectoryModel extends BaseModel {
     return this.service.list(path);
   }
 
+  async deleteFile(path, options={}) {
+    const res = await this.service.deleteFile(path, options);
+    if ( res.state === 'loaded' ) {
+      this.purgeCache();
+    }
+    return res;
+  }
+
+  purgeCache(){
+    this.store.data.list.purge();
+  }
+
 }
 
 const model = new DirectoryModel();

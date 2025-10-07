@@ -10,7 +10,7 @@ export function styles() {
     .desktop-view {
       display: none;
     }
-    @container (min-width: 600px) {
+    @container (min-width: 500px) {
       .mobile-view {
         display: none;
       }
@@ -18,19 +18,54 @@ export function styles() {
         display: block;
       }
     }
-    button.item-line {
-      all: unset;
-      display: flex;
-      align-items: center;
+    .item-line {
+      display: grid;
+      align-items: stretch;
       gap: .5rem;
       width: 100%;
-      cursor: pointer;
+      border-bottom: 1px solid var(--ucd-blue-60, #B0D0ED);
+      padding: 1rem .5rem;
+      grid-template-columns: 3fr 1fr 1fr 1.5fr auto;
     }
+    .item-line:hover {
+      background-color: var(--ucd-gold-30, #FFF9E6);
+    }
+    .item-line:focus-within {
+      background-color: var(--ucd-gold-30, #FFF9E6);
+    }
+      
     .is-directory .type-icon {
       color: var(--ucd-blue-80, #13639e);
     }
     .is-file .type-icon {
       color: var(--ucd-black-80, #333);
+    }
+    .link-button {
+      all: unset;
+      cursor: pointer;
+      color: var(--ucd-blue-80, #13639e);
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      align-self: start;
+    }
+    .link-button--bold {
+      font-weight: 700;
+    }
+    .link-button:hover, .link-button:focus {
+      color: var(--tahoe, #00b2e3);
+    }
+    .delete-icon {
+      --cork-icon-button-size: 1.25rem;
+      margin-top: 2px;
+    }
+    .keep-together {
+      white-space: nowrap;
+    }
+    .date-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .25rem;
     }
   `;
 
@@ -64,10 +99,25 @@ function renderMobileView(){
 function renderDesktopView(){
   return html`
     <div class='desktop-view'>
-      <button class='item-line' @click=${() => console.log(this.data)}>
-        <cork-icon icon=${this.isDirectory ? 'fas.folder' : 'fas.file'} class='type-icon'></cork-icon>
-        <div>${this.name}</div>
-      </button>
+      <div class='item-line'>
+        <div>
+          <button @click=${this._onItemClick} class='link-button link-button--bold'>
+            <cork-icon icon=${this.isDirectory ? 'fas.folder' : 'fas.file'} class='type-icon'></cork-icon>
+            <div>${this.name}</div>
+          </button>
+        </div>
+        <div>${this.kind}</div>
+        <div>${this.size}</div>
+        <div class='date-container'><div class='keep-together'>${this.modifiedDate}</div> <div class='keep-together'>${this.modifiedTime}</div></div>
+        <cork-icon-button 
+          @click=${this._onDeleteClick}
+          class='delete-icon'
+          icon='fas.trash' 
+          basic
+          link-aria-label='Delete Item'
+          title='Delete Item'>
+        </cork-icon-button>
+      </div>
     </div>
   `
 }
