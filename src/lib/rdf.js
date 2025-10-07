@@ -356,23 +356,46 @@ class Rdf {
    */
   async links(metadata, opts={}) {
     let [outbound, inbound] = await Promise.all([
-      this.getReferences(metadata.file_id, opts),
+      this.getReferencing(metadata.file_id, opts),
       this.getReferencedBy(metadata.file_id, opts)
+      
     ]);
 
     return { 
       source : {
-        fileId: metadata.file_id,
-        filepath: path.join(metadata.directory, metadata.filename),
+        containment: path.join(metadata.directory, metadata.filename),
         resourceType : metadata.metadata.resource_type,
-        mimeType: metadata.metadata.mimeType
+        mimeType: metadata.metadata.mimeType,
+        partitionKeys: metadata.partition_keys
       },
-      outbound, inbound 
+      outbound: opts.stats ? this._formatRelStatsResponse(outbound) : this._formatRelResponse(outbound),
+      inbound: opts.stats ? this._formatRelStatsResponse(inbound) : this._formatRelResponse(inbound)
     };
   }
 
-  async getReferences(fileId, opts={}) {
-    let where = ['source_view.file_id = $1', 'target_view.file_id != $1'];
+  _formatRelStatsResponse(rows) {
+    let data = {};
+    for( let r of rows ) {
+      data[r.predicate] = parseInt(r.count);
+    }
+    return data;
+  }
+
+  _formatRelResponse(rows) {
+    let data = {};
+    for( let r of rows ) {
+      if( !data[r.predicate] ) data[r.predicate] = new Set();
+      data[r.predicate].add(r.containment);
+    }
+    for( let p of Object.keys(data) ) {
+      data[p] = Array.from(data[p]);
+    }
+
+    return data;
+  }
+
+  async getReferencing(fileId, opts={}) {
+    let where = ['source_view.file_id = $1', 'referencing_view.file_id != $1'];
     let args = [fileId];
 
     if( opts.predicate ) {
@@ -395,12 +418,14 @@ class Rdf {
       if( !Array.isArray(opts.partitionKeys) ) {
         opts.partitionKeys = [opts.partitionKeys];
       }
-      where.push(`target_view.partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
+      where.push(`referencing_view.partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
+      where.push(`source_view.partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
       args.push(opts.partitionKeys);
     }
 
     if( opts.graph ) {
-      where.push(`target_view.graph = $${args.length + 1}`);
+      where.push(`referencing_view.graph = $${args.length + 1}`);
+      where.push(`source_view.graph = $${args.length + 1}`);
       args.push(opts.graph);
     }
 
@@ -409,34 +434,57 @@ class Rdf {
       args.push(opts.subject);
     }
 
+
+    if( opts.stats ) {
+      let res = await this.dbClient.query(`WITH combined AS (
+          SELECT 
+              source_view.predicate,
+              count(*) as count
+          FROM caskfs.rdf_link_view source_view
+          -- Find other files where this object URI appears as a subject
+          JOIN caskfs.rdf_link_view referencing_view ON source_view.object = referencing_view.subject
+          WHERE ${where.join(' AND ')}
+          GROUP BY source_view.predicate
+
+          UNION ALL
+
+          SELECT 
+              source_view.predicate,
+              count(*) as count
+          FROM caskfs.rdf_link_view source_view
+          JOIN caskfs.rdf_node_view referencing_view ON source_view.object = referencing_view.subject
+          WHERE ${where.join(' AND ')}
+          GROUP BY source_view.predicate
+      )
+      SELECT
+        c.predicate,
+        SUM(c.count) as count
+      FROM combined c
+      GROUP BY c.predicate
+      ORDER BY count DESC`, args);
+
+      return res.rows;
+
+    }
+
     let limit = 'LIMIT $'+(args.length + 1);
     args.push(opts.limit || 100);
 
     let res = await this.dbClient.query(`WITH links AS (
         SELECT 
-            target_view.file_id,
-            target_view.containment,
-            target_view.graph,
-            source_view.subject as source_subject,
-            source_view.predicate,
-            target_view.subject as target_subject,
-            target_view.object as target_object
+            referencing_view.containment AS containment,
+            source_view.predicate AS predicate
         FROM caskfs.rdf_link_view source_view
         -- Find other files where this object URI appears as a subject
-        JOIN caskfs.rdf_link_view target_view ON source_view.object = target_view.subject
+        JOIN caskfs.rdf_link_view referencing_view ON source_view.object = referencing_view.subject 
         WHERE ${where.join(' AND ')}
     ),
     nodes AS (
-        SELECT 
-            target_view.file_id,
-            target_view.containment,
-            target_view.graph,
-            source_view.subject AS source_subject,
-            source_view.predicate,
-            target_view.subject AS target_subject,
-            data::text AS target_object
+        SELECT
+            referencing_view.containment AS containment,
+            source_view.predicate AS predicate
         FROM caskfs.rdf_link_view source_view
-        JOIN caskfs.rdf_node_view target_view ON source_view.object = target_view.subject
+        JOIN caskfs.rdf_node_view referencing_view ON source_view.object = referencing_view.subject 
         WHERE ${where.join(' AND ')}
     )
     SELECT * FROM links
@@ -451,14 +499,15 @@ class Rdf {
     // let where = ['target_view.file_id != $1', 'source_view.subject = target_view.object'];
     // let args = [fileId];
     
-    let where = ['target_view.file_id != $1'];
+    let where = ['ref_by_view.file_id != $1'];
+    let distinctWhere = ['v.file_id = $1'];
     let args = [fileId];  
 
     if( opts.predicate ) {
       if( !Array.isArray(opts.predicate) ) {
         opts.predicate = [opts.predicate];
       }
-      where.push(`target_view.predicate @> $${args.length + 1}::VARCHAR(256)[]`);
+      where.push(`ref_by_view.predicate @> $${args.length + 1}::VARCHAR(256)[]`);
       args.push(opts.predicate);
     }
 
@@ -466,7 +515,7 @@ class Rdf {
       if( !Array.isArray(opts.ignorePredicate) ) {
         opts.ignorePredicate = [opts.ignorePredicate];
       }
-      where.push(`target_view.predicate <> ALL ($${args.length + 1}::VARCHAR(256)[])`);
+      where.push(`ref_by_view.predicate <> ALL ($${args.length + 1}::VARCHAR(256)[])`);
       args.push(opts.ignorePredicate);
     }
 
@@ -474,50 +523,61 @@ class Rdf {
       if( !Array.isArray(opts.partitionKeys) ) {
         opts.partitionKeys = [opts.partitionKeys];
       }
-      where.push(`target_view.partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
+      where.push(`ref_by_view.partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
+      distinctWhere.push(`v.partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
       args.push(opts.partitionKeys);
     }
 
     if( opts.graph ) {
-      where.push(`target_view.graph = $${args.length + 1}`);
+      where.push(`ref_by_view.graph = $${args.length + 1}`);
+      distinctWhere.push(`v.graph = $${args.length + 1}`);
       args.push(opts.graph);
     }
 
     // TODO: filter early
     if( opts.subject ) {
-      where.push(`source_view.subject = $${args.length + 1}`);
+      where.push(`v.subject = $${args.length + 1}`);
       args.push(opts.subject);
     }
 
-    let limit = 'LIMIT $'+(args.length + 1);
-    args.push(opts.limit || 100);
-
-    let resp = await this.dbClient.query(`
-        WITH distinct_subjects AS (
-          SELECT DISTINCT rv.subject
-          FROM caskfs.rdf_link_view rv
-          WHERE rv.file_id = $1
-          UNION
-          SELECT DISTINCT rn.subject
-          FROM caskfs.rdf_node_view rn
-          WHERE rn.file_id = $1
-      ), 
-      links AS (
-          SELECT * FROM caskfs.rdf_link_view target_view
-          WHERE ${where.join(' AND ')}
-      )
-      SELECT 
-          target_view.file_id,
-          target_view.containment,
-          target_view.graph,
-          source_view.subject as source_subject,
-          target_view.subject as target_subject,
-          target_view.predicate,
-          target_view.object as target_object
+    let select, limit;
+    if( opts.stats ) {
+      select = `SELECT
+          count(*) as count,
+          ref_by_view.predicate as predicate
           FROM distinct_subjects source_view
           -- Find other files where this object URI appears as a subject
-          INNER JOIN links target_view ON source_view.subject = target_view.object
-          ${limit}
+          INNER JOIN links ref_by_view ON ref_by_view.object = source_view.subject
+          GROUP BY ref_by_view.predicate
+          ORDER BY count DESC`;
+    } else {
+      limit = 'LIMIT $'+(args.length + 1);
+      args.push(opts.limit || 100);
+
+      select = `SELECT 
+          ref_by_view.containment,
+          ref_by_view.predicate
+          FROM distinct_subjects source_view
+          -- Find other files where this object URI appears as a subject
+          INNER JOIN links ref_by_view ON ref_by_view.object = source_view.subject
+          ${limit}`;
+    }
+
+    let resp = await this.dbClient.query(`
+      WITH distinct_subjects AS (
+        SELECT DISTINCT v.subject
+        FROM caskfs.rdf_link_view v
+        WHERE ${distinctWhere.join(' AND ')}
+        UNION
+        SELECT DISTINCT v.subject
+        FROM caskfs.rdf_node_view v
+        WHERE ${distinctWhere.join(' AND ')}
+      ), 
+      links AS (
+          SELECT * FROM caskfs.rdf_link_view ref_by_view
+          WHERE ${where.join(' AND ')}
+      )
+      ${select}
       `, args);
 
     return resp.rows;
@@ -683,25 +743,3 @@ class Rdf {
 }
 
 export default Rdf;
-
-// EXPLAIN ANALYZE
-// WITH distinct_subjects AS (
-//           SELECT DISTINCT rv.subject
-//           FROM caskfs.rdf_link_view rv
-//           WHERE rv.file_id = '088f54db-9bf7-46eb-9acb-46dc44a0a9a4'
-//           UNION
-//           SELECT DISTINCT rn.subject
-//           FROM caskfs.rdf_node_view rn
-//           WHERE rn.file_id = '088f54db-9bf7-46eb-9acb-46dc44a0a9a4'
-//       )
-//       SELECT 
-//           target_view.file_id,
-//           target_view.containment,
-//           target_view.graph,
-//           target_view.subject as target_subject,
-//           target_view.predicate,
-//           target_view.object as source_object
-//           FROM distinct_subjects source_view
-//           -- Find other files where this object URI appears as a subject
-//           INNER JOIN caskfs.rdf_link_view target_view ON 
-//             target_view.file_id != '088f54db-9bf7-46eb-9acb-46dc44a0a9a4' AND source_view.subject = target_view.object;
