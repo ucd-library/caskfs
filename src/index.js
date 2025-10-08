@@ -502,7 +502,7 @@ class CaskFs {
    * @returns {Promise<Object>} result of the insert query
    */
   async setUserRole(opts={}) {
-    return this.runInTransation(async (dbClient) => {
+    return this.runInTransaction(async (dbClient) => {
       opts.dbClient = dbClient;
       await this.acl.ensureUser(opts);
       await this.acl.ensureRole(opts);
@@ -522,7 +522,7 @@ class CaskFs {
    * @returns {Promise<Object>} result of the delete query
    */
   async removeUserRole(opts={}) {
-    await this.runInTransation(async (dbClient) => {
+    await this.runInTransaction(async (dbClient) => {
       opts.dbClient = dbClient;
       return this.acl.removeUserRole(opts);
     });
@@ -539,7 +539,7 @@ class CaskFs {
    * @param {Object} opts.dbClient Optional. database client instance, defaults to instance dbClient
    */
   async setDirectoryPermission(opts={}) {
-    await this.runInTransation(async (dbClient) => {
+    await this.runInTransaction(async (dbClient) => {
       opts.dbClient = dbClient;
       let {rootDirectoryAclId, directoryId} = await this.acl.setDirectoryPermission(opts);
       
@@ -561,9 +561,9 @@ class CaskFs {
    * @param {Object} opts.dbClient Optional. database client instance, defaults to instance dbClient
    */
   async removeDirectoryPermission(opts={}) {
-    await this.runInTransation(async (dbClient) => {
+    await this.runInTransaction(async (dbClient) => {
       opts.dbClient = dbClient;
-      await this.directory.removeDirectoryPermission(opts);
+      await this.acl.removeDirectoryPermission(opts);
     });
   }
 
@@ -578,7 +578,7 @@ class CaskFs {
    * @returns {Promise<void>}
    */
   async removeDirectoryAcl(opts={}) {
-    await this.runInTransation(async (dbClient) => {
+    await this.runInTransaction(async (dbClient) => {
       opts.dbClient = dbClient;
       return this.acl.removeRootDirectoryAcl(opts);
     });
@@ -647,7 +647,7 @@ class CaskFs {
   }
 
   /**
-   * @method runInTransation
+   * @method runInTransaction
    * @description Open a new database client connection, start a transaction, run the provided function,
    * commit the transaction and close the connection. If any error occurs, rollback the transaction.
    * Function is passed the dbClient as the first argument.  Function can be async.
@@ -655,7 +655,7 @@ class CaskFs {
    * @param {Function} fn function to run in the transaction, passed the dbClient as the first argument
    * @returns {any} result of the function
    */
-  async runInTransation(fn) {
+  async runInTransaction(fn) {
     let dbClient = await this.openTransaction();
     let result;
     try {

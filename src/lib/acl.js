@@ -305,17 +305,17 @@ class Acl {
    *
    * @param {Object} opts
    * @param {Object} opts.dbClient Required. database client instance
-   * @param {String} opts.directoryId Required. directory ID
+   * @param {String} opts.directory Required. directory ID
    * 
    * @returns {Promise<Object>} root directory acl object or null if it does not exist
    */
   async getRootDirectoryAcl(opts={}) {
-    let {dbClient, directoryId} = opts;
-    if( !dbClient || !directoryId ) {
-      throw new Error('dbClient and directoryId are required');
+    let {dbClient, directory} = opts;
+    if( !dbClient || !directory ) {
+      throw new Error('dbClient and directory are required');
     }
     let res = await dbClient.query(`
-      SELECT * FROM ${config.database.schema}.directory_acl WHERE directory_id = $1`, [directoryId]);
+      SELECT * FROM ${config.database.schema}.directory_acl WHERE fullname = $1`, [directory]);
     if( res.rows.length === 0 ) {
       return null;
     }
