@@ -5,6 +5,7 @@ import mime from "mime";
 import Cas from "./lib/cas.js";
 import Rdf from "./lib/rdf.js";
 import Directory from "./lib/directory.js";
+import Acl from "./lib/acl.js";
 import { getLogger } from "./lib/logger.js";
 import createContext from "./lib/context.js";
 import AutoPathBucket from "./lib/auto-path/bucket.js";
@@ -55,6 +56,8 @@ class CaskFs {
       bucket: new AutoPathBucket({dbClient: this.dbClient, schema: this.schema}),
       partition: new AutoPathPartition({dbClient: this.dbClient, schema: this.schema})
     };
+
+    this.acl = new Acl();
   }
 
   createContext(obj) {
@@ -438,6 +441,64 @@ class CaskFs {
     };
   }
 
+  async ensureRole(opts={}) {
+    opts.dbClient = opts.dbClient || this.dbClient;
+    await this.acl.ensureRole(opts);
+    return this.acl.getRole(opts);
+  }
+
+  async ensureUser(opts={}) {
+    opts.dbClient = opts.dbClient || this.dbClient;
+    return this.acl.ensureUser(opts);
+  }
+
+  async setUserRole(opts={}) {
+    opts.dbClient = opts.dbClient || this.dbClient;
+
+    await this.runInTransation(async (dbClient) => {
+      opts.dbClient = dbClient;
+      await this.acl.ensureUser(opts);
+      await this.acl.ensureRole(opts);
+      await this.acl.ensureUserRole(opts);
+    });
+
+    return this.acl.getRole(opts);
+  }
+
+  async removeUserRole(opts={}) {
+    await this.runInTransation(async (dbClient) => {
+      opts.dbClient = dbClient;
+      return this.acl.removeUserRole(opts);
+    });
+  }
+
+  async setDirectoryPermission(opts={}) {
+    await this.runInTransation(async (dbClient) => {
+      opts.dbClient = dbClient;
+      let {rootDirectoryAclId, directoryId} = await this.directory.setDirectoryPermission(opts);
+      
+      await this.acl.setDirectoryAcl({ 
+        dbClient : opts.dbClient,
+        rootDirectoryAclId,
+        directoryId
+      });
+    });
+  }
+
+  async removeDirectoryPermission(opts={}) {
+    await this.runInTransation(async (dbClient) => {
+      opts.dbClient = dbClient;
+      await this.directory.removeDirectoryPermission(opts);
+    });
+  }
+
+  async removeDirectoryAcl(opts={}) {
+    await this.runInTransation(async (dbClient) => {
+      opts.dbClient = dbClient;
+      return this.acl.removeRootDirectoryAcl(opts);
+    });
+  }
+
   /**
    * @method getCasLocation
    * 
@@ -480,6 +541,43 @@ class CaskFs {
     }
 
     return results;
+  }
+
+
+  /**
+   * @method runInTransation
+   * @description Open a new database client connection, start a transaction, run the provided function,
+   * commit the transaction and close the connection. If any error occurs, rollback the transaction.
+   * Function is passed the dbClient as the first argument.  Function can be async.
+   * 
+   * @param {Function} fn function to run in the transaction, passed the dbClient as the first argument
+   * @returns {any} result of the function
+   */
+  async runInTransation(fn) {
+    let dbClient = await this.openTransaction();
+    let result;
+    try {
+      result = await fn(dbClient);
+    } catch(err) {
+      await dbClient.query('ROLLBACK');
+      throw err;  
+    }
+    await dbClient.query('COMMIT');
+    await dbClient.end();
+    return result;
+  }
+
+  /**
+   * @method openTransaction
+   * @description Open a new database client connect, open transaction and return the db client.
+   * 
+   * @returns {DatabaseClient} database client with open transaction
+   */
+  async openTransaction() {
+    let dbClient = new Database({type: opts.dbType || config.database.client});
+    await dbClient.connect();
+    await dbClient.query('BEGIN');
+    return dbClient;
   }
 
   close() {

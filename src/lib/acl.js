@@ -7,11 +7,11 @@ class Acl {
   }
 
   async getUserRoles(opts={}) {
-    let { user, pgClient } = opts;
-    if( !user || !pgClient ) {
-      throw new Error('User and pgClient are required');
+    let { user, dbClient } = opts;
+    if( !user || !dbClient ) {
+      throw new Error('User and dbClient are required');
     }
-    let res = await pgClient.query(`
+    let res = await dbClient.query(`
       SELECT r.name AS role
       FROM ${config.database.schema}.acl_role r
       JOIN ${config.database.schema}.acl_user_role ur ON r.role_id = ur.role_id
@@ -20,49 +20,78 @@ class Acl {
     return res.rows.map(r => r.role);
   }
 
-  async ensureRole(opts={}) {
-    let { role, pgClient } = opts;
-    if( !role || !pgClient ) {
-      throw new Error('Role and pgClient are required');
+  getRoleId(opts={}) {
+    let { role, dbClient } = opts;
+    if( !role || !dbClient ) {
+      throw new Error('Role and dbClient are required');
     }
-    let res = await pgClient.query(`INSERT INTO ${config.database.schema}.acl_role (name) VALUES ($1) ON CONFLICT (name) DO NOTHING RETURNING role_id`, [role]);
+    return dbClient.query(`SELECT role_id FROM ${config.database.schema}.acl_role WHERE name = $1`, [role]);
+  }
+
+  getRole(opts={}) {
+    let { role, dbClient } = opts;
+    if( !role || !dbClient ) {
+      throw new Error('Role and dbClient are required');
+    }
+    return dbClient.query(`SELECT * FROM ${config.database.schema}.acl_user_roles_view WHERE role = $1`, [role]);
+  }
+
+  async ensureRole(opts={}) {
+    let { role, dbClient } = opts;
+    if( !role || !dbClient ) {
+      throw new Error('Role and dbClient are required');
+    }
+    let res = await dbClient.query(`INSERT INTO ${config.database.schema}.acl_role (name) VALUES ($1) ON CONFLICT (name) DO NOTHING RETURNING role_id`, [role]);
     if( res.rows.length === 0 ) {
-      res = await pgClient.query(`SELECT role_id FROM ${config.database.schema}.acl_role WHERE name = $1`, [role]);
+      res = await dbClient.query(`SELECT role_id FROM ${config.database.schema}.acl_role WHERE name = $1`, [role]);
     }
     return res.rows[0].role_id;
   }
 
   async ensureUser(opts={}) {
-    let { user, pgClient } = opts;
-    if( !user || !pgClient ) {
-      throw new Error('User and pgClient are required');
+    let { user, dbClient } = opts;
+    if( !user || !dbClient ) {
+      throw new Error('User and dbClient are required');
     }
-    let res = await pgClient.query(`INSERT INTO ${config.database.schema}.acl_user (name) VALUES ($1) ON CONFLICT (name) DO NOTHING RETURNING user_id`, [user]);
+    let res = await dbClient.query(`INSERT INTO ${config.database.schema}.acl_user (name) VALUES ($1) ON CONFLICT (name) DO NOTHING RETURNING user_id`, [user]);
     if( res.rows.length === 0 ) {
-      res = await pgClient.query(`SELECT user_id FROM ${config.database.schema}.acl_user WHERE name = $1`, [user]);
+      res = await dbClient.query(`SELECT user_id FROM ${config.database.schema}.acl_user WHERE name = $1`, [user]);
+    }
+    return res.rows[0].user_id;
+  }
+
+  async getUserId(opts={}) {
+    let { user, dbClient } = opts;
+    if( !user || !dbClient ) {
+      throw new Error('User and dbClient are required');
+    }
+    let res = await dbClient.query(`SELECT user_id FROM ${config.database.schema}.acl_user WHERE name = $1`, [user]);
+    if( res.rows.length === 0 ) {
+      throw new Error(`User ${user} does not exist`);
     }
     return res.rows[0].user_id;
   }
 
   async ensureUserRole(opts={}) {
-    let { user, role, pgClient } = opts;
-    if( !user || !role || !pgClient ) {
-      throw new Error('User, role and pgClient are required');
+    let { user, role, dbClient } = opts;
+    if( !user || !role || !dbClient ) {
+      throw new Error('User, role and dbClient are required');
     }
-    let userId = await this.ensureUser({ user, pgClient });
-    let roleId = await this.ensureRole({ role, pgClient });
-    let res = await pgClient.query(`INSERT INTO ${config.database.schema}.acl_user_role (user_id, role_id) VALUES ($1, $2) ON CONFLICT (user_id, role_id) DO NOTHING`, [userId, roleId]);
-    return res;
+    let userId = await this.ensureUser({ user, dbClient });
+    let roleId = await this.ensureRole({ role, dbClient });
+    await dbClient.query(`INSERT INTO ${config.database.schema}.acl_user_role (user_id, role_id) VALUES ($1, $2) ON CONFLICT (user_id, role_id) DO NOTHING`, [userId, roleId]);    
   }
 
   async removeUserRole(opts={}) {
-    let { user, role, pgClient } = opts;
-    if( !user || !role || !pgClient ) {
-      throw new Error('User, role and pgClient are required');
+    let { user, role, dbClient } = opts;
+    if( !user || !role || !dbClient ) {
+      throw new Error('User, role and dbClient are required');
     }
-    let userId = await this.ensureUser({ user, pgClient });
-    let roleId = await this.ensureRole({ role, pgClient });
-    let res = await pgClient.query(`
+
+    // TODO: write getters 
+    let userId = await this.ensureUser({ user, dbClient });
+    let roleId = await this.ensureRole({ role, dbClient });
+    let res = await dbClient.query(`
       WITH role AS (SELECT role_id FROM ${config.database.schema}.acl_role WHERE name = $2),
            user AS (SELECT user_id FROM ${config.database.schema}.acl_user WHERE name = $1)
       DELETE FROM ${config.database.schema}.acl_user_role WHERE user_id = (SELECT user_id FROM user) AND role_id = (SELECT role_id FROM role)`, [userId, roleId]);
@@ -70,39 +99,46 @@ class Acl {
   }
 
   async getRootDirectoryAcls(opts={}) {
-    let {pgClient} = opts;
-    if( !pgClient ) {
-      throw new Error('pgClient is required');
+    let {dbClient} = opts;
+    if( !dbClient ) {
+      throw new Error('dbClient is required');
     }
-    let res = await pgClient.query(`SELECT * FROM ${config.database.schema}.root_directory_acl`);
+    let res = await dbClient.query(`SELECT * FROM ${config.database.schema}.root_directory_acl`);
     return res.rows;
   }
 
   async ensureRootDirectoryAcl(opts={}) {
-    let { pgClient, directory, public } = opts;
-    if( !pgClient || !directory ) {
-      throw new Error('pgClient and directory are required');
+    let { dbClient, directory, public } = opts;
+    if( !dbClient || !directory ) {
+      throw new Error('dbClient and directory are required');
     }
-    let res = await pgClient.query(`
-      WITH dir AS (
-        SELECT directory_id FROM ${config.database.schema}.directory WHERE fullname = $1
-      )
+
+    let dir = await dbClient.query(`SELECT directory_id FROM ${config.database.schema}.directory WHERE fullname = $1`, [directory]);
+    if( dir.rows.length === 0 ) {
+      throw new Error(`Directory ${directory} does not exist`);
+    }
+    let directoryId = dir.rows[0].directory_id;
+
+    let res = await dbClient.query(`
       INSERT INTO ${config.database.schema}.root_directory_acl (directory_id, public) 
-      VALUES ((SELECT directory_id FROM dir), $2) 
+      VALUES ($1, $2) 
       ON CONFLICT (directory_id) 
-      DO UPDATE SET public = EXCLUDED.public
+      DO UPDATE SET public = EXCLUDED.public,
+                    modified = NOW()
       RETURNING root_directory_acl_id`, 
-      [directory, public]
+      [directoryId, public]
     );
-    return res.rows[0].root_directory_acl_id;
+    let rootDirectoryAclId = res.rows[0].root_directory_acl_id;
+
+    return rootDirectoryAclId;
   }
 
   async removeRootDirectoryAcl(opts={}) {
-    let { pgClient, directory } = opts;
-    if( !pgClient || !directory ) {
-      throw new Error('pgClient and directory are required');
+    let { dbClient, directory } = opts;
+    if( !dbClient || !directory ) {
+      throw new Error('dbClient and directory are required');
     }
-    let res = await pgClient.query(`
+    let res = await dbClient.query(`
       WITH dir AS (
         SELECT directory_id FROM ${config.database.schema}.directory WHERE fullname = $1
       )
@@ -114,7 +150,7 @@ class Acl {
     
     // find the next parent directory with an acl and apply it to all children that do not have an explicit acl
     if( res.rows[0].root_directory_acl_id ) {
-      let parentRes = await pgClient.query(`
+      let parentRes = await dbClient.query(`
         WITH RECURSIVE parent_dirs AS (
           SELECT d.parent_id, d.directory_id
           FROM ${config.database.schema}.directory d
@@ -132,26 +168,46 @@ class Acl {
         LIMIT 1`, [directory]);
       if( parentRes.rows.length > 0 ) {
         let parentRootDirectoryAclId = parentRes.rows[0].root_directory_acl_id;
-        let dirRes = await pgClient.query(`SELECT directory_id FROM ${config.database.schema}.directory WHERE fullname = $1`, [directory]);
+        let dirRes = await dbClient.query(`SELECT directory_id FROM ${config.database.schema}.directory WHERE fullname = $1`, [directory]);
         if( dirRes.rows.length > 0 ) {
           let directoryId = dirRes.rows[0].directory_id;
-          await this.setDirectoryAcl({ directoryId, rootDirectoryAclId: parentRootDirectoryAclId, pgClient });
+          await this.setDirectoryAcl({ directoryId, rootDirectoryAclId: parentRootDirectoryAclId, dbClient });
         }
       }
     }
 
   }
 
+  async removeDirectoryPermission(opts={}) {
+    let { directory, role, dbClient } = opts;
+    if( !directory || !role || !dbClient ) {
+      throw new Error('Directory, role and dbClient are required');
+    }
+
+    let res = await dbClient.query(`
+      WITH role AS (SELECT role_id FROM ${config.database.schema}.acl_role WHERE name = $2),
+           dir AS (SELECT directory_id FROM ${config.database.schema}.directory WHERE fullname = $1),
+           rda AS (SELECT root_directory_acl_id FROM ${config.database.schema}.root_directory_acl WHERE directory_id = (SELECT directory_id FROM dir))
+      DELETE FROM ${config.database.schema}.acl_permission 
+      WHERE root_directory_acl_id = (SELECT root_directory_acl_id FROM rda) 
+        AND role_id = (SELECT role_id FROM role)
+      RETURNING acl_permission_id`, 
+      [directory, role]
+    );
+  
+    return res;
+  }
+
   async setDirectoryPermission(opts={}) {
-    let { directory, role, permission, pgClient } = opts;
-    if( !directory || !role || !permission || !pgClient ) {
-      throw new Error('Directory, role, permission and pgClient are required');
+    let { directory, role, permission, dbClient } = opts;
+    if( !directory || !role || !permission || !dbClient ) {
+      throw new Error('Directory, role, permission and dbClient are required');
     }
  
-    let roleId = await this.ensureRole({ role, pgClient });
-    let rootDirectoryAclId = await this.ensureRootDirectoryAcl({ directory, pgClient, public: false });
+    let roleId = await this.ensureRole({ role, dbClient });
+    let {rootDirectoryAclId, directoryId} = await this.ensureRootDirectoryAcl({ directory, dbClient, public: false });
 
-    let res = await pgClient.query(`
+    let res = await dbClient.query(`
       INSERT INTO ${config.database.schema}.acl_permission (root_directory_acl_id, role_id, permission) 
       VALUES ($1, $2, $3) 
       ON CONFLICT (root_directory_acl_id, role_id) 
@@ -159,17 +215,19 @@ class Acl {
       RETURNING acl_permission_id`, 
       [rootDirectoryAclId, roleId, permission]
     );
-    return res.rows[0].acl_permission_id;
+    let aclPermissionId = res.rows[0].acl_permission_id;
+
+    return { aclPermissionId, rootDirectoryAclId, roleId, directoryId };
   }
 
   async setDirectoryAcl(opts={}) {
-    let { rootDirectoryAclId, directoryId, pgClient } = opts;
-    if( !directoryId || !rootDirectoryAclId || !pgClient ) {
-      throw new Error('directoryId, rootDirectoryAclId and pgClient are required');
+    let { rootDirectoryAclId, directoryId, dbClient } = opts;
+    if( !directoryId || !rootDirectoryAclId || !dbClient ) {
+      throw new Error('directoryId, rootDirectoryAclId and dbClient are required');
     }
 
     // check if the directory already has an explicit acl set
-    let res = await pgClient.query(`
+    let res = await dbClient.query(`
       SELECT 1 FROM ${config.database.schema}.directory_acl WHERE directory_id = $1 AND root_directory_acl_id = $2
     `, [directoryId, rootDirectoryAclId]);
 
@@ -178,13 +236,17 @@ class Acl {
       return;
     }
 
-    await pgClient.query(`
+    await dbClient.query(`
       INSERT INTO ${config.database.schema}.directory_acl (directory_id, root_directory_acl_id)
       VALUES ($1, $2)
-      ON CONFLICT DO NOTHING`, [directoryId, rootDirectoryAclId]
+      ON CONFLICT (directory_id) 
+      DO UPDATE SET 
+        root_directory_acl_id = EXCLUDED.root_directory_acl_id,
+        modified = NOW()`, 
+      [directoryId, rootDirectoryAclId]
     );
 
-    let children = await pgClient.query(`
+    let children = await dbClient.query(`
       SELECT d.directory_id, rda.root_directory_acl_id
       FROM ${config.database.schema}.directory d
       LEFT JOIN ${config.database.schema}.root_directory_acl rda ON d.directory_id = rda.directories_id
@@ -194,8 +256,10 @@ class Acl {
         this.logger.debug(`Child directory ${child.directory_id} has explicit root_directory_acl_id, skipping`);
         continue;
       }
-      await this.setDirectoryAcl({ directoryId: child.directory_id, rootDirectoryAclId, pgClient });
+      await this.setDirectoryAcl({ directoryId: child.directory_id, rootDirectoryAclId, dbClient });
     }
   }
 
 }
+
+export default Acl;

@@ -7,6 +7,9 @@ SET search_path TO caskfs;
 
 CREATE TYPE caskfs.permission AS ENUM ('read', 'write', 'admin');
 
+----------------
+-- acl_role
+----------------
 CREATE TABLE IF NOT EXISTS caskfs.acl_role (
   role_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name       VARCHAR(256) NOT NULL UNIQUE,
@@ -14,6 +17,9 @@ CREATE TABLE IF NOT EXISTS caskfs.acl_role (
 );
 CREATE INDEX IF NOT EXISTS idx_role_name ON caskfs.acl_role(name);
 
+----------------
+-- acl_user
+----------------
 CREATE TABLE IF NOT EXISTS caskfs.acl_user (
   user_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name      VARCHAR(256) NOT NULL UNIQUE,
@@ -21,16 +27,22 @@ CREATE TABLE IF NOT EXISTS caskfs.acl_user (
 );
 CREATE INDEX IF NOT EXISTS idx_user_name ON caskfs.acl_user(name);
 
+----------------
+-- acl_role_user
+----------------
 CREATE TABLE IF NOT EXISTS caskfs.acl_role_user (
   acl_role_user_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   role_id          UUID NOT NULL REFERENCES caskfs.acl_role(role_id),
   user_id          UUID NOT NULL REFERENCES caskfs.acl_user(user_id),
   created         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  modified        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(role_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_acl_role_user_userrole_id ON caskfs.acl_role_user(role_id, user_id);
 
--- Directory ACLs
+----------------
+-- acl_permission
+----------------
 CREATE TABLE IF NOT EXISTS caskfs.acl_permission (
     acl_permission_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     root_directory_acl_id      UUID NOT NULL REFERENCES caskfs.root_directory_acl(root_directory_acl_id) ON DELETE CASCADE,
@@ -44,7 +56,9 @@ CREATE INDEX IF NOT EXISTS idx_acl_permission_role_id ON caskfs.acl_permission(r
 CREATE INDEX IF NOT EXISTS idx_acl_permission_root_directory_acl_id ON caskfs.acl_permission(root_directory_acl_id);
 CREATE INDEX IF NOT EXISTS idx_acl_permission_role_id_permission ON caskfs.acl_permission(role_id, permission);
 
--- Directory
+----------------
+-- directory
+----------------
 CREATE TABLE IF NOT EXISTS caskfs.directory (
     directory_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     fullname        VARCHAR(256) NOT NULL UNIQUE,
@@ -59,30 +73,44 @@ CREATE TABLE IF NOT EXISTS caskfs.directory (
 CREATE INDEX IF NOT EXISTS idx_directory_name ON caskfs.directory(name);
 CREATE INDEX IF NOT EXISTS idx_directory_parent_id ON caskfs.directory(parent_id);
 
+----------------
+-- directory_acl
+----------------
 CREATE TABLE IF NOT EXISTS caskfs.directory_acl (
     directory_acl_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     directory_id          UUID UNIQUE NOT NULL REFERENCES caskfs.directory(directory_id),
     root_directory_acl_id UUID REFERENCES caskfs.root_directory_acl(root_directory_acl_id),
+    modified              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_directory_acl_directory_id ON caskfs.directory_acl(directory_id, root_directory_acl_id);
 
+----------------
+-- root_directory_acl
+----------------
 CREATE TABLE IF NOT EXISTS caskfs.root_directory_acl (
     root_directory_acl_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     directories_id         UUID UNIQUE NOT NULL REFERENCES caskfs.directory(directory_id),
-    public                 BOOLEAN NOT NULL DEFAULT FALSE
+    public                 BOOLEAN NOT NULL DEFAULT FALSE,
+    modified               TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_root_directory_acl_directories_id ON caskfs.root_directory_acl(directories_id);
 
+----------------
+-- acl_user_roles_view
+----------------
 CREATE OR REPLACE VIEW caskfs.acl_user_roles_view AS
 SELECT
     u.user_id,
-    u.name AS username,
+    u.name AS user,
     r.role_id,
-    r.name AS rolename
+    r.name AS role
 FROM caskfs.acl_user u
 LEFT JOIN caskfs.acl_role_user ru ON u.user_id = ru.user_id
 LEFT JOIN caskfs.acl_role r ON ru.role_id = r.role_id;
 
+----------------
+-- directory_user_permissions_lookup
+----------------
 CREATE MATERIALIZED VIEW IF NOT EXISTS caskfs.directory_user_permissions_lookup AS
 SELECT
     d.directory_id,
@@ -143,22 +171,9 @@ END;
 $$ LANGUAGE plpgsql;
 
 
-
-CREATE OR REPLACE VIEW caskfs.directory_acl_view AS
-SELECT
-    d.directory_id,
-    da.directory_acl_id,
-    d.parent_id,
-    d.fullname AS directory,
-    da.read,
-    da.write,
-    CASE
-      WHEN da.directory_id = d.directory_id THEN TRUE
-      ELSE FALSE
-    END AS is_explicit
-FROM caskfs.directory d
-LEFT JOIN caskfs.directory_acl da ON d.directory_acl_id = da.directory_acl_id;
-
+----------------
+-- file
+----------------
 CREATE TABLE IF NOT EXISTS caskfs.file (
     file_id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name            VARCHAR(256) NOT NULL,
@@ -176,6 +191,9 @@ CREATE INDEX IF NOT EXISTS idx_file_name ON caskfs.file(name);
 CREATE INDEX IF NOT EXISTS idx_file_partition_keys ON caskfs.file USING GIN(partition_keys);
 CREATE INDEX IF NOT EXISTS idx_file_directory_name ON caskfs.file(directory_id, name);
 
+----------------
+-- file_view
+----------------
 CREATE OR REPLACE VIEW caskfs.file_view AS
 SELECT
     f.file_id,
@@ -229,6 +247,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+----------------
+-- unused_hashes 
+----------------
 -- View to show all hashes not in use by any file
 CREATE OR REPLACE VIEW caskfs.unused_hashes AS
   SELECT h.hash_id, h.value
