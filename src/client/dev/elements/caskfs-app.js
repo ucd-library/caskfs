@@ -19,6 +19,7 @@ import './pages/caskfs-page-partitions.js';
 import './components/cork-app-error.js';
 import './components/cork-app-loader.tpl.js';
 import './components/cork-app-toast.js';
+import './components/cork-app-dialog-modal.js';
 
 // icon elements
 import '@ucd-lib/cork-icon';
@@ -27,6 +28,10 @@ import '@ucd-lib/cork-icon';
 import '../../../api/models/AppStateModel.js';
 import '../../../api/models/DirectoryModel.js';
 Registry.ready();
+
+// need to do this after Registry.ready()
+import DirectoryItemSelectController from '../controllers/DirectoryItemSelectController.js';
+DirectoryItemSelectController.init();
 
 import ScrollController from '../controllers/ScrollController.js';
 

@@ -7,6 +7,7 @@ import { MainDomElement } from "@ucd-lib/theme-elements/utils/mixins/main-dom-el
 import AppComponentController from '../../controllers/AppComponentController.js';
 import DirectoryPathController from '../../controllers/DirectoryPathController.js';
 import QueryStringController from '../../controllers/QueryStringController.js';
+import DirectoryItemSelectController from '../../controllers/DirectoryItemSelectController.js';
 
 export default class CaskfsDirectoryList extends Mixin(LitElement)
   .with(LitCorkUtils, MainDomElement) {
@@ -30,6 +31,7 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
     this.appComponentCtl = new AppComponentController(this);
     this.directoryPathCtl = new DirectoryPathController(this, 'pathStartIndex');
     this.qsCtl = new QueryStringController(this);
+    this.selectCtl = new DirectoryItemSelectController(this);
 
     this._injectModel('AppStateModel', 'DirectoryModel');
   }
@@ -41,7 +43,7 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
 
   async listContents() {
     this.selectedItems = [];
-    
+
     await this.directoryPathCtl.updateComplete;
     await this.qsCtl.updateComplete;
 
@@ -55,14 +57,16 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
       contents.push({
         data: file,
         name: file.filename,
-        lastModified: new Date(file.modified)
+        lastModified: new Date(file.modified),
+        size: Number(file.size)
       });
     }
     for ( const dir of res.payload.directories ) {
       contents.push({
         data: dir,
         name: dir.name.split('/').filter(Boolean).pop(),
-        lastModified: new Date(dir.modified)
+        lastModified: new Date(dir.modified),
+        size: 0
       });
     }
 
@@ -78,6 +82,14 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
     }
 
     this.contents = contents;
+  }
+
+  _onItemClick(e){
+    if ( e.detail.isDirectory ) {
+      this.directoryPathCtl.setLocation(e.detail.data.name);
+      return;
+    }
+    console.log('File clicked', e.detail);
   }
 
 }

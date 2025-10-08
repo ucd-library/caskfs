@@ -35,10 +35,10 @@ export function styles() {
       }
     }
     cork-app-dialog-modal dialog[open] {
-      animation: dialog-fade-in 0.5s ease-out;
+      animation: dialog-fade-in 0.4s ease-out;
     }
     cork-app-dialog-modal dialog[open]::backdrop {
-      animation: dialog-backdrop-fade-in 0.5s ease-out forwards;
+      animation: dialog-backdrop-fade-in 0.4s ease-out forwards;
     }
     @keyframes dialog-fade-in {
       0% {
@@ -70,7 +70,7 @@ export function styles() {
       }
 
       100% {
-        background-color: rgb(0 0 0 / 25%);
+        background-color: rgb(0 0 0 / 30%);
       }
     }
     cork-app-dialog-modal .alignable-promo__buttons {
@@ -131,11 +131,11 @@ return html`
         ${this.actions.map(action => html`
           <div class=${action.color ? 'category-brand--' + action.color : ''}>
             <button
-              ?disabled=${action.disableOnLoading && this._loading}
+              ?disabled=${action.disableOnLoading && this.loading}
               @click=${e => this._onButtonClick(action.value)}
               class='btn btn--${action.invert ? 'invert' : 'primary'}'>
-              <span ?hidden=${!(action.disableOnLoading && this._loading)}>
-                <cork-icon icon='fa.solid.spinner'></cork-icon>
+              <span ?hidden=${!(action.disableOnLoading && this.loading)}>
+                <cork-icon icon='fas.spinner'></cork-icon>
               </span>
               <span>${action.text}</span>
             </button>

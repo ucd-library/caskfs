@@ -1,6 +1,6 @@
 import {PayloadUtils} from '@ucd-lib/cork-app-utils'
 
-const ID_ORDER = ['path'];
+const ID_ORDER = ['path', 'softDelete'];
 
 let inst = new PayloadUtils({
   idParts: ID_ORDER

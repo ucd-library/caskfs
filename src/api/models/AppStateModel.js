@@ -40,8 +40,10 @@ class AppStateModelImpl extends AppStateModel {
    * Controls loader visibility
    * @param {Object} req - A wrapper object with the following properties:
    * @param {Object} req.payload - The cork-app-utils payload of the request
+   * @param {Object} req.loaderSettings - The loader settings object from the store that initiated the loading state
    */
   addLoadingRequest(req) {
+    if ( req.loaderSettings?.suppressLoader ) return;
     this.loadingRequests.push(req);
 
     if (this._hideLoaderTimer) {
@@ -59,8 +61,10 @@ class AppStateModelImpl extends AppStateModel {
    * Controls loader visibility
    * @param {Object} req - A wrapper object with the following properties:
    * @param {Object} req.payload - The cork-app-utils payload of the request
+   * @param {Object} req.loaderSettings - The loader settings object from the store that initiated the loading state
    */
   removeLoadingRequest(req) {
+    if ( req.loaderSettings?.suppressLoader ) return;
     this.loadingRequests = this.loadingRequests.filter(r => r.payload.id !== req.payload.id);
 
     if (this.loadingRequests.length === 0 && !this._hideLoaderTimer) {
@@ -172,11 +176,12 @@ class AppStateModelImpl extends AppStateModel {
     if ( !options.content ) {
       options.content = '';
     }
+    console.log('showDialogModal', options);
     this.store.emit('app-dialog-open', options);
   }
 
-  closeDialogModal(){
-    this.store.emit('app-dialog-close');
+  closeDialogModal(opts={}){
+    this.store.emit('app-dialog-close', opts);
   }
 
   requestDialogUpdate(){

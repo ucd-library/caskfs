@@ -16,6 +16,7 @@ return html`
   <cork-app-loader></cork-app-loader>
   <cork-app-error></cork-app-error>
   <cork-app-toast></cork-app-toast>
+  <cork-app-dialog-modal></cork-app-dialog-modal>
   <ucdlib-pages
     selected=${this.page}
     attr-for-selected='page-id'>

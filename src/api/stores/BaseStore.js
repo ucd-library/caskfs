@@ -7,19 +7,18 @@ export default class BaseStoreImp extends BaseStore {
     super();
   }
 
-  set(payload, store, eventName) {
+  set(payload, store, eventName, opts={}) {
     super.set(payload, store, eventName);
     const AppStateModel = Registry.models['AppStateModel'];
     if ( !AppStateModel ) return;
 
     if ( payload.state === STATES.LOADING) {
-      AppStateModel.addLoadingRequest({payload})
+      AppStateModel.addLoadingRequest({payload, loaderSettings: opts.loaderSettings || {}});
     } else if ( payload.state === STATES.LOADED) {
-      AppStateModel.removeLoadingRequest({payload})
+      AppStateModel.removeLoadingRequest({payload, loaderSettings: opts.loaderSettings || {}});
     } else if ( payload.state === STATES.ERROR) {
-      let errorSettings = this.errorSettings?.[store.name];
-      AppStateModel.removeLoadingRequest({payload});
-      AppStateModel.addErrorRequest({payload, errorSettings});
+      AppStateModel.removeLoadingRequest({payload, loaderSettings: opts.loaderSettings || {}});
+      AppStateModel.addErrorRequest({payload, errorSettings: opts.errorSettings || {}});
     }
   }
 }

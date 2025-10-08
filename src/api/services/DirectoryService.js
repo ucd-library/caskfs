@@ -2,6 +2,7 @@ import {BaseService} from '@ucd-lib/cork-app-utils';
 import DirectoryStore from '../stores/DirectoryStore.js';
 
 import payload from '../payload.js';
+import { load } from 'mime';
 
 class DirectoryService extends BaseService {
 
@@ -19,6 +20,10 @@ class DirectoryService extends BaseService {
     let id = payload.getKey(ido);
     const store = this.store.data.list;
 
+    const appStateOptions = {
+      errorSettings: {message: 'Unable to list directory contents'}
+    }
+
     await this.checkRequesting(
       id, store,
       () => this.request({
@@ -26,7 +31,37 @@ class DirectoryService extends BaseService {
         checkCached : () => store.get(id),
         onUpdate : resp => this.store.set(
           payload.generate(ido, resp),
-          store
+          store,
+          null,
+          appStateOptions
+        )
+      })
+    );
+
+    return store.get(id);
+  }
+
+  async deleteFile(path, options={}) {
+    let ido = { path, ...options };
+    let id = payload.getKey(ido);
+    const store = this.store.data.deleteFile;
+
+    const appStateOptions = {
+      errorSettings: {message: 'Unable to delete directory contents'},
+      loaderSettings: {suppressLoader: true}
+    };
+
+    await this.checkRequesting(
+      id, store,
+      () => this.request({
+        url : `${this.baseUrl}${path}`,
+        qs: options,
+        fetchOptions: { method: 'DELETE' },
+        onUpdate : resp => this.store.set(
+          payload.generate(ido, resp),
+          store,
+          null,
+          appStateOptions
         )
       })
     );

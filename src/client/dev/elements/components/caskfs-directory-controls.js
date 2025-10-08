@@ -28,7 +28,8 @@ export default class CaskfsDirectoryControls extends Mixin(LitElement)
 
     this.sortOptions = [
       { label: 'Name', value: 'name' },
-      { label: 'Last Modified', value: 'lastModified' }
+      { label: 'Last Modified', value: 'lastModified' },
+      { label: 'Size', value: 'size' }
     ];
     this.sortValue = '';
     this.sortIsDesc = false;
