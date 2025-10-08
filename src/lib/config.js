@@ -46,7 +46,8 @@ const config = {
   },
 
   acl : {
-    enabled : (env.CASKFS_ACL_ENABLED !== 'false'),
+    // enabled : (env.CASKFS_ACL_ENABLED !== 'false'),
+    enabled : false
   }
 
 }

@@ -117,11 +117,10 @@ LEFT JOIN caskfs.acl_role r ON ru.role_id = r.role_id;
 ----------------
 -- directory_user_permissions_lookup
 ----------------
-CREATE MATERIALIZED VIEW IF NOT EXISTS caskfs.directory_user_permissions_lookup AS
+CREATE OR REPLACE VIEW caskfs.directory_user_permissions_lookup_by_permission AS
 SELECT
     d.directory_id,
     u.user_id,
-    p.acl_permission_id,
     CASE 
         WHEN p.permission = 'read' THEN TRUE
         WHEN p.permission = 'write' THEN TRUE
@@ -137,15 +136,39 @@ SELECT
     CASE 
         WHEN p.permission = 'admin' THEN TRUE
         ELSE FALSE
-    END AS is_admin,
-    rda.public AS is_public
+    END AS is_admin
 FROM caskfs.directory d
 LEFT JOIN caskfs.directory_acl da ON d.directory_id = da.directory_id
 LEFT JOIN caskfs.root_directory_acl rda ON da.root_directory_acl_id = rda.root_directory_acl_id
 LEFT JOIN caskfs.acl_permission p ON rda.root_directory_acl_id = p.root_directory_acl_id
 LEFT JOIN caskfs.acl_role r ON p.role_id = r.role_id
 LEFT JOIN caskfs.acl_role_user ru ON r.role_id = ru.role_id
-LEFT JOIN caskfs.acl_user u ON ru.user_id = u.user_id;
+LEFT JOIN caskfs.acl_user u ON ru.user_id = u.user_id
+UNION
+SELECT
+    d.directory_id,
+    NULL as user_id,
+    CASE 
+        WHEN rda.public = TRUE THEN TRUE
+        ELSE FALSE
+    END AS can_read,
+    FALSE AS can_write,
+    FALSE AS is_admin
+FROM caskfs.directory d
+LEFT JOIN caskfs.directory_acl da ON d.directory_id = da.directory_id
+LEFT JOIN caskfs.root_directory_acl rda ON da.root_directory_acl_id = rda.root_directory_acl_id
+LEFT JOIN caskfs.directory rd ON rda.directory_id = rd.directory_id;
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS caskfs.directory_user_permissions_lookup AS
+SELECT
+    directory_id,
+    user_id,
+    BOOL_OR(can_read) AS can_read,
+    BOOL_OR(can_write) AS can_write,
+    BOOL_OR(is_admin) AS is_admin
+FROM directory_user_permissions_lookup_by_permission p
+WHERE can_read OR can_write OR is_admin
+GROUP BY directory_id, user_id;
 
 ---
 -- To refresh the materialized view, use:
@@ -153,22 +176,14 @@ LEFT JOIN caskfs.acl_user u ON ru.user_id = u.user_id;
 ---
 
 -- Create indexes for the materialized view
-CREATE UNIQUE INDEX idx_directory_user_permissions_lookup_unique 
-    ON caskfs.directory_user_permissions_lookup(directory_id, user_id, acl_permission_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_directory_user_permissions_lookup_unique 
+    ON caskfs.directory_user_permissions_lookup(directory_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_directory_user_permissions_lookup_directory_id 
     ON caskfs.directory_user_permissions_lookup(directory_id);
 CREATE INDEX IF NOT EXISTS idx_directory_user_permissions_lookup_user_id 
     ON caskfs.directory_user_permissions_lookup(user_id);
-CREATE INDEX IF NOT EXISTS idx_directory_user_permissions_lookup_can_read 
-    ON caskfs.directory_user_permissions_lookup(can_read);
-CREATE INDEX IF NOT EXISTS idx_directory_user_permissions_lookup_can_write 
-    ON caskfs.directory_user_permissions_lookup(can_write);
-CREATE INDEX IF NOT EXISTS idx_directory_user_permissions_lookup_is_admin 
-    ON caskfs.directory_user_permissions_lookup(is_admin);
-CREATE INDEX IF NOT EXISTS idx_directory_user_permissions_lookup_is_public 
-    ON caskfs.directory_user_permissions_lookup(is_public);
 
-CREATE OR REPLACE VIEW caskfs.directory_user_permissions AS
+CREATE OR REPLACE VIEW caskfs.directory_user_permissions_by_permission AS
 SELECT
     d.fullname AS directory,
     u.name as user,
@@ -189,7 +204,6 @@ SELECT
         WHEN p.permission = 'admin' THEN TRUE
         ELSE FALSE
     END AS is_admin,
-    rda.public AS is_public,
     rd.fullname AS acl_root_directory
 FROM caskfs.directory d
 LEFT JOIN caskfs.directory_acl da ON d.directory_id = da.directory_id
@@ -198,7 +212,36 @@ LEFT JOIN caskfs.directory rd ON rda.directory_id = rd.directory_id
 LEFT JOIN caskfs.acl_permission p ON rda.root_directory_acl_id = p.root_directory_acl_id
 LEFT JOIN caskfs.acl_role r ON p.role_id = r.role_id
 LEFT JOIN caskfs.acl_role_user ru ON r.role_id = ru.role_id
-LEFT JOIN caskfs.acl_user u ON ru.user_id = u.user_id;
+LEFT JOIN caskfs.acl_user u ON ru.user_id = u.user_id
+UNION
+SELECT
+    d.fullname AS directory,
+    NULL as user,
+    NULL as acl_permission_id,
+    CASE 
+        WHEN rda.public = TRUE THEN TRUE
+        ELSE FALSE
+    END AS can_read,
+    FALSE AS can_write,
+    FALSE AS is_admin,
+    rd.fullname AS acl_root_directory
+FROM caskfs.directory d
+LEFT JOIN caskfs.directory_acl da ON d.directory_id = da.directory_id
+LEFT JOIN caskfs.root_directory_acl rda ON da.root_directory_acl_id = rda.root_directory_acl_id
+LEFT JOIN caskfs.directory rd ON rda.directory_id = rd.directory_id
+
+
+CREATE OR REPLACE VIEW caskfs.directory_user_permissions AS
+SELECT
+    directory,
+    p.user,
+    BOOL_OR(can_read) AS can_read,
+    BOOL_OR(can_write) AS can_write,
+    BOOL_OR(is_admin) AS is_admin
+FROM directory_user_permissions_by_permission p
+WHERE can_read OR can_write OR is_admin
+GROUP BY directory, p.user;
+
 
 -- Ensure root directory exists
 INSERT INTO caskfs.directory (fullname, parent_id) VALUES ('/', NULL) ON CONFLICT (fullname) DO NOTHING;

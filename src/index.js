@@ -374,10 +374,15 @@ class CaskFs {
     return this.cas.read(hash, opts);
   }
 
-  async links(filePath, opts={}) {
-    // get file ID
+  async relationships(filePath, opts={}) {
+    await this.canReadFile({...opts, filePath});
+
+    if( this.acl.enabled && opts.user !== undefined && opts.user !== null) {
+      opts.userId = this.acl.getUserId({user: opts.user});
+    }
+
     let metadata = await this.metadata(filePath);
-    return this.rdf.links(metadata, opts);
+    return this.rdf.relationships(metadata, opts);
   }
 
   /**
@@ -782,7 +787,7 @@ class CaskFs {
    */
   async canReadFile(opts={}) {
     opts.dbClient = opts.dbClient || this.dbClient;
-    return this.acl.checkPermissions({
+    return this.checkPermissions({
       ...opts, 
       permission: 'read', 
       isFile: true
@@ -802,7 +807,7 @@ class CaskFs {
    */
   async canWriteFile(opts={}) {
     opts.dbClient = opts.dbClient || this.dbClient;
-    return this.acl.checkPermissions({
+    return this.checkPermissions({
       ...opts, 
       permission: 'write', 
       isFile: true
@@ -822,7 +827,7 @@ class CaskFs {
    */
   async canUpdateDirAcl(opts={}) {
     opts.dbClient = opts.dbClient || this.dbClient;
-    return this.acl.checkPermissions({
+    return this.checkPermissions({
       ...opts,
       permission: 'admin'
     });
@@ -850,7 +855,7 @@ class CaskFs {
     if( this.acl.enabled === false ) {
       return true;
     }
-    let hasAccess = await this.acl.checkPermissions(opts);
+    let hasAccess = await this.acl.hasPermission(opts);
     if( !hasAccess ) {
       throw new this.acl.AclAccessError('Access denied', opts.user, opts.filePath, opts.permission);
     }

@@ -354,11 +354,15 @@ class Rdf {
    * 
    * @returns 
    */
-  async links(metadata, opts={}) {
+  async relationships(metadata, opts={}) {
+
+    // Note, the file has been permission checked before this is called
+    // so we don't need to do that here.  Just need make sure all external
+    // references are filtered out.
+
     let [outbound, inbound] = await Promise.all([
       this.getReferencing(metadata.file_id, opts),
       this.getReferencedBy(metadata.file_id, opts)
-      
     ]);
 
     return { 
@@ -397,6 +401,22 @@ class Rdf {
   async getReferencing(fileId, opts={}) {
     let where = ['source_view.file_id = $1', 'referencing_view.file_id != $1'];
     let args = [fileId];
+
+    let aclJoin = '';
+    if( config.acl.enabled === true && opts.ignoreAcl !== true ) {
+      aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = referencing_view.directory_id`;
+      
+      let aclWhere = [
+        '(acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE)'
+      ];
+
+      if( opts.userId !== null ) {
+        aclWhere.push(`(acl_lookup.user_id = $${args.length + 1} AND acl_lookup.can_read = TRUE)`);
+        args.push(opts.userId);
+      }
+
+      where.push(`(${aclWhere.join(' OR ')})`);
+    }
 
     if( opts.predicate ) {
       if( !Array.isArray(opts.predicate) ) {
@@ -443,6 +463,7 @@ class Rdf {
           FROM caskfs.rdf_link_view source_view
           -- Find other files where this object URI appears as a subject
           JOIN caskfs.rdf_link_view referencing_view ON source_view.object = referencing_view.subject
+          ${aclJoin}
           WHERE ${where.join(' AND ')}
           GROUP BY source_view.predicate
 
@@ -453,6 +474,7 @@ class Rdf {
               count(*) as count
           FROM caskfs.rdf_link_view source_view
           JOIN caskfs.rdf_node_view referencing_view ON source_view.object = referencing_view.subject
+          ${aclJoin}
           WHERE ${where.join(' AND ')}
           GROUP BY source_view.predicate
       )
@@ -476,7 +498,8 @@ class Rdf {
             source_view.predicate AS predicate
         FROM caskfs.rdf_link_view source_view
         -- Find other files where this object URI appears as a subject
-        JOIN caskfs.rdf_link_view referencing_view ON source_view.object = referencing_view.subject 
+        JOIN caskfs.rdf_link_view referencing_view ON source_view.object = referencing_view.subject
+        ${aclJoin}
         WHERE ${where.join(' AND ')}
     ),
     nodes AS (
@@ -484,7 +507,8 @@ class Rdf {
             referencing_view.containment AS containment,
             source_view.predicate AS predicate
         FROM caskfs.rdf_link_view source_view
-        JOIN caskfs.rdf_node_view referencing_view ON source_view.object = referencing_view.subject 
+        JOIN caskfs.rdf_node_view referencing_view ON source_view.object = referencing_view.subject
+        ${aclJoin}
         WHERE ${where.join(' AND ')}
     )
     SELECT * FROM links

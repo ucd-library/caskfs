@@ -15,7 +15,7 @@ class Acl {
 
   constructor() {
     this.logger = getLogger('acl');
-    this.enabled = config.acl.enabled || true;
+    this.enabled = config.acl.enabled !== undefined ? config.acl.enabled : false;
     this.AclAccessError = AclAccessError;
   }
 
