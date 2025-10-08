@@ -55,9 +55,13 @@ program.command('role-remove <role>')
   });
 
 program.command('set-public <directory> <permission>')
-  .description('Set a directory as public')
+  .description('Set a directory as public.  Permission should be true or false')
   .action(async (directory, permission) => {
     const cask = new CaskFs();
+    if( !['true', 'false'].includes(permission) ) {
+      throw new Error(`Invalid permission: ${permission}.  Must be one of: true, false`);
+    }
+
     await cask.setDirectoryPublic({ directory, permission });
     cask.dbClient.end();
   });
@@ -78,7 +82,7 @@ program.command('permission-remove <directory> <role> <permission>')
     cask.dbClient.end();
   });
 
-program.command('remove-acl <directory>')
+program.command('remove <directory>')
   .description('Remove the ACL for a directory.  This will remove all permissions and any inheritance settings.')
   .action(async (directory) => {
     const cask = new CaskFs();
@@ -86,26 +90,30 @@ program.command('remove-acl <directory>')
     cask.dbClient.end();
   });
 
-program.command('get-acl <path>')
+program.command('get <path>')
   .description('Get the ACL for a directory')
   .action(async (path) => {
     const cask = new CaskFs();
     cask.dbClient.connect();
     let resp = await cask.getDirectoryAcl({ directory: path });
-    if( resp.length === 0 ) {
+
+    if( !resp ) {
       console.log(`No ACL found for ${path}`);
       cask.dbClient.end();
       return;
     }
-    if( resp.length >= 1 ) {
+
+    if( resp.length > 1 ) {
       console.warn(`Warning: multiple ACLs found for ${path}, this should not happen`);
-      resp = resp[0];
     }
+    resp = resp[0];
+
+    resp.permissions = resp.permissions.filter(p => p.role !== null && p.user !== null);
 
     let pObj = {
       'ACL Directory': resp.root_acl_directory,
-      'Public Read Access': resp.public_read ? 'Yes' : 'No',
-      'Permissions': resp.permissions
+      'Public Read Access': resp.public ? 'Yes' : 'No',
+      'Role Permissions': resp.permissions
     }
 
     console.log(stringifyYaml(pObj));
@@ -114,16 +122,27 @@ program.command('get-acl <path>')
 
 program.command('test <path> <username> <permission>')
   .description('Test a user\'s access to a file or directory')
-  .option('-d, --is-directory', 'Indicate that the path is a directory', false)
+  .option('-f, --is-file', 'Indicate that the path is a file', false)
   .action(async (path, username, permission, options) => {
     const cask = new CaskFs();
+
+    if( !PERMISSIONS.includes(permission) ) {
+      throw new Error(`Invalid permission: ${permission}.  Must be one of: ${PERMISSIONS.join(', ')}`);
+    }
+
+    if( !username ) {
+      username = null;
+    } else if( username.trim().toLowerCase() === 'public' ) {
+      username = null;
+    }
+
     await cask.dbClient.connect();
     let hasPermission = await cask.acl.hasPermission({ 
       dbClient: cask.dbClient,
       user: username, 
       filePath: path, 
       permission, 
-      isDirectory: options.isDirectory 
+      isFile: options.isFile 
     });
     console.log(hasPermission);
     cask.dbClient.end();

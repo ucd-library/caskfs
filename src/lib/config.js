@@ -43,6 +43,10 @@ const config = {
     defaultBucket : env.CASKFS_CLOUD_STORAGE_DEFAULT_BUCKET || 'caskfs',
     project : env.CASKFS_CLOUD_STORAGE_PROJECT || null,
     serviceAccountFile : env.CASKFS_CLOUD_STORAGE_SERVICE_ACCOUNT_FILE || env.GOOGLE_APPLICATION_CREDENTIALS || null,
+  },
+
+  acl : {
+    enabled : (env.CASKFS_ACL_ENABLED !== 'false'),
   }
 
 }

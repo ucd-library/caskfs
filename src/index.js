@@ -75,7 +75,9 @@ class CaskFs {
    *
    * @returns {Boolean} true if the file exists, false otherwise
    */
-  exists(filePath, opts={}) {
+  async exists(filePath, opts={}) {
+    await this.canReadFile({...opts, filePath});
+
     if( opts.file === true) {
       return this.dbClient.fileExists(filePath);
     }
@@ -108,6 +110,8 @@ class CaskFs {
       throw new Error('FileContext with file path is required');
     }
     let filePath = context.file;
+
+    await this.canWriteFile({...opts, filePath});
 
     // open single connection to postgres and start a transaction
     let dbClient = new Database({
@@ -292,6 +296,8 @@ class CaskFs {
       filePath = context.file.filepath;
     }
 
+    await this.canWriteFile({...opts, filePath});
+
     if( opts.onlyOnChange ) {
       let currentMetadata = await this.metadata(filePath);
       if( JSON.stringify(currentMetadata.metadata) === JSON.stringify(opts.metadata) &&
@@ -309,6 +315,9 @@ class CaskFs {
 
   async metadata(filePath, opts={}) {
     let dbClient = opts.dbClient || this.dbClient;
+
+    await this.canReadFile({...opts, filePath});
+
     let fileParts = path.parse(filePath);
 
     let res = await dbClient.query(`
@@ -349,6 +358,8 @@ class CaskFs {
    * @returns {Promise<Buffer>|Stream} file contents as a Buffer or Stream
    */
   async read(filePath, opts={}) {
+    await this.canReadFile({...opts, filePath});
+
     let fileParts = path.parse(filePath);
     let res = await this.dbClient.query(`
       SELECT hash_value FROM ${this.schema}.file_view WHERE directory = $1 AND filename = $2
@@ -379,10 +390,6 @@ class CaskFs {
    * @returns {Object} result object with query and files array
    */
   async ls(opts={}) {
-    let args = [];
-    let where = [];
-    let childDirectories = null;
-
     if( !opts.directory ) {
       throw new Error('Directory is required');
     }
@@ -390,6 +397,12 @@ class CaskFs {
     if( opts.directory !== '/' && opts.directory.endsWith('/') ) {
       opts.directory = opts.directory.slice(0, -1);
     }
+
+    await this.checkPermissions({
+      user: opts.user,
+      filePath: opts.directory,
+      permission: 'read'
+    })
 
     let dir = await this.directory.get(opts.directory, {dbClient: this.dbClient});
     let childDirs = await this.directory.getChildren(opts.directory, {dbClient: this.dbClient});
@@ -409,6 +422,8 @@ class CaskFs {
   }
 
   async stats() {
+    // TODO: add permission check for admin role
+
     let res = await this.dbClient.query(`
       SELECT * from ${this.schema}.stats
     `);
@@ -428,6 +443,8 @@ class CaskFs {
    * @returns {Promise<Object>} result object with metadata, fileDeleted (boolean), referencesRemaining (int)
    */
   async delete(filePath, opts={}) {
+    await this.canWriteFile({...opts, filePath});
+
     let dbClient = opts.dbClient || this.dbClient;
     let metadata = await this.metadata(filePath);
 
@@ -458,6 +475,8 @@ class CaskFs {
    * @returns {Promise<Object>} result of the insert query
    */
   async ensureRole(opts={}) {
+    // TODO: check if user has admin role to create roles
+
     opts.dbClient = opts.dbClient || this.dbClient;
     await this.acl.ensureRole(opts);
     return this.acl.getRole(opts);
@@ -473,8 +492,11 @@ class CaskFs {
    * @returns {Promise<Object>} result of the delete query
    */
   async removeRole(opts={}) {
+    // TODO: check if user has admin role to remove roles
+
     opts.dbClient = opts.dbClient || this.dbClient;
-    return this.acl.removeRole(opts);
+    await this.acl.removeRole(opts);
+    await this.acl.refreshLookupTable({dbClient});
   }
 
   /**
@@ -487,6 +509,8 @@ class CaskFs {
    * @returns {Promise<Object>} result of the insert query
    */
   async ensureUser(opts={}) {
+    // TODO: check if user has admin role to create users
+
     opts.dbClient = opts.dbClient || this.dbClient;
     return this.acl.ensureUser(opts);
   }
@@ -502,11 +526,16 @@ class CaskFs {
    * @returns {Promise<Object>} result of the insert query
    */
   async setUserRole(opts={}) {
+    // TODO: check if user has admin role to set user roles
+
     return this.runInTransaction(async (dbClient) => {
       opts.dbClient = dbClient;
       await this.acl.ensureUser(opts);
       await this.acl.ensureRole(opts);
       await this.acl.ensureUserRole(opts);
+
+      await this.acl.refreshLookupTable({dbClient});
+
       return this.acl.getRole(opts);
     });
   }
@@ -522,9 +551,43 @@ class CaskFs {
    * @returns {Promise<Object>} result of the delete query
    */
   async removeUserRole(opts={}) {
+    // TODO: check if user has admin role to remove user roles
+
     await this.runInTransaction(async (dbClient) => {
       opts.dbClient = dbClient;
-      return this.acl.removeUserRole(opts);
+      await this.acl.removeUserRole(opts);
+      await this.acl.refreshLookupTable({dbClient});
+
+    });
+  }
+
+  /**
+   * @method setDirectoryPublic
+   * @description Set a directory as public or private.  Will create the root directory ACL if needed.
+   * 
+   * 
+   * @param {*} opts 
+   */
+  async setDirectoryPublic(opts={}) {
+    await this.canUpdateDirAcl({
+      user: opts.user,
+      filePath: opts.directory
+    });
+
+    await this.runInTransaction(async (dbClient) => {
+      let {rootDirectoryAclId, directoryId} = await this.acl.ensureRootDirectoryAcl({
+        dbClient : dbClient,
+        directory : opts.directory,
+        isPublic : (opts.permission === 'true')
+      });
+
+      await this.acl.setDirectoryAcl({ 
+        dbClient : dbClient,
+        rootDirectoryAclId,
+        directoryId
+      });
+
+      await this.acl.refreshLookupTable({dbClient});
     });
   }
 
@@ -539,6 +602,11 @@ class CaskFs {
    * @param {Object} opts.dbClient Optional. database client instance, defaults to instance dbClient
    */
   async setDirectoryPermission(opts={}) {
+    await this.canUpdateDirAcl({
+      user: opts.user,
+      filePath: opts.directory
+    });
+
     await this.runInTransaction(async (dbClient) => {
       opts.dbClient = dbClient;
       let {rootDirectoryAclId, directoryId} = await this.acl.setDirectoryPermission(opts);
@@ -548,6 +616,8 @@ class CaskFs {
         rootDirectoryAclId,
         directoryId
       });
+
+      await this.acl.refreshLookupTable({dbClient});
     });
   }
 
@@ -561,9 +631,15 @@ class CaskFs {
    * @param {Object} opts.dbClient Optional. database client instance, defaults to instance dbClient
    */
   async removeDirectoryPermission(opts={}) {
+    await this.canUpdateDirAcl({
+      user: opts.user,
+      filePath: opts.directory
+    });
+
     await this.runInTransaction(async (dbClient) => {
       opts.dbClient = dbClient;
       await this.acl.removeDirectoryPermission(opts);
+      await this.acl.refreshLookupTable({dbClient});
     });
   }
 
@@ -578,13 +654,24 @@ class CaskFs {
    * @returns {Promise<void>}
    */
   async removeDirectoryAcl(opts={}) {
+    await this.canUpdateDirAcl({
+      user: opts.user,
+      filePath: opts.directory
+    });
+
     await this.runInTransaction(async (dbClient) => {
       opts.dbClient = dbClient;
-      return this.acl.removeRootDirectoryAcl(opts);
+      await this.acl.removeRootDirectoryAcl(opts);
+      await this.acl.refreshLookupTable({dbClient});
     });
   }
 
   async getDirectoryAcl(opts={}) {
+    await this.canUpdateDirAcl({
+      user: opts.user,
+      filePath: opts.directory
+    });
+
     opts.dbClient = opts.dbClient || this.dbClient;
     return this.acl.getDirectoryAcl(opts);
   }
@@ -680,6 +767,94 @@ class CaskFs {
     await dbClient.connect();
     await dbClient.query('BEGIN');
     return dbClient;
+  }
+
+  /**
+   * @method canReadFile
+   * @description Check if a user has read access to a file.  Returns true or throws an error if not.
+   * 
+   * @param {Object} opts
+   * @param {String} opts.user user name
+   * @param {String} opts.filePath file path to check
+   * @param {Boolean} opts.ignoreAcl if true, skip ACL checks and always return true
+   * @param {DatabaseClient} opts.dbClient optional database client to use
+   * @returns 
+   */
+  async canReadFile(opts={}) {
+    opts.dbClient = opts.dbClient || this.dbClient;
+    return this.acl.checkPermissions({
+      ...opts, 
+      permission: 'read', 
+      isFile: true
+    });
+  }
+
+  /**
+   * @method canWriteFile
+   * @description Check if a user has write access to a file.  Returns true or throws an error if not.
+   * 
+   * @param {Object} opts
+   * @param {String} opts.user user name
+   * @param {String} opts.filePath file path to check
+   * @param {Boolean} opts.ignoreAcl if true, skip ACL checks and always return true
+   * @param {DatabaseClient} opts.dbClient optional database client to use
+   * @returns 
+   */
+  async canWriteFile(opts={}) {
+    opts.dbClient = opts.dbClient || this.dbClient;
+    return this.acl.checkPermissions({
+      ...opts, 
+      permission: 'write', 
+      isFile: true
+    });
+  }
+
+  /**
+   * @method canUpdateDirAcl
+   * @description Check if a user has admin access to update directory ACLs.  Returns true or throws an error if not.
+   * 
+   * @param {Object} opts 
+   * @param {String} opts.user user name
+   * @param {Boolean} opts.ignoreAcl if true, skip ACL checks and always return true
+   * @param {DatabaseClient} opts.dbClient optional database client to use
+   * 
+   * @returns 
+   */
+  async canUpdateDirAcl(opts={}) {
+    opts.dbClient = opts.dbClient || this.dbClient;
+    return this.acl.checkPermissions({
+      ...opts,
+      permission: 'admin'
+    });
+  }
+
+  /**
+   * @method checkPermissions
+   * @description Check if a user has a specific permission on a file or directory.  
+   * Returns true or throws an error if not.  Will skip checks and return true if ACLs are disabled
+   * 
+   * @param {*} opts 
+   * @param {String} opts.user user name
+   * @param {String} opts.filePath file path to check
+   * @param {String} opts.permission permission to check (read, write, admin)
+   * @param {Boolean} opts.isFile if true, check permissions for a file, otherwise for a directory
+   * @param {Boolean} opts.ignoreAcl if true, skip ACL checks and always return true
+   * @param {DatabaseClient} opts.dbClient optional database client to use
+   * @returns 
+   */
+  async checkPermissions(opts={}) {
+    opts.dbClient = opts.dbClient || this.dbClient;
+    if( opts.ignoreAcl === true ) {
+      return true;
+    }
+    if( this.acl.enabled === false ) {
+      return true;
+    }
+    let hasAccess = await this.acl.checkPermissions(opts);
+    if( !hasAccess ) {
+      throw new this.acl.AclAccessError('Access denied', opts.user, opts.filePath, opts.permission);
+    }
+    return true;
   }
 
   close() {
