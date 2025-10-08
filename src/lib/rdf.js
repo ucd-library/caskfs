@@ -376,7 +376,7 @@ class Rdf {
   _formatRelStatsResponse(rows) {
     let data = {};
     for( let r of rows ) {
-      data[r.predicate] = parseInt(r.count);
+      data[r.predicate] = parseInt(r.count, 10);
     }
     return data;
   }
