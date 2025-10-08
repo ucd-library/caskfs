@@ -425,11 +425,11 @@ class Acl {
     if( res.rows[0].root_directory_acl_id ) {
       let parentRes = await dbClient.query(`
         WITH RECURSIVE parent_dirs AS (
-          SELECT d.parent_id, d.directory_id
+          SELECT d.parent_id, d.directory_id, 0 as depth
           FROM ${config.database.schema}.directory d
           WHERE d.directory_id = (SELECT directory_id FROM ${config.database.schema}.directory WHERE fullname = $1)
           UNION
-          SELECT d.parent_id, d.directory_id
+          SELECT d.parent_id, d.directory_id, pd.depth + 1  as depth
           FROM ${config.database.schema}.directory d
           JOIN parent_dirs pd ON d.directory_id = pd.parent_id
         )
