@@ -272,10 +272,11 @@ BEGIN
     WITH hash_upsert AS (
         INSERT INTO caskfs.hash (value, digests, size, bucket) 
         VALUES (p_hash_value, p_digests, p_size, p_bucket)
-        ON CONFLICT (value) DO NOTHING
-    ), 
-    hash_select AS (
-        SELECT hash_id FROM caskfs.hash WHERE value = p_hash_value
+        ON CONFLICT (value) DO UPDATE SET 
+            value = EXCLUDED.value, 
+            digests = EXCLUDED.digests, 
+            size = EXCLUDED.size
+        RETURNING hash_id
     )
     INSERT INTO caskfs.file (directory_id, name, hash_id, metadata, partition_keys)
     SELECT p_directory_id, p_filename, hash_id, p_metadata, p_partition_keys

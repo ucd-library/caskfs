@@ -18,7 +18,8 @@ class CaskFs {
 
     this.dbClient = new Database({
       client: opts.dbClient,
-      type: opts.dbType || config.database.client
+      type: opts.dbType || config.database.client,
+      pool: !!opts.dbPool
     });
 
     // override config options with opts
@@ -386,6 +387,10 @@ class CaskFs {
       throw new Error('Directory is required');
     }
 
+    if( opts.directory !== '/' && opts.directory.endsWith('/') ) {
+      opts.directory = opts.directory.slice(0, -1);
+    }
+
     let dir = await this.directory.get(opts.directory, {dbClient: this.dbClient});
     let childDirs = await this.directory.getChildren(opts.directory, {dbClient: this.dbClient});
 
@@ -640,7 +645,6 @@ class CaskFs {
 
     return results;
   }
-
 
   /**
    * @method runInTransation

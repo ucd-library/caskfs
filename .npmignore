@@ -1,0 +1,7 @@
+cache
+dist
+.env
+.DS_Store
+/src/client/public/js/dev
+devops
+service-account.json

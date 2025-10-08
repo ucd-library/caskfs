@@ -9,7 +9,8 @@ import path from 'path';
 const program = new Command();
 
 program
-  .command('write <file-path>')
+  .command('write')
+  .argument('<file-path>', 'Full path (including filename) where the file will be written in the CASKFS')
   .requiredOption('-d, --data-file <data-file>', 'Path to the data file to write. Use "-" to read from stdin')
   .option('-r, --replace', 'Replace the file if it already exists', false)
   .option('-p, --partition-keys <keys>', 'comma-separated list of partition keys')
@@ -169,13 +170,15 @@ program
   });
 
 program
-  .command('links <file-path>')
-  .description('Get links for a file in the CASK FS')
-  .option('-p, --predicate <predicate>', 'Only include links with the specified predicate, comma-separated')
-  .option('-i, --ignore-predicate <predicate>', 'Only include links that do NOT have the specified predicate(s), comma-separated')
-  .option('-k, --partition-keys <keys>', 'Only include links with the specified partition keys (comma-separated)')
-  .option('-g, --graph <graph-uri>', 'Only include links in the specified graph')
-  .option('-s, --subject <subject-uri>', 'Only include links with the specified subject URI')
+  .command('rel <file-path>')
+  .alias('relationships')
+  .description('Get relationships for a file in the CASK FS')
+  .option('-p, --predicate <predicate>', 'Only include relationships with the specified predicate, comma-separated')
+  .option('-i, --ignore-predicate <predicate>', 'Only include relationships that do NOT have the specified predicate(s), comma-separated')
+  .option('-k, --partition-keys <keys>', 'Only include relationships with the specified partition keys (comma-separated)')
+  .option('-g, --graph <graph-uri>', 'Only include relationships in the specified graph')
+  .option('-s, --subject <subject-uri>', 'Only include relationships with the specified subject URI')
+  .option('-t, --stats', 'Show counts of file relationships by predicate instead of individual relationships', false)
   .action(async (filePath, options) => {
     const cask = new CaskFs();
 
@@ -191,7 +194,7 @@ program
       options.ignorePredicate = options.ignorePredicate.split(',').map(k => k.trim());
     }
 
-    console.log(await cask.links(filePath, options));
+    console.log(JSON.stringify(await cask.links(filePath, options), null, 2));
     cask.dbClient.end();
   });
 
@@ -258,9 +261,7 @@ program
   });
 
 program.command('acl', 'Manage ACL rules');
-
 program.command('auto-path', 'Manage auto-path rules');
-
 
 program
   .command('stats')
@@ -278,6 +279,15 @@ program
     const cask = new CaskFs();
     await cask.dbClient.init();
     cask.dbClient.end();
+  });
+
+program
+  .command('serve')
+  .description('Start the CaskFs web application')
+  .option('-p, --port <port>', 'Port to run the web application on')
+  .action(async (options) => {
+    const { startServer } = await import('../client/index.js');
+    startServer(options);
   });
 
 program.parse(process.argv);

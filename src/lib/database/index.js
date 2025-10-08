@@ -3,6 +3,7 @@ import PgClient from "./pg-client.js";
 import SqliteClient from "./sqlite-client.js";
 import config from '../config.js';
 import { getLogger } from '../logger.js';
+import { MissingResourceError } from '../errors.js';
 
 class Database {
 
@@ -218,7 +219,7 @@ class Database {
       [directory]
     );
     if (res.rows.length === 0) {
-      throw new Error(`Directory ${directory} does not exist`);
+      throw new MissingResourceError("Directory", directory);
     }
     return res.rows[0];
   }
