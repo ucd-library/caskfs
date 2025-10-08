@@ -3,6 +3,7 @@ import {render, styles} from "./caskfs-directory-item.tpl.js";
 import { LitCorkUtils, Mixin } from '@ucd-lib/cork-app-utils';
 
 import './caskfs-delete-form.js';
+import DirectoryItemSelectController from '../../controllers/DirectoryItemSelectController.js';
 
 export default class CaskfsDirectoryItem extends Mixin(LitElement)
   .with(LitCorkUtils) {
@@ -11,7 +12,6 @@ export default class CaskfsDirectoryItem extends Mixin(LitElement)
     return {
       data: { type: Object },
       hideSelect: { type: Boolean, attribute: 'hide-select' },
-      selected: { type: Boolean },
       name: { state: true },
       isDirectory: { state: true },
       kind: { state: true },
@@ -30,7 +30,7 @@ export default class CaskfsDirectoryItem extends Mixin(LitElement)
     this.render = render.bind(this);
     this.data = {};
     this.hideSelect = false;
-    this.selected = false;
+    this.selectCtl = new DirectoryItemSelectController(this, {hostDataProperty: 'data'});
 
     this.setComputedProps();
 
@@ -65,20 +65,14 @@ export default class CaskfsDirectoryItem extends Mixin(LitElement)
   }
 
   _onSelectToggle(e) {
-    this.selected = !this.selected;
-    this.dispatchEvent(new CustomEvent('select-toggle', {
-      detail: {
-        selected: this.selected,
-        data: this.data
-      }
-    }));
+    this.selectCtl.toggle();
   }
 
   _onItemClick() {
     this.dispatchEvent(new CustomEvent('item-click', {
       detail: {
         data: this.data,
-        selected: this.selected,
+        selected: this.selectCtl.hostIsSelected,
         isDirectory: this.isDirectory
       }
     }));

@@ -10,16 +10,11 @@ class DirectoryStore extends BaseStore {
       list: new LruStore({name: 'directory.list'}),
       deleteFile: new LruStore({name: 'directory.deleteFile'})
     };
-    this.events = {};
-
-    this.errorSettings = {
-      'directory.list': {
-        message: 'Unable to list directory contents'
-      },
-      'directory.deleteFile': {
-        message: 'Unable to delete file'
-      }
-    }
+    this.events = {
+      DIRECTORY_ITEM_SELECT_UPDATE: 'directory-item-select-update',
+      DIRECTORY_ITEM_SELECT_ALL: 'directory-item-select-all'
+    };
+    this.selectedItems = [];
   }
 
 }

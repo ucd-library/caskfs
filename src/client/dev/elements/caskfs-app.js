@@ -29,6 +29,10 @@ import '../../../api/models/AppStateModel.js';
 import '../../../api/models/DirectoryModel.js';
 Registry.ready();
 
+// need to do this after Registry.ready()
+import DirectoryItemSelectController from '../controllers/DirectoryItemSelectController.js';
+DirectoryItemSelectController.init();
+
 import ScrollController from '../controllers/ScrollController.js';
 
 export default class CaskfsApp extends Mixin(LitElement)

@@ -13,9 +13,6 @@ export function styles() {
     caskfs-page-directory caskfs-directory-controls {
       margin-bottom: 1rem;
     }
-    caskfs-page-directory .spacer {
-      border-bottom: 2px dotted var(--ucd-gold, #ffbf00);
-    }
 
     @media (min-width: 480px) {
       caskfs-page-directory .content {

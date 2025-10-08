@@ -30,6 +30,10 @@ class DirectoryModel extends BaseModel {
 
   purgeCache(){
     this.store.data.list.purge();
+
+    // clear any selected items
+    this.store.selectedItems = [];
+    this.store.emit(this.store.events.DIRECTORY_ITEM_SELECT_UPDATE, {selected: this.store.selectedItems});
   }
 
 }

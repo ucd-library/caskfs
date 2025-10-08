@@ -7,6 +7,7 @@ import { MainDomElement } from "@ucd-lib/theme-elements/utils/mixins/main-dom-el
 import AppComponentController from '../../controllers/AppComponentController.js';
 import DirectoryPathController from '../../controllers/DirectoryPathController.js';
 import QueryStringController from '../../controllers/QueryStringController.js';
+import DirectoryItemSelectController from '../../controllers/DirectoryItemSelectController.js';
 
 export default class CaskfsDirectoryList extends Mixin(LitElement)
   .with(LitCorkUtils, MainDomElement) {
@@ -30,6 +31,7 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
     this.appComponentCtl = new AppComponentController(this);
     this.directoryPathCtl = new DirectoryPathController(this, 'pathStartIndex');
     this.qsCtl = new QueryStringController(this);
+    this.selectCtl = new DirectoryItemSelectController(this);
 
     this._injectModel('AppStateModel', 'DirectoryModel');
   }
