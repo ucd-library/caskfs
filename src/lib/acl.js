@@ -1,11 +1,76 @@
-import createLogger from './logger.js';
+import { getLogger } from './logger.js';
+import config from './config.js';
 
 class Acl {
 
   constructor() {
-    this.logger = createLogger('acl');
+    this.logger = getLogger('acl');
   }
 
+  /**
+   * @method hasPermission
+   * @description Check if a user has a specific permission on a file.
+   * 
+   * @param {Object} opts
+   * @param {String} opts.user - The user to check permissions for.
+   * @param {String} opts.filePath - The file or directory path to check permissions on.
+   * @param {String} opts.permission - The permission to check (e.g. 'read', 'write', 'admin').
+   * @param {Boolean} opts.isDirectory - Whether the path is a directory. Default is false.
+   * @param {Object} opts.dbClient - The database client instance.
+   * @returns {Promise<Boolean>} - True if the user has the specified permission, false otherwise.
+   */
+  async hasPermission(opts={}) {
+    let { user, filePath, permission, dbClient } = opts;
+    if( !user || !filePath || !permission || !dbClient ) {
+      throw new Error('User, filePath, permission and dbClient are required');
+    }
+
+    let permissionFilter;
+    if( permission === 'read' ) {
+      permissionFilter = `can_read = true`;
+    } else if( permission === 'write' ) {
+      permissionFilter = `can_write = true`;
+    } else if( permission === 'admin' ) {
+      permissionFilter = `is_admin = true`;
+    } else {
+      throw new Error(`Invalid permission: ${permission}`);
+    }
+
+    let isDirectory = opts.isDirectory || false;
+    let dirQuery;
+    if( isDirectory ) {
+      dirQuery = `WITH dir AS (
+        SELECT directory_id FROM ${config.database.schema}.directory WHERE fullname = $1
+      )`;
+    } else {
+      dirQuery = `WITH dir AS (
+        SELECT directory_id FROM ${config.database.schema}.file_view WHERE filepath = $1
+      )`;
+    }
+
+    let resp = await dbClient.query(`
+      ${dirQuery},
+      acluser AS (
+        SELECT user_id FROM ${config.database.schema}.acl_user WHERE name = $2
+      )
+      SELECT * from ${config.database.schema}.directory_user_permissions_lookup
+      WHERE directory_id = (SELECT directory_id FROM dir)
+      AND user_id = (SELECT user_id FROM acluser)
+      AND ${permissionFilter}
+      `, [filePath, user]);
+    return resp.rows.length > 0;
+  }
+
+  /**
+   * @method getUserRoles
+   * @description Get roles for a specific user.
+   *
+   * @param {Object} opts
+   * @param {String} opts.user Required. username
+   * @param {Object} opts.dbClient Required. database client instance
+   * 
+   * @returns {Promise<Array>} array of role names
+   */
   async getUserRoles(opts={}) {
     let { user, dbClient } = opts;
     if( !user || !dbClient ) {
@@ -14,12 +79,21 @@ class Acl {
     let res = await dbClient.query(`
       SELECT r.name AS role
       FROM ${config.database.schema}.acl_role r
-      JOIN ${config.database.schema}.acl_user_role ur ON r.role_id = ur.role_id
+      JOIN ${config.database.schema}.acl_role_user ur ON r.role_id = ur.role_id
       JOIN ${config.database.schema}.acl_user u ON ur.user_id = u.user_id
       WHERE u.name = $1`, [user]);
     return res.rows.map(r => r.role);
   }
 
+  /**
+   * @method getRoleId
+   * @description Get the role ID for a specific role name.
+   *
+   * @param {Object} opts
+   * @param {String} opts.role Required. role name
+   * @param {Object} opts.dbClient Required. database client instance
+   * @returns {Promise<String>} role ID or null if it does not exist
+   */
   getRoleId(opts={}) {
     let { role, dbClient } = opts;
     if( !role || !dbClient ) {
@@ -28,14 +102,33 @@ class Acl {
     return dbClient.query(`SELECT role_id FROM ${config.database.schema}.acl_role WHERE name = $1`, [role]);
   }
 
-  getRole(opts={}) {
+  /**
+   * @method getRole
+   * @description Get all user role entries for a specific role name.
+   *
+   * @param {Object} opts
+   * @param {String} opts.role Required. role name
+   * @param {Object} opts.dbClient Required. database client instance
+   * @returns {Promise<Object>} role object or null if it does not exist
+   */
+  async getRole(opts={}) {
     let { role, dbClient } = opts;
     if( !role || !dbClient ) {
       throw new Error('Role and dbClient are required');
     }
-    return dbClient.query(`SELECT * FROM ${config.database.schema}.acl_user_roles_view WHERE role = $1`, [role]);
+    let res = await dbClient.query(`SELECT * FROM ${config.database.schema}.acl_user_roles_view WHERE role = $1`, [role]);
+    return res.rows;
   }
 
+  /**
+   * @method ensureRole
+   * @description Ensure a role exists.  If it does not exist, it will be created.
+   *
+   * @param {Object} opts
+   * @param {String} opts.role Required. role name
+   * @param {Object} opts.dbClient Required. database client instance
+   * @returns {Promise<String>} role ID
+   */
   async ensureRole(opts={}) {
     let { role, dbClient } = opts;
     if( !role || !dbClient ) {
@@ -48,6 +141,33 @@ class Acl {
     return res.rows[0].role_id;
   }
 
+  /**
+   * @method removeRole
+   * @description Remove a role.  This will also remove all user-role associations.
+   * 
+   * @param {Object} opts
+   * @param {String} opts.role Required. role name
+   * @param {Object} opts.dbClient Required. database client instance
+   * @returns {Promise<Object>} result of the delete query
+   */
+  async removeRole(opts={}) {
+    let { role, dbClient } = opts;
+    if( !role || !dbClient ) {
+      throw new Error('Role and dbClient are required');
+    }
+    let res = await dbClient.query(`DELETE FROM ${config.database.schema}.acl_role WHERE name = $1 RETURNING role_id`, [role]);
+    return res;
+  }
+
+  /**
+   * @method ensureUser
+   * @description Ensure a user exists.  If it does not exist, it will be created.
+   *
+   * @param {Object} opts
+   * @param {String} opts.user Required. user name
+   * @param {Object} opts.dbClient Required. database client instance
+   * @returns {Promise<String>} user ID
+   */
   async ensureUser(opts={}) {
     let { user, dbClient } = opts;
     if( !user || !dbClient ) {
@@ -60,6 +180,34 @@ class Acl {
     return res.rows[0].user_id;
   }
 
+  /**
+   * @method removeUser
+   * @description Remove a user.  This will also remove all user-role associations
+   * via foreign key constraints delete cascade.
+   * 
+   * @param {Object} opts
+   * @param {String} opts.user Required. user name
+   * @param {Object} opts.dbClient Required. database client instance
+   * @returns {Promise<Object>} result of the delete query
+   */
+  async removeUser(opts={}) {
+    let { user, dbClient } = opts;
+    if( !user || !dbClient ) {
+      throw new Error('User and dbClient are required');
+    }
+    let res = await dbClient.query(`DELETE FROM ${config.database.schema}.acl_user WHERE name = $1 RETURNING user_id`, [user]);
+    return res;
+  }
+
+  /**
+   * @method getUserId
+   * @description Get the user ID for a specific user name.
+   *
+   * @param {Object} opts
+   * @param {String} opts.user Required. user name
+   * @param {Object} opts.dbClient Required. database client instance
+   * @returns {Promise<String>} user ID
+   */
   async getUserId(opts={}) {
     let { user, dbClient } = opts;
     if( !user || !dbClient ) {
@@ -72,6 +220,18 @@ class Acl {
     return res.rows[0].user_id;
   }
 
+  /**
+   * @method ensureUserRole
+   * @description Ensure a user-role association exists.  If either
+   * the user or role do not exist, they will be created. If the association
+   * does not exist, it will be created.
+   *
+   * @param {Object} opts
+   * @param {String} opts.user Required. user name
+   * @param {String} opts.role Required. role name
+   * @param {Object} opts.dbClient Required. database client instance
+   * @returns {Promise<void>}
+   */
   async ensureUserRole(opts={}) {
     let { user, role, dbClient } = opts;
     if( !user || !role || !dbClient ) {
@@ -79,9 +239,19 @@ class Acl {
     }
     let userId = await this.ensureUser({ user, dbClient });
     let roleId = await this.ensureRole({ role, dbClient });
-    await dbClient.query(`INSERT INTO ${config.database.schema}.acl_user_role (user_id, role_id) VALUES ($1, $2) ON CONFLICT (user_id, role_id) DO NOTHING`, [userId, roleId]);    
+    await dbClient.query(`INSERT INTO ${config.database.schema}.acl_role_user (user_id, role_id) VALUES ($1, $2) ON CONFLICT (user_id, role_id) DO NOTHING`, [userId, roleId]);    
   }
 
+  /**
+   * @method removeUserRole
+   * @description Remove a user-role association.
+   * 
+   * @param {Object} opts
+   * @param {String} opts.user Required. user name
+   * @param {String} opts.role Required. role name
+   * @param {Object} opts.dbClient Required. database client instance
+   * @returns {Promise<Object>} result of the delete query
+   */
   async removeUserRole(opts={}) {
     let { user, role, dbClient } = opts;
     if( !user || !role || !dbClient ) {
@@ -94,21 +264,113 @@ class Acl {
     let res = await dbClient.query(`
       WITH role AS (SELECT role_id FROM ${config.database.schema}.acl_role WHERE name = $2),
            user AS (SELECT user_id FROM ${config.database.schema}.acl_user WHERE name = $1)
-      DELETE FROM ${config.database.schema}.acl_user_role WHERE user_id = (SELECT user_id FROM user) AND role_id = (SELECT role_id FROM role)`, [userId, roleId]);
+      DELETE FROM ${config.database.schema}.acl_role_user WHERE user_id = (SELECT user_id FROM user) AND role_id = (SELECT role_id FROM role)`, [userId, roleId]);
     return res;
   }
 
+  /**
+   * @method getRootDirectoryAcls
+   * @description Get all root directory ACLs.
+   *
+   * @param {Object} opts
+   * @param {Object} opts.dbClient Required. database client instance
+   * @param {Number} opts.limit Optional. number of results to return. default 100
+   * @param {Number} opts.offset Optional. number of results to skip. default 0
+   * 
+   * @returns {Promise<Array>} list of root directory ACLs
+   */
   async getRootDirectoryAcls(opts={}) {
     let {dbClient} = opts;
     if( !dbClient ) {
       throw new Error('dbClient is required');
     }
-    let res = await dbClient.query(`SELECT * FROM ${config.database.schema}.root_directory_acl`);
+
+    let limit = opts.limit || 100;
+    let offset = opts.offset || 0;
+
+    let res = await dbClient.query(`
+      SELECT 
+        rda.*,
+        d.fullname AS directory 
+      FROM ${config.database.schema}.root_directory_acl rda
+      LEFT JOIN ${config.database.schema}.directory d ON rda.directory_id = d.directory_id
+      LIMIT $1 OFFSET $2
+    `, [limit, offset]);
     return res.rows;
   }
 
+  /**
+   * @method getRootDirectoryAcl
+   * @description Get the root directory ACL for a specific directory.
+   *
+   * @param {Object} opts
+   * @param {Object} opts.dbClient Required. database client instance
+   * @param {String} opts.directoryId Required. directory ID
+   * 
+   * @returns {Promise<Object>} root directory acl object or null if it does not exist
+   */
+  async getRootDirectoryAcl(opts={}) {
+    let {dbClient, directoryId} = opts;
+    if( !dbClient || !directoryId ) {
+      throw new Error('dbClient and directoryId are required');
+    }
+    let res = await dbClient.query(`
+      SELECT * FROM ${config.database.schema}.directory_acl WHERE directory_id = $1`, [directoryId]);
+    if( res.rows.length === 0 ) {
+      return null;
+    }
+    return res.rows[0];
+  }
+
+  async getDirectoryAcl(opts={}) {
+    let {dbClient, directory} = opts;
+    if( !dbClient || !directory ) {
+      throw new Error('dbClient and directory are required');
+    }
+
+    let res = await dbClient.query(`
+      SELECT 
+        d.fullname AS directory,
+        d.directory_id,
+        rd.directory_id AS root_acl_directory_id,
+        rd.fullname AS root_acl_directory,
+        rda.root_directory_acl_id,
+        rda.public,
+        json_agg(
+          jsonb_build_object(
+            'permission', p.permission,
+            'role', r.name
+          )
+        ) AS permissions
+      FROM ${config.database.schema}.directory d 
+      LEFT JOIN ${config.database.schema}.directory_acl da ON d.directory_id = da.directory_id
+      LEFT JOIN ${config.database.schema}.root_directory_acl rda ON da.root_directory_acl_id = rda.root_directory_acl_id
+      LEFT JOIN ${config.database.schema}.directory rd ON rda.directory_id = rd.directory_id
+      LEFT JOIN ${config.database.schema}.acl_permission p ON rda.root_directory_acl_id = p.root_directory_acl_id
+      LEFT JOIN ${config.database.schema}.acl_role r ON p.role_id = r.role_id
+      WHERE d.fullname = $1
+      GROUP BY d.fullname, d.directory_id, rd.directory_id, rd.fullname, rda.root_directory_acl_id, rda.public 
+      `, [directory]);
+    if( res.rows.length === 0 ) {
+      return null;
+    }
+    return res.rows;
+  }
+
+  /**
+   * @method ensureRootDirectoryAcl
+   * @description Ensure a root directory ACL exists for a specific directory.  
+   * If it does not exist, it will be created.  This is a helper method for setDirectoryPermission
+   * ensuring that a root directory ACL exists before setting permissions.
+   * 
+   * @param {Object} opts
+   * @param {String} opts.directory Required. directory path
+   * @param {Boolean} opts.isPublic Optional. set the directory as public. default false
+   * @param {Object} opts.dbClient Required. database client instance
+   * @returns {Promise<Object>} object containing rootDirectoryAclId and directoryId
+   */
   async ensureRootDirectoryAcl(opts={}) {
-    let { dbClient, directory, public } = opts;
+    let { dbClient, directory, isPublic } = opts;
     if( !dbClient || !directory ) {
       throw new Error('dbClient and directory are required');
     }
@@ -126,13 +388,24 @@ class Acl {
       DO UPDATE SET public = EXCLUDED.public,
                     modified = NOW()
       RETURNING root_directory_acl_id`, 
-      [directoryId, public]
+      [directoryId, isPublic || false]
     );
     let rootDirectoryAclId = res.rows[0].root_directory_acl_id;
 
-    return rootDirectoryAclId;
+    return {rootDirectoryAclId, directoryId};
   }
 
+  /**
+   * @method removeRootDirectoryAcl
+   * @description Remove the root directory ACL for a specific directory.  
+   * This will also remove all permissions associated with the ACL via foreign key constraints delete cascade.
+   * After removing the ACL, this method will find the next parent directory with an ACL and apply it to all children
+   * 
+   * @param {Object} opts
+   * @param {String} opts.directory Required. directory path
+   * @param {Object} opts.dbClient Required. database client instance
+   * @returns {Promise<void>}
+   */
   async removeRootDirectoryAcl(opts={}) {
     let { dbClient, directory } = opts;
     if( !dbClient || !directory ) {
@@ -178,10 +451,21 @@ class Acl {
 
   }
 
+  /**
+   * @method removeDirectoryPermission
+   * @description Remove a permission for a role on a directory.
+   *
+   * @param {Object} opts
+   * @param {String} opts.directory Required. directory path
+   * @param {String} opts.role Required. role name
+   * @param {String} opts.permission Required. permission name
+   * @param {Object} opts.dbClient Required. database client instance
+   * @returns {Promise<Object>} result of the delete query
+   */
   async removeDirectoryPermission(opts={}) {
-    let { directory, role, dbClient } = opts;
-    if( !directory || !role || !dbClient ) {
-      throw new Error('Directory, role and dbClient are required');
+    let { directory, role, permission, dbClient } = opts;
+    if( !directory || !role || !permission || !dbClient ) {
+      throw new Error('Directory, role, permission and dbClient are required');
     }
 
     let res = await dbClient.query(`
@@ -191,13 +475,26 @@ class Acl {
       DELETE FROM ${config.database.schema}.acl_permission 
       WHERE root_directory_acl_id = (SELECT root_directory_acl_id FROM rda) 
         AND role_id = (SELECT role_id FROM role)
+        AND permission = $3
       RETURNING acl_permission_id`, 
-      [directory, role]
+      [directory, role, permission]
     );
   
     return res;
   }
 
+  /**
+   * @method setDirectoryPermission
+   * @description Set a permission for a role on a directory.  If the role does not exist, they will be created.
+   * If the directory does not have a root directory ACL, one will be created.
+   *
+   * @param {Object} opts
+   * @param {String} opts.directory Required. directory path
+   * @param {String} opts.role Required. role name
+   * @param {String} opts.permission Required. permission name
+   * @param {Object} opts.dbClient Required. database client instance
+   * @returns {Promise<Object>} result of the insert query
+   */
   async setDirectoryPermission(opts={}) {
     let { directory, role, permission, dbClient } = opts;
     if( !directory || !role || !permission || !dbClient ) {
@@ -210,7 +507,7 @@ class Acl {
     let res = await dbClient.query(`
       INSERT INTO ${config.database.schema}.acl_permission (root_directory_acl_id, role_id, permission) 
       VALUES ($1, $2, $3) 
-      ON CONFLICT (root_directory_acl_id, role_id) 
+      ON CONFLICT (root_directory_acl_id, role_id, permission) 
       DO UPDATE SET permission = EXCLUDED.permission
       RETURNING acl_permission_id`, 
       [rootDirectoryAclId, roleId, permission]
@@ -220,6 +517,19 @@ class Acl {
     return { aclPermissionId, rootDirectoryAclId, roleId, directoryId };
   }
 
+  /**
+   * @method setDirectoryAcl
+   * @description Set the root directory ACL for a specific directory and recursively apply it to all child directories.
+   *
+   * @param {Object} opts
+   * @param {String} opts.directoryId Required. directory ID to set the ACL on
+   * @param {String} opts.rootDirectoryAclId Required. root directory ACL id
+   * @param {Object} opts.dbClient Required. database client instance
+   * @param {Boolean} opts.recurse Optional. if false, will NOT recursively apply the ACL to all child directories. 
+   *                                default true
+   * 
+   * @returns {Promise<void>}
+   */
   async setDirectoryAcl(opts={}) {
     let { rootDirectoryAclId, directoryId, dbClient } = opts;
     if( !directoryId || !rootDirectoryAclId || !dbClient ) {
@@ -228,12 +538,12 @@ class Acl {
 
     // check if the directory already has an explicit acl set
     let res = await dbClient.query(`
-      SELECT 1 FROM ${config.database.schema}.directory_acl WHERE directory_id = $1 AND root_directory_acl_id = $2
+      SELECT root_directory_acl_id FROM ${config.database.schema}.directory_acl WHERE directory_id = $1 AND root_directory_acl_id = $2
     `, [directoryId, rootDirectoryAclId]);
 
     if( res.rows.length > 0 ) {
       this.logger.debug(`Directory ${directoryId} already has an explicit ACL set to ${rootDirectoryAclId}, skipping`);
-      return;
+      return res.rows[0].root_directory_acl_id;
     }
 
     await dbClient.query(`
@@ -246,10 +556,14 @@ class Acl {
       [directoryId, rootDirectoryAclId]
     );
 
+    if( opts.recurse === false ) {
+      return rootDirectoryAclId;
+    }
+
     let children = await dbClient.query(`
       SELECT d.directory_id, rda.root_directory_acl_id
       FROM ${config.database.schema}.directory d
-      LEFT JOIN ${config.database.schema}.root_directory_acl rda ON d.directory_id = rda.directories_id
+      LEFT JOIN ${config.database.schema}.root_directory_acl rda ON d.directory_id = rda.directory_id
       WHERE d.parent_id = $1`, [directoryId]);
     for( let child of children.rows ) {
       if( child.root_directory_acl_id ) {
@@ -258,6 +572,26 @@ class Acl {
       }
       await this.setDirectoryAcl({ directoryId: child.directory_id, rootDirectoryAclId, dbClient });
     }
+  }
+
+  /**
+   * @method refreshLookupTable
+   * @description Refresh the directory_user_permissions_lookup materialized view.
+   * This should be run after any changes to ACLs or permissions.  The view is used
+   * for permission checks and is refreshed concurrently to avoid locking but is required
+   * to ensure all query ACL checks are up to date.
+   *
+   * @param {Object} opts
+   * @param {Object} opts.dbClient Required. database client instance
+   * 
+   * @returns {Promise<void>}
+   */
+  refreshLookupTable(opts={}) {
+    let { dbClient } = opts;
+    if( !dbClient ) {
+      throw new Error('dbClient is required');
+    }
+    return dbClient.query(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${config.database.schema}.directory_user_permissions_lookup`);
   }
 
 }

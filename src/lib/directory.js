@@ -1,12 +1,17 @@
 import config from './config.js';
 import path from 'path';
-import logger from './logger.js';
+import { getLogger } from './logger.js';
 
 class Directory {
 
+  constructor(opts={}) {
+    this.logger = getLogger('Directory');
+    this.acl = opts.acl;
+  }
+
   /**
-   * @method constructor
-   * @description Create a new Directory instance.
+   * @method get
+   * @description Get a directory by its path.  If no path is provided, the root directory is returned.
    *
    * @param {String} directory directory path
    * @param {Object} opts
@@ -51,6 +56,12 @@ class Directory {
     }
     let parentId = res.rows[0].directory_id;
 
+    // get root acl if it exists
+    let rootAcl = await opts.dbClient.getRootDirectoryAcl({
+      dbClient: opts.dbClient,
+      directory: '/'
+    });
+
     // handle root directory case, fetch its ID if it exists
     if( parts.length === 0 ) {
       return parentId;
@@ -67,7 +78,28 @@ class Directory {
       );
       parentId = res.rows[0].directory_id;
       currentPath = fullPath;
-    }
+
+      // if we don't have a rootAcl yet, check if the root directory has one
+      if( !rootAcl ) {
+        rootAcl = await opts.dbClient.getRootDirectoryAcl({
+          dbClient: opts.dbClient,
+          directory: fullPath
+        });
+      }
+
+      // if you have a rootAcl, set the directory to the current directory
+      // this method will skip if the directory already has an explicit ACL set
+      // and return the root_directory_acl_id if it was set.
+      // This function is set to not recurse and only set the ACL on the current directory
+      if( rootAcl ) {
+        rootAcl.root_directory_acl_id = await this.acl.setDirectoryAcl({ 
+          recurse: false,
+          rootDirectoryAclId: rootAcl.root_directory_acl_id,
+          directoryId: parentId, 
+          dbClient: opts.dbClient 
+        });
+      }
+    }    
 
     return parentId; // Return the parent directory ID
   }

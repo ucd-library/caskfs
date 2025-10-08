@@ -19,4 +19,4 @@ function setLogLevel(level) {
   Object.values(loggers).forEach(logger => logger.setLevel(level));
 }
 
-export default { getLogger, setLogLevel };
+export { getLogger, setLogLevel };
