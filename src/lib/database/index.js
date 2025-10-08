@@ -2,14 +2,14 @@ import path from 'path';
 import PgClient from "./pg-client.js";
 import SqliteClient from "./sqlite-client.js";
 import config from '../config.js';
-import createLogger from '../logger.js';
+import { getLogger } from '../logger.js';
 import { MissingResourceError } from '../errors.js';
 
 class Database {
 
   constructor(opts={}) {
     this.client = opts.client;
-    this.logger = createLogger('database');
+    this.logger = getLogger('database');
 
     this.schema = opts.schema || config.database.schema || 'caskfs';
 
@@ -215,7 +215,7 @@ class Database {
    */
   async getDirectory(directory) {
     let res = await this.client.query(
-      `SELECT * FROM ${this.schema}.directory_acl_view WHERE directory = $1`,
+      `SELECT * FROM ${this.schema}.directory WHERE fullname = $1`,
       [directory]
     );
     if (res.rows.length === 0) {
@@ -440,6 +440,7 @@ class Database {
 
     return data;
   }
+
 
 }
 

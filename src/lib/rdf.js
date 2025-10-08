@@ -4,7 +4,7 @@ import Database from "./database/index.js";
 import config from "./config.js";
 import path from "path";
 import fsp from "fs/promises";
-import getLogger from './logger.js';
+import { getLogger } from './logger.js';
 
 const customLoader = async (url, options) => {
   url = new URL(url);

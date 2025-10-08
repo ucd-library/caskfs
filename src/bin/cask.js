@@ -260,8 +260,8 @@ program
     caskfs.dbClient.end();
   });
 
+program.command('acl', 'Manage ACL rules');
 program.command('auto-path', 'Manage auto-path rules');
-
 
 program
   .command('stats')

@@ -32,7 +32,6 @@ const config = {
     database : env.CASKFS_PG_DATABASE || 'postgres',
   },
 
-
   webapp : {
     port : env.CASKFS_WEBAPP_PORT || 3000,
     isDevEnv : env.CASKFS_WEBAPP_ENV === 'dev',

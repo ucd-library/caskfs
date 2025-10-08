@@ -5,7 +5,7 @@ import {v4 as uuidV4} from "uuid";
 import path from 'path';
 import crypto from "crypto";
 import Database from './database/index.js';
-import createLogger from './logger.js';
+import { getLogger } from './logger.js';
 import GCSStorage from './storage/gcs.js';
 import FSStorage from './storage/fs.js';
 
@@ -14,7 +14,7 @@ class Cas {
   constructor(opts={}) {
     this.cloudStorageEnabled = opts.cloudStorageEnabled || config.cloudStorage.enabled;
     this.dbClient = opts.dbClient || new Database();
-    this.logger = createLogger('cas');
+    this.logger = getLogger('cas');
     this.pathPrefix = '';
   }
 

@@ -5,7 +5,8 @@ import mime from "mime";
 import Cas from "./lib/cas.js";
 import Rdf from "./lib/rdf.js";
 import Directory from "./lib/directory.js";
-import getLogger from "./lib/logger.js";
+import Acl from "./lib/acl.js";
+import { getLogger } from "./lib/logger.js";
 import createContext from "./lib/context.js";
 import AutoPathBucket from "./lib/auto-path/bucket.js";
 import AutoPathPartition from "./lib/auto-path/partition.js";
@@ -13,6 +14,8 @@ import AutoPathPartition from "./lib/auto-path/partition.js";
 class CaskFs {
 
   constructor(opts={}) {
+    this.opts = opts;
+
     this.dbClient = new Database({
       client: opts.dbClient,
       type: opts.dbType || config.database.client,
@@ -56,6 +59,8 @@ class CaskFs {
       bucket: new AutoPathBucket({dbClient: this.dbClient, schema: this.schema}),
       partition: new AutoPathPartition({dbClient: this.dbClient, schema: this.schema})
     };
+
+    this.acl = new Acl();
   }
 
   createContext(obj) {
@@ -444,18 +449,172 @@ class CaskFs {
   }
 
   /**
+   * @method ensureRole
+   * @description Ensure that a role exists, creating it if it does not.
+   *
+   * @param {Object} opts
+   * @param {String} opts.role Required. role name
+   * @param {Object} opts.dbClient Optional. database client instance, defaults to instance dbClient
+   * @returns {Promise<Object>} result of the insert query
+   */
+  async ensureRole(opts={}) {
+    opts.dbClient = opts.dbClient || this.dbClient;
+    await this.acl.ensureRole(opts);
+    return this.acl.getRole(opts);
+  }
+
+  /**
+   * @method removeRole
+   * @description Remove a role.  Will remove all associated permissions and user associations.
+   *
+   * @param {Object} opts
+   * @param {String} opts.role Required. role name
+   * @param {Object} opts.dbClient Optional. database client instance, defaults to instance dbClient
+   * @returns {Promise<Object>} result of the delete query
+   */
+  async removeRole(opts={}) {
+    opts.dbClient = opts.dbClient || this.dbClient;
+    return this.acl.removeRole(opts);
+  }
+
+  /**
+   * @method ensureUser
+   * @description Ensure that a user exists, creating it if it does not.
+   *
+   * @param {Object} opts
+   * @param {String} opts.user Required. user name
+   * @param {Object} opts.dbClient Optional. database client instance, defaults to instance dbClient
+   * @returns {Promise<Object>} result of the insert query
+   */
+  async ensureUser(opts={}) {
+    opts.dbClient = opts.dbClient || this.dbClient;
+    return this.acl.ensureUser(opts);
+  }
+
+  /**
+   * @method setUserRole
+   * @description Assign a role to a user.
+   *
+   * @param {Object} opts
+   * @param {String} opts.user Required. user name
+   * @param {String} opts.role Required. role name
+   * @param {Object} opts.dbClient Optional. database client instance, defaults to instance dbClient
+   * @returns {Promise<Object>} result of the insert query
+   */
+  async setUserRole(opts={}) {
+    return this.runInTransaction(async (dbClient) => {
+      opts.dbClient = dbClient;
+      await this.acl.ensureUser(opts);
+      await this.acl.ensureRole(opts);
+      await this.acl.ensureUserRole(opts);
+      return this.acl.getRole(opts);
+    });
+  }
+
+  /**
+   * @method removeUserRole
+   * @description Remove a role from a user.
+   * 
+   * @param {Object} opts
+   * @param {String} opts.user Required. user name
+   * @param {String} opts.role Required. role name
+   * @param {Object} opts.dbClient Optional. database client instance, defaults to instance dbClient
+   * @returns {Promise<Object>} result of the delete query
+   */
+  async removeUserRole(opts={}) {
+    await this.runInTransaction(async (dbClient) => {
+      opts.dbClient = dbClient;
+      return this.acl.removeUserRole(opts);
+    });
+  }
+
+  /**
+   * @method setDirectoryPermission
+   * @description Set a permission for a role on a directory.  Will create the root directory ACL if needed.
+   * Note, all child directories will inherit the permission unless explicitly overridden.
+   *
+   * @param {Object} opts
+   * @param {String} opts.role Required. role name
+   * @param {String} opts.directory Required. directory path
+   * @param {Object} opts.dbClient Optional. database client instance, defaults to instance dbClient
+   */
+  async setDirectoryPermission(opts={}) {
+    await this.runInTransaction(async (dbClient) => {
+      opts.dbClient = dbClient;
+      let {rootDirectoryAclId, directoryId} = await this.acl.setDirectoryPermission(opts);
+      
+      await this.acl.setDirectoryAcl({ 
+        dbClient : opts.dbClient,
+        rootDirectoryAclId,
+        directoryId
+      });
+    });
+  }
+
+  /**
+   * @method removeDirectoryPermission
+   * @description Remove a permission for a role on a directory.
+   *
+   * @param {Object} opts
+   * @param {String} opts.role Required. role name
+   * @param {String} opts.directory Required. directory path
+   * @param {Object} opts.dbClient Optional. database client instance, defaults to instance dbClient
+   */
+  async removeDirectoryPermission(opts={}) {
+    await this.runInTransaction(async (dbClient) => {
+      opts.dbClient = dbClient;
+      await this.acl.removeDirectoryPermission(opts);
+    });
+  }
+
+  /**
+   * @method removeDirectoryAcl
+   * @description Remove all permissions for a directory ACL.  Child directories will inherit from the nearest
+   * ancestor with a directory ACL.
+   * 
+   * @param {Object} opts
+   * @param {String} opts.directory Required. directory path
+   * @param {Object} opts.dbClient Optional. database client instance, defaults to instance dbClient
+   * @returns {Promise<void>}
+   */
+  async removeDirectoryAcl(opts={}) {
+    await this.runInTransaction(async (dbClient) => {
+      opts.dbClient = dbClient;
+      return this.acl.removeRootDirectoryAcl(opts);
+    });
+  }
+
+  async getDirectoryAcl(opts={}) {
+    opts.dbClient = opts.dbClient || this.dbClient;
+    return this.acl.getDirectoryAcl(opts);
+  }
+
+  /**
    * @method getCasLocation
-   * 
-   * 
-   * @param {*} filePath 
-   * @param {*} opts 
-   * @returns 
+   * @description Get the CAS storage location for a given file path.  This will determine the 
+   * hash based filepath as well as the bucket if using cloud storage.
+   *
+   * @param {*} filePath
+   * @param {*} opts
+   * @returns {Promise<Object>} object with bucket and path
    */
   async getCasLocation(filePath, opts={}) {
     let values = await this.getAutoPathValues(filePath, opts);
     return await this.cas.getLocation(values.bucket);
   }
 
+  /**
+   * @method getAutoPathValues
+   * @description Get the auto-path values (eg bucket and partition keys) for a given file path.  
+   * This will return the bucket and partition keys based on the configured auto-path rules.
+   *
+   * @param {String} filePath file path to evaluate
+   * @param {Object} opts options object
+   * @param {String} opts.bucket optional bucket to override auto-path bucket
+   * @param {String|Array} opts.partitionKeys optional partition key or array of partition keys to add
+   * 
+   * @returns {Promise<Object>} object with bucket and partitionKeys array
+   */
   async getAutoPathValues(filePath, opts={}) {
     let results = {};
     for( let type in this.authPath ) {
@@ -485,6 +644,42 @@ class CaskFs {
     }
 
     return results;
+  }
+
+  /**
+   * @method runInTransaction
+   * @description Open a new database client connection, start a transaction, run the provided function,
+   * commit the transaction and close the connection. If any error occurs, rollback the transaction.
+   * Function is passed the dbClient as the first argument.  Function can be async.
+   * 
+   * @param {Function} fn function to run in the transaction, passed the dbClient as the first argument
+   * @returns {any} result of the function
+   */
+  async runInTransaction(fn) {
+    let dbClient = await this.openTransaction();
+    let result;
+    try {
+      result = await fn(dbClient);
+    } catch(err) {
+      await dbClient.query('ROLLBACK');
+      throw err;  
+    }
+    await dbClient.query('COMMIT');
+    await dbClient.end();
+    return result;
+  }
+
+  /**
+   * @method openTransaction
+   * @description Open a new database client connect, open transaction and return the db client.
+   * 
+   * @returns {DatabaseClient} database client with open transaction
+   */
+  async openTransaction() {
+    let dbClient = new Database({type: this.opts.dbType || config.database.client});
+    await dbClient.connect();
+    await dbClient.query('BEGIN');
+    return dbClient;
   }
 
   close() {
