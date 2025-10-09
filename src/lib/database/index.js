@@ -2,6 +2,7 @@ import path from 'path';
 import PgClient from "./pg-client.js";
 import SqliteClient from "./sqlite-client.js";
 import config from '../config.js';
+import acl from '../acl.js';
 import { getLogger } from '../logger.js';
 import { MissingResourceError } from '../errors.js';
 
@@ -272,7 +273,7 @@ class Database {
 
     
     let aclJoin = '';
-    if( config.acl.enabled === true && opts.ignoreAcl !== true ) {
+    if( await acl.aclLookupRequired(opts) ) {
       aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = rdf.directory_id`;
       
       let aclWhere = [
@@ -384,7 +385,7 @@ class Database {
     }
 
     let aclJoin = '';
-    if( config.acl.enabled === true && opts.ignoreAcl !== true ) {
+    if( await acl.aclLookupRequired(opts) ) {
       aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = rdf.directory_id`;
       
       let aclWhere = [

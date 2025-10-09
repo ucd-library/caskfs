@@ -11,6 +11,60 @@ class AclAccessError extends Error {
   }
 }
 
+class AclCache {
+
+  constructor() {
+    this.userRoleCache = new Map();
+    this.dirPermissionsCache = new Map();
+  }
+
+  setUserRole(user, role, value) {
+    if( config.acl.enabledCache !== true ) {
+      return null;
+    }
+    let key = user+'-'+role;
+
+    if( this.userRoleCache.has(key) ) {
+      return null;
+    }
+
+    this.userRoleCache.set(key, value);
+    setTimeout(() => {
+      this.userRoleCache.delete(key);
+    }, config.acl.cacheTTL);
+  }
+
+  getUserRole(user, role) {
+    if( config.acl.enabledCache !== true ) {
+      return null;
+    }
+    return this.userRoleCache.get(user+'-'+role);
+  }
+
+  setDirPermissions(user, filePath, permission, value) {
+    if( config.acl.enabledCache !== true ) {
+      return null;
+    }
+    let key = user+'-'+filePath+'-'+permission;
+    if( this.dirPermissionsCache.has(key) ) {
+      return null;
+    }
+
+    this.dirPermissionsCache.set(key, value);
+    setTimeout(() => {
+      this.dirPermissionsCache.delete(key);
+    }, config.acl.cacheTTL);
+  }
+
+  getDirPermissions(user, filePath, permission) {
+    if( config.acl.enabledCache !== true ) {
+      return null;
+    }
+    return this.dirPermissionsCache.get(user+'-'+filePath+'-'+permission);
+  }
+
+}
+
 // TODO: add caching for user roles and directory permissions
 
 class Acl {
@@ -19,6 +73,34 @@ class Acl {
     this.logger = getLogger('acl');
     this.enabled = config.acl.enabled !== undefined ? config.acl.enabled : false;
     this.AclAccessError = AclAccessError;
+    this.cache = new AclCache();
+  }
+
+  /**
+   * @method aclLookupRequired
+   * @description Determine if an ACL lookup is required based on the following conditions:
+   * - If opts.ignoreAcl is true, no lookup is required.
+   * - If ACLs are disabled in the config, no lookup is required.
+   * - If the user is an admin, no lookup is required.
+   * 
+   * @param {Object} opts
+   * @param {String} opts.user - The user to check.
+   * @param {Object} opts.dbClient - The database client instance.
+   * @param {Boolean} opts.ignoreAcl - If true, skip ACL lookup.
+   *  
+   * @returns {Promise<Boolean>} - True if an ACL lookup is required, false otherwise.
+   */
+  async aclLookupRequired(opts={}) {
+    if( opts.ignoreAcl === true ) {
+      return false;
+    }
+    if( this.enabled === false ) {
+      return false;
+    }
+    if( await this.isAdmin(opts) ) {
+      return false;
+    }
+    return true;
   }
 
   /**
@@ -56,12 +138,17 @@ class Acl {
       throw new Error('User, role and dbClient are required');
     }
 
+    let cached = this.cache.getUserRole(user, role);
+    if( cached !== null ) return cached;
+
     let result = await dbClient.query(`
       SELECT 1 FROM ${config.database.schema}.acl_user_roles_view
       WHERE user = $1 AND role = $2
     `, [user, role]);
 
-    return result.rows.length > 0;
+    let value = result.rows.length > 0;
+    this.cache.setUserRole(user, role, value);
+    return value;
   }
 
   /**
@@ -81,6 +168,9 @@ class Acl {
     if( !filePath || !permission || !dbClient ) {
       throw new Error('User, filePath, permission and dbClient are required');
     }
+
+    let cached = this.cache.getDirPermissions(opts.user || 'PUBLIC', filePath, permission);
+    if( cached !== null ) return cached;
 
     let permissionFilter;
     if( !opts.user ) {
@@ -154,7 +244,10 @@ class Acl {
       AND ${userSelectQuery}
       AND ${permissionFilter}
       `, args);
-    return resp.rows.length > 0;
+
+    let value = resp.rows.length > 0;
+    this.cache.setDirPermissions(opts.user || 'PUBLIC', filePath, permission, value);
+    return value;
   }
 
   /**
@@ -692,4 +785,5 @@ class Acl {
 
 }
 
-export default Acl;
+const impl = new Acl();
+export default impl;

@@ -5,6 +5,7 @@ import config from "./config.js";
 import path from "path";
 import fsp from "fs/promises";
 import { getLogger } from './logger.js';
+import acl from './acl.js';
 
 const customLoader = async (url, options) => {
   url = new URL(url);
@@ -407,7 +408,7 @@ class Rdf {
 
     // handle acl filtering if enabled
     let aclJoin = '';
-    if( config.acl.enabled === true && opts.ignoreAcl !== true ) {
+    if( await acl.aclLookupRequired(opts) ) {
       aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = referencing_view.directory_id`;
       
       let aclWhere = [
@@ -538,7 +539,7 @@ class Rdf {
     let args = [fileId];  
 
     let aclJoin = '';
-    if( config.acl.enabled === true && opts.ignoreAcl !== true ) {
+    if( await acl.aclLookupRequired(opts) ) {
       aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = ref_by_view.directory_id`;
       
       let aclWhere = [

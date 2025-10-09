@@ -3,7 +3,7 @@ import os from 'os';
 let optsWrapper = (program) => {
   program
     .option('-i, --impersonate <user>', 'user to run to command as')
-    .option('-u, --user', 'run as system account user')
+    .option('-s, --system-user', 'run as system account user')
 }
 
 let handleUser = (opts) => {
