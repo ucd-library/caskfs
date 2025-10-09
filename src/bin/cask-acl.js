@@ -152,6 +152,8 @@ program.command('get <path>')
 program.command('test <path> <username> <permission>')
   .description('Test a user\'s access to a file or directory')
   .option('-f, --is-file', 'Indicate that the path is a file', false)
+  .option('-x, --no-cache', 'Disable caching for this check', false)
+  .option('-b, --no-admin-bypass', 'Do not allow admin users to bypass checks', false)
   .action(async (path, username, permission, options) => {
     const cask = new CaskFs();
 

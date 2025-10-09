@@ -271,9 +271,14 @@ class Database {
     let nodeWhere = [];
     let args = [];
 
+    let aclOpts = {
+      user: opts.user,
+      ignoreAcl : opts.ignoreAcl,
+      dbClient : opts.dbClient || this
+    };
     
     let aclJoin = '';
-    if( await acl.aclLookupRequired(opts) ) {
+    if( await acl.aclLookupRequired(aclOpts) ) {
       aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = rdf.directory_id`;
       
       let aclWhere = [
@@ -384,8 +389,14 @@ class Database {
       throw new Error('Containment, subject, or object must be specified for rdf queries');
     }
 
+    let aclOpts = {
+      user: opts.user,
+      ignoreAcl : opts.ignoreAcl,
+      dbClient : opts.dbClient || this
+    };
+
     let aclJoin = '';
-    if( await acl.aclLookupRequired(opts) ) {
+    if( await acl.aclLookupRequired(aclOpts) ) {
       aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = rdf.directory_id`;
       
       let aclWhere = [

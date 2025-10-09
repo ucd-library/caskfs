@@ -206,15 +206,15 @@ class CaskFs {
           digests: context.stagedFile.digests,
           size: context.stagedFile.size,
           partitionKeys: opts.partitionKeys
-      });
-        context.update({file: await this.metadata(filePath, {dbClient})});
+        });
+        context.update({file: await this.metadata(filePath, {dbClient, ignoreAcl: true})});
       } else {
         await this.patchMetadata(
           context, 
-          {metadata, partitionKeys: opts.partitionKeys, onlyOnChange: true, dbClient: dbClient}
+          {metadata, partitionKeys: opts.partitionKeys, onlyOnChange: true, dbClient: dbClient, ignoreAcl: true}
         );
         context.replacedFile = context.file;
-        context.update({file: await this.metadata(filePath, {dbClient})});
+        context.update({file: await this.metadata(filePath, {dbClient, ignoreAcl: true})});
       }
 
       // if we have rdf data, process it now
@@ -222,10 +222,10 @@ class CaskFs {
         if( !context?.stagedFile?.hashExists || !fileExists ) {
           // if replacing an existing file, delete old triples first
           this.logger.info('Replacing existing RDF file, deleting old triples', context.logContext);
-          await this.rdf.delete(context, {dbClient});
+          await this.rdf.delete(context, {dbClient, ignoreAcl: true});
 
           this.logger.info('Inserting RDF triples for file', context.logContext);
-          await this.rdf.insert(context, {dbClient, filepath: context.stagedFile.tmpFile});
+          await this.rdf.insert(context, {dbClient, filepath: context.stagedFile.tmpFile, ignoreAcl: true});
         } else {
           this.logger.info('RDF file already exists in CASKFS, skipping RDF processing', context.logContext);
         }
@@ -377,11 +377,16 @@ class CaskFs {
   async relationships(filePath, opts={}) {
     await this.canReadFile({...opts, filePath});
 
+    let dbClient = opts.dbClient || this.dbClient;
+
     if( acl.enabled && opts.user !== undefined && opts.user !== null) {
-      opts.userId = acl.getUserId({user: opts.user});
+      opts.userId = acl.getUserId({
+        user: opts.user,
+        dbClient
+      });
     }
 
-    let metadata = await this.metadata(filePath);
+    let metadata = await this.metadata(filePath, {dbClient, ignoreAcl: true});
     return this.rdf.relationships(metadata, opts);
   }
 
@@ -849,6 +854,7 @@ class CaskFs {
    */
   async checkPermissions(opts={}) {
     opts.dbClient = opts.dbClient || this.dbClient;
+
     if( !(await acl.aclLookupRequired(opts)) ) {
       return true;
     }

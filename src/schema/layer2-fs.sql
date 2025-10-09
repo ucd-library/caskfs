@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS caskfs.acl_role_user (
   user_id          UUID NOT NULL REFERENCES caskfs.acl_user(user_id) ON DELETE CASCADE,
   created         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   modified        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires         TIMESTAMPTZ,
   UNIQUE(role_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_acl_role_user_userrole_id ON caskfs.acl_role_user(role_id, user_id);

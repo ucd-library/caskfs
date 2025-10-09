@@ -46,6 +46,7 @@ program
     opts.partitionKeys = partitionKeys;
     opts.mimeType = mimeType;
     opts.replace = options.replace;
+    opts.user = options.user;
 
 
     let context = await createContext({file: filePath});
@@ -86,7 +87,8 @@ program
         let context = await createContext({file: destPath});
         await cask.write(context, {
           readPath: sourcePath,
-          replace: options.replace
+          replace: options.replace,
+          user: options.user
         });
       }
       cask.dbClient.end();
@@ -110,7 +112,8 @@ program
           context = await createContext({file: destFile});
           await cask.write(context, {
             readPath: file,
-            replace: options.replace
+            replace: options.replace,
+            user: options.user
           });
         } catch (err) {
           console.error(`Failed to copy ${file} to ${destFile}: ${err.message}`);
@@ -135,22 +138,25 @@ program
 program
   .command('metadata <file-path>')
   .description('Get metadata for a file in the CASKFS')
-  .action(async (filePath) => {
+  .action(async (filePath, options={}) => {
     handleUser(options);
 
     const cask = new CaskFs();
-    console.log(await cask.metadata(filePath));
+    console.log(await cask.metadata(filePath, options));
     cask.dbClient.end();
   });
 
 program
   .command('read <file-path>')
   .description('Read a file from the CASKFS and output to stdout')
-  .action(async (filePath) => {
+  .action(async (filePath, options={}) => {
     handleUser(options);
 
     const cask = new CaskFs();
-    console.log(await cask.read(filePath, { encoding: 'utf8' }));
+    console.log(await cask.read(filePath, { 
+      encoding: 'utf8',
+      user: options.user
+    }));
     cask.dbClient.end();
   });
 
@@ -209,7 +215,7 @@ program
       options.ignorePredicate = options.ignorePredicate.split(',').map(k => k.trim());
     }
 
-    console.log(JSON.stringify(await cask.links(filePath, options), null, 2));
+    console.log(JSON.stringify(await cask.relationships(filePath, options), null, 2));
     cask.dbClient.end();
   });
 
@@ -257,7 +263,8 @@ program
     let partitionKeys = options.partitionKeys ? options.partitionKeys.split(',').map(k => k.trim()) : undefined;
     const caskfs = new CaskFs();
     const resp = await caskfs.ls({
-      directory
+      directory,
+      user: options.user
     });
 
     if (options.output === 'json') {
@@ -300,6 +307,25 @@ program
     const cask = new CaskFs();
     await cask.dbClient.init();
     cask.dbClient.end();
+  });
+
+program
+  .command('whoami')
+  .description('Show the current user')
+  .action(async (options) => {
+    handleUser(options);
+    console.log(`Current User: ${options.user || 'public (no user)'}`);
+    if( options.user ) {
+      const cask = new CaskFs();
+      let resp = await cask.acl.getUserRoles({ user: options.user, dbClient: cask.dbClient });
+      console.log('Roles:');
+      if( resp.length === 0 ) {
+        console.log('  (none)');
+      } else {
+        console.log(' - '+resp.join('\n - '));
+      }
+      cask.dbClient.end();
+    }
   });
 
 program

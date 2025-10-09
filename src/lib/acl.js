@@ -133,21 +133,25 @@ class Acl {
    * @returns {Promise<Boolean>} - True if the user is in the role, false otherwise. 
    */
   async userInRole(opts={}) {
-    let { user, role, dbClient } = opts;
-    if( !user || !role || !dbClient ) {
+    let { role, dbClient } = opts;
+    if( !role || !dbClient ) {
       throw new Error('User, role and dbClient are required');
     }
 
-    let cached = this.cache.getUserRole(user, role);
+    if( !opts.user ) return false;
+
+    let cached = this.cache.getUserRole(opts.user, role);
     if( cached !== null ) return cached;
 
     let result = await dbClient.query(`
       SELECT 1 FROM ${config.database.schema}.acl_user_roles_view
-      WHERE user = $1 AND role = $2
-    `, [user, role]);
+      WHERE "user" = $1 AND "role" = $2
+    `, [opts.user, role]);
+
+
 
     let value = result.rows.length > 0;
-    this.cache.setUserRole(user, role, value);
+    this.cache.setUserRole(opts.user, role, value);
     return value;
   }
 
@@ -176,7 +180,7 @@ class Acl {
     if( !opts.user ) {
       // cheat and only allow read access for public if no user is provided
       if( permission !== 'read' ) return false;
-      permissionFilter = `is_public = true`;
+      permissionFilter = `can_read = true`;
     } else if( permission === 'read' ) {
       permissionFilter = `can_read = true`;
     } else if( permission === 'write' ) {
@@ -504,7 +508,13 @@ class Acl {
       throw new Error('dbClient and directory are required');
     }
     let res = await dbClient.query(`
-      SELECT * FROM ${config.database.schema}.directory_acl WHERE fullname = $1`, [directory]);
+      SELECT rda.* 
+      FROM ${config.database.schema}.directory d
+      JOIN ${config.database.schema}.directory_acl da ON d.directory_id = da.directory_id
+      JOIN ${config.database.schema}.root_directory_acl rda ON rda.directory_id = d.directory_id
+      WHERE d.fullname = $1`, 
+      [directory]
+    );
     if( res.rows.length === 0 ) {
       return null;
     }

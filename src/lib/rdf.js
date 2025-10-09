@@ -406,9 +406,15 @@ class Rdf {
     let where = ['source_view.file_id = $1', 'referencing_view.file_id != $1'];
     let args = [fileId];
 
+    let aclOpts = {
+      user: opts.user,
+      ignoreAcl : opts.ignoreAcl,
+      dbClient : opts.dbClient || this.dbClient
+    };
+
     // handle acl filtering if enabled
     let aclJoin = '';
-    if( await acl.aclLookupRequired(opts) ) {
+    if( await acl.aclLookupRequired(aclOpts) ) {
       aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = referencing_view.directory_id`;
       
       let aclWhere = [
@@ -538,8 +544,14 @@ class Rdf {
     let distinctWhere = ['v.file_id = $1'];
     let args = [fileId];  
 
+    let aclOpts = {
+      user: opts.user,
+      ignoreAcl : opts.ignoreAcl,
+      dbClient : opts.dbClient || this.dbClient
+    };
+
     let aclJoin = '';
-    if( await acl.aclLookupRequired(opts) ) {
+    if( await acl.aclLookupRequired(aclOpts) ) {
       aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = ref_by_view.directory_id`;
       
       let aclWhere = [

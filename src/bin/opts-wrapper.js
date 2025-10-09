@@ -1,17 +1,22 @@
+import { program } from 'commander';
 import os from 'os';
 
+let programInstance = null;
 let optsWrapper = (program) => {
+  programInstance = program;
   program
     .option('-i, --impersonate <user>', 'user to run to command as')
-    .option('-s, --system-user', 'run as system account user')
+    .option('-p, --public-user', 'run as public user')
 }
 
 let handleUser = (opts) => {
-  if( opts.user === true ) {
+  let gOpts = programInstance.opts();
+  if( gOpts.impersonate ) {
+    opts.user = gOpts.impersonate;
+  } else if( gOpts.publicUser ) {
+    opts.user = null;
+  } else {
     opts.user = os.userInfo().username;
-  }
-  if( opts.impersonate ) {
-    opts.user = opts.impersonate;
   }
 }
 
