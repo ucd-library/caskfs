@@ -5,8 +5,11 @@ import fs from 'fs/promises';
 import CaskFs from '../index.js';
 import createContext from '../lib/context.js';
 import path from 'path';
+import {optsWrapper, handleUser} from './opts-wrapper.js';
 
 const program = new Command();
+optsWrapper(program)
+
 
 program
   .command('write')
@@ -20,6 +23,8 @@ program
   .action(async (filePath, options) => {
     let opts = {};
     const cask = new CaskFs();
+
+    handleUser(options);
 
     if (options.dataFile === '-') {
       opts.readStream = process.stdin;
@@ -56,6 +61,8 @@ program
   .option('-d, --dry-run', 'Show what would be copied without actually copying', false)
   .option('-b, --bucket <bucket>', 'Target bucket when copying to GCS')
   .action(async (sourcePath, destPath, options) => {
+    handleUser(options);
+    
     if( !path.isAbsolute(sourcePath) ) {
       sourcePath = path.resolve(process.cwd(), sourcePath);
     }
@@ -129,6 +136,8 @@ program
   .command('metadata <file-path>')
   .description('Get metadata for a file in the CASKFS')
   .action(async (filePath) => {
+    handleUser(options);
+
     const cask = new CaskFs();
     console.log(await cask.metadata(filePath));
     cask.dbClient.end();
@@ -138,6 +147,8 @@ program
   .command('read <file-path>')
   .description('Read a file from the CASKFS and output to stdout')
   .action(async (filePath) => {
+    handleUser(options);
+
     const cask = new CaskFs();
     console.log(await cask.read(filePath, { encoding: 'utf8' }));
     cask.dbClient.end();
@@ -153,6 +164,8 @@ program
   .option('-p, --partition <keys>', 'Only include RDF triples with the specified partition keys (comma-separated). Must be used with --subject or --containment')
   .option('-f, --format <format>', 'RDF format to output: jsonld, compact, flattened, expanded, nquads or json. Default is jsonld', 'jsonld')
   .action(async (options) => {
+    handleUser(options);
+
     const cask = new CaskFs();
 
     if( options.partition ) {
@@ -180,6 +193,8 @@ program
   .option('-s, --subject <subject-uri>', 'Only include relationships with the specified subject URI')
   .option('-t, --stats', 'Show counts of file relationships by predicate instead of individual relationships', false)
   .action(async (filePath, options) => {
+    handleUser(options);
+
     const cask = new CaskFs();
 
     if( options.partitionKeys ) {
@@ -207,6 +222,8 @@ program
   .option('-s, --subject <subject-uri>', 'Only include files with the specified subject URI')
   .option('-o, --object <object-uri>', 'Only include files with the specified object URI')
   .action(async (options) => {
+    handleUser(options);
+
     const cask = new CaskFs();
 
     if( options.partitionKeys ) {
@@ -222,6 +239,8 @@ program
   .description('Remove a file from the CASKFS and the underlying storage')
   .option('-s, --soft-delete', 'Never delete the file from the underlying storage, even if all references are removed', false)
   .action(async (filePath, options) => {
+    handleUser(options);
+
     const cask = new CaskFs();
     const resp = await cask.delete(filePath, { softDelete: options.softDelete });
     console.log(resp);
@@ -233,6 +252,8 @@ program
   .option('-o, --output <output>', 'Output format: text (default) or json', 'text')
   .description('List files in the CASK FS')
   .action(async (directory, options) => {
+    handleUser(options);
+
     let partitionKeys = options.partitionKeys ? options.partitionKeys.split(',').map(k => k.trim()) : undefined;
     const caskfs = new CaskFs();
     const resp = await caskfs.ls({

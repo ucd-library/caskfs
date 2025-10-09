@@ -355,7 +355,6 @@ class Rdf {
    * @returns 
    */
   async relationships(metadata, opts={}) {
-
     // Note, the file has been permission checked before this is called
     // so we don't need to do that here.  Just need make sure all external
     // references are filtered out.
@@ -364,6 +363,10 @@ class Rdf {
       this.getReferencing(metadata.file_id, opts),
       this.getReferencedBy(metadata.file_id, opts)
     ]);
+
+    if( opts.debug ) {
+      return { outbound, inbound };
+    }
 
     return { 
       source : {
@@ -402,6 +405,7 @@ class Rdf {
     let where = ['source_view.file_id = $1', 'referencing_view.file_id != $1'];
     let args = [fileId];
 
+    // handle acl filtering if enabled
     let aclJoin = '';
     if( config.acl.enabled === true && opts.ignoreAcl !== true ) {
       aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = referencing_view.directory_id`;
@@ -418,6 +422,7 @@ class Rdf {
       where.push(`(${aclWhere.join(' OR ')})`);
     }
 
+    // additional filters
     if( opts.predicate ) {
       if( !Array.isArray(opts.predicate) ) {
         opts.predicate = [opts.predicate];
@@ -492,7 +497,7 @@ class Rdf {
     let limit = 'LIMIT $'+(args.length + 1);
     args.push(opts.limit || 100);
 
-    let res = await this.dbClient.query(`WITH links AS (
+    let query = `WITH links AS (
         SELECT 
             referencing_view.containment AS containment,
             source_view.predicate AS predicate
@@ -514,8 +519,13 @@ class Rdf {
     SELECT * FROM links
     UNION
     SELECT * FROM nodes
-    ${limit}`, args);
+    ${limit}`;
 
+    if( opts.debug ) {
+      return { query, args  };
+    }
+
+    let res = await this.dbClient.query(query, args);
     return res.rows;
   }
 
@@ -526,6 +536,22 @@ class Rdf {
     let where = ['ref_by_view.file_id != $1'];
     let distinctWhere = ['v.file_id = $1'];
     let args = [fileId];  
+
+    let aclJoin = '';
+    if( config.acl.enabled === true && opts.ignoreAcl !== true ) {
+      aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = ref_by_view.directory_id`;
+      
+      let aclWhere = [
+        '(acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE)'
+      ];
+
+      if( opts.userId !== null ) {
+        aclWhere.push(`(acl_lookup.user_id = $${args.length + 1} AND acl_lookup.can_read = TRUE)`);
+        args.push(opts.userId);
+      }
+
+      where.push(`(${aclWhere.join(' OR ')})`);
+    }
 
     if( opts.predicate ) {
       if( !Array.isArray(opts.predicate) ) {
@@ -558,7 +584,6 @@ class Rdf {
       args.push(opts.graph);
     }
 
-    // TODO: filter early
     if( opts.subject ) {
       where.push(`v.subject = $${args.length + 1}`);
       args.push(opts.subject);
@@ -587,7 +612,7 @@ class Rdf {
           ${limit}`;
     }
 
-    let resp = await this.dbClient.query(`
+    let query = `
       WITH distinct_subjects AS (
         SELECT DISTINCT v.subject
         FROM caskfs.rdf_link_view v
@@ -599,11 +624,17 @@ class Rdf {
       ), 
       links AS (
           SELECT * FROM caskfs.rdf_link_view ref_by_view
+          ${aclJoin}
           WHERE ${where.join(' AND ')}
       )
       ${select}
-      `, args);
+      `;
 
+    if( opts.debug ) {
+      return { query, args  };
+    }
+
+    let resp = await this.dbClient.query(query, args);
     return resp.rows;
   }
 

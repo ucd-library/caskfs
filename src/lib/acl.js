@@ -11,12 +11,57 @@ class AclAccessError extends Error {
   }
 }
 
+// TODO: add caching for user roles and directory permissions
+
 class Acl {
 
   constructor() {
     this.logger = getLogger('acl');
     this.enabled = config.acl.enabled !== undefined ? config.acl.enabled : false;
     this.AclAccessError = AclAccessError;
+  }
+
+  /**
+   * @method isAdmin
+   * @description Check if a user has the config defined admin role.
+   * A wrapper around userInRole for convenience.
+   * 
+   * @param {Object} opts
+   * @param {String} opts.user - The user to check.
+   * @param {Object} opts.dbClient - The database client instance. 
+   * 
+   * @returns {Promise<Boolean>} - True if the user is an admin, false otherwise.
+   */
+  async isAdmin(opts={}) {
+    return this.userInRole({ 
+      ...opts, 
+      role: config.acl.adminRole
+    });
+  }
+
+  /**
+   * @method userInRole
+   * @description Check if a user is in a specific role.
+   * 
+   * @param {Object} opts
+   * @param {String} opts.user - The user to check.
+   * @param {String} opts.role - The role to check.
+   * @param {Object} opts.dbClient - The database client instance.
+   *
+   * @returns {Promise<Boolean>} - True if the user is in the role, false otherwise. 
+   */
+  async userInRole(opts={}) {
+    let { user, role, dbClient } = opts;
+    if( !user || !role || !dbClient ) {
+      throw new Error('User, role and dbClient are required');
+    }
+
+    let result = await dbClient.query(`
+      SELECT 1 FROM ${config.database.schema}.acl_user_roles_view
+      WHERE user = $1 AND role = $2
+    `, [user, role]);
+
+    return result.rows.length > 0;
   }
 
   /**

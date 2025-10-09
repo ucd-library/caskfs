@@ -47,7 +47,8 @@ const config = {
 
   acl : {
     // enabled : (env.CASKFS_ACL_ENABLED !== 'false'),
-    enabled : false
+    enabled :  false,
+    adminRole : env.CASKFS_ACL_ADMIN_ROLE || 'admin',
   }
 
 }

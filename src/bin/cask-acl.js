@@ -54,7 +54,7 @@ program.command('role-remove <role>')
     cask.dbClient.end();
   });
 
-program.command('set-public <directory> <permission>')
+program.command('public-set <directory> <permission>')
   .description('Set a directory as public.  Permission should be true or false')
   .action(async (directory, permission) => {
     const cask = new CaskFs();

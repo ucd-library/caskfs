@@ -852,9 +852,15 @@ class CaskFs {
     if( opts.ignoreAcl === true ) {
       return true;
     }
+
     if( this.acl.enabled === false ) {
       return true;
     }
+
+    if( await this.acl.isAdmin(opts.user) ) {
+      return true;
+    }
+
     let hasAccess = await this.acl.hasPermission(opts);
     if( !hasAccess ) {
       throw new this.acl.AclAccessError('Access denied', opts.user, opts.filePath, opts.permission);
