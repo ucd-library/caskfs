@@ -1,10 +1,67 @@
 import { getLogger } from './logger.js';
 import config from './config.js';
 
+class AclAccessError extends Error {
+  constructor(message, user, filePath, permission) {
+    super(message);
+    this.name = 'AclAccessError';
+    this.user = user || 'PUBLIC';
+    this.filePath = filePath;
+    this.permission = permission;
+  }
+}
+
+// TODO: add caching for user roles and directory permissions
+
 class Acl {
 
   constructor() {
     this.logger = getLogger('acl');
+    this.enabled = config.acl.enabled !== undefined ? config.acl.enabled : false;
+    this.AclAccessError = AclAccessError;
+  }
+
+  /**
+   * @method isAdmin
+   * @description Check if a user has the config defined admin role.
+   * A wrapper around userInRole for convenience.
+   * 
+   * @param {Object} opts
+   * @param {String} opts.user - The user to check.
+   * @param {Object} opts.dbClient - The database client instance. 
+   * 
+   * @returns {Promise<Boolean>} - True if the user is an admin, false otherwise.
+   */
+  async isAdmin(opts={}) {
+    return this.userInRole({ 
+      ...opts, 
+      role: config.acl.adminRole
+    });
+  }
+
+  /**
+   * @method userInRole
+   * @description Check if a user is in a specific role.
+   * 
+   * @param {Object} opts
+   * @param {String} opts.user - The user to check.
+   * @param {String} opts.role - The role to check.
+   * @param {Object} opts.dbClient - The database client instance.
+   *
+   * @returns {Promise<Boolean>} - True if the user is in the role, false otherwise. 
+   */
+  async userInRole(opts={}) {
+    let { user, role, dbClient } = opts;
+    if( !user || !role || !dbClient ) {
+      throw new Error('User, role and dbClient are required');
+    }
+
+    let result = await dbClient.query(`
+      SELECT 1 FROM ${config.database.schema}.acl_user_roles_view
+      WHERE user = $1 AND role = $2
+    `, [user, role]);
+
+    return result.rows.length > 0;
   }
 
   /**
@@ -15,18 +72,22 @@ class Acl {
    * @param {String} opts.user - The user to check permissions for.
    * @param {String} opts.filePath - The file or directory path to check permissions on.
    * @param {String} opts.permission - The permission to check (e.g. 'read', 'write', 'admin').
-   * @param {Boolean} opts.isDirectory - Whether the path is a directory. Default is false.
+   * @param {Boolean} opts.isFile - Whether the path is a file. Default is false.
    * @param {Object} opts.dbClient - The database client instance.
    * @returns {Promise<Boolean>} - True if the user has the specified permission, false otherwise.
    */
   async hasPermission(opts={}) {
-    let { user, filePath, permission, dbClient } = opts;
-    if( !user || !filePath || !permission || !dbClient ) {
+    let { filePath, permission, dbClient } = opts;
+    if( !filePath || !permission || !dbClient ) {
       throw new Error('User, filePath, permission and dbClient are required');
     }
 
     let permissionFilter;
-    if( permission === 'read' ) {
+    if( !opts.user ) {
+      // cheat and only allow read access for public if no user is provided
+      if( permission !== 'read' ) return false;
+      permissionFilter = `is_public = true`;
+    } else if( permission === 'read' ) {
       permissionFilter = `can_read = true`;
     } else if( permission === 'write' ) {
       permissionFilter = `can_write = true`;
@@ -36,28 +97,63 @@ class Acl {
       throw new Error(`Invalid permission: ${permission}`);
     }
 
-    let isDirectory = opts.isDirectory || false;
-    let dirQuery;
-    if( isDirectory ) {
-      dirQuery = `WITH dir AS (
-        SELECT directory_id FROM ${config.database.schema}.directory WHERE fullname = $1
-      )`;
+    let args = [filePath];
+
+    // handle user being null (public access)
+    let user = opts.user;
+    let withQueries = [];
+    let userSelectQuery = '';
+    if( !user ) {
+      user = null;
+      userSelectQuery = 'user_id IS NULL';
     } else {
-      dirQuery = `WITH dir AS (
-        SELECT directory_id FROM ${config.database.schema}.file_view WHERE filepath = $1
-      )`;
+      withQueries.push(`acluser AS (
+        SELECT user_id FROM ${config.database.schema}.acl_user WHERE name = $2
+      )`);
+      userSelectQuery = 'user_id = (SELECT user_id FROM acluser)';
+      args.push(user);
+    }
+
+    // handle are we checking a file or directory
+    let isFile = opts.isFile || false;
+    if( isFile ) {
+      // write permission on files could be on directories that doesn't exist yet
+      // so we need to look the first parent directory that does exist
+      if( permission === 'write' ) {
+        // TODO: optimize this to use recursive CTE or ltree extension
+        let paths = filePath.split('/').filter(p => p !== '');
+        let lookupPaths = [];
+        for( let i = paths.length; i > 0; i-- ) {
+          lookupPaths.push('/'+paths.slice(0, i).join('/'));
+        }
+        lookupPaths.push('/');
+
+        withQueries.push(`dir AS (
+          SELECT directory_id FROM ${config.database.schema}.directory WHERE fullname = ANY($1)
+          ORDER BY LENGTH(fullname) DESC LIMIT 1
+        )`);
+        args[0] = lookupPaths;
+
+      // read or admin permission on files can just look it up directly
+      } else {
+        withQueries.push(`dir AS (
+          SELECT directory_id FROM ${config.database.schema}.file_view WHERE filepath = $1
+        )`);
+      }
+    // directory, just look it up directly
+    } else {
+      withQueries.push(`dir AS (
+        SELECT directory_id FROM ${config.database.schema}.directory WHERE fullname = $1
+      )`);
     }
 
     let resp = await dbClient.query(`
-      ${dirQuery},
-      acluser AS (
-        SELECT user_id FROM ${config.database.schema}.acl_user WHERE name = $2
-      )
+      WITH ${withQueries.join(', ')}
       SELECT * from ${config.database.schema}.directory_user_permissions_lookup
       WHERE directory_id = (SELECT directory_id FROM dir)
-      AND user_id = (SELECT user_id FROM acluser)
+      AND ${userSelectQuery}
       AND ${permissionFilter}
-      `, [filePath, user]);
+      `, args);
     return resp.rows.length > 0;
   }
 

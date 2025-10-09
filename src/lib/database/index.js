@@ -270,6 +270,24 @@ class Database {
     let nodeWhere = [];
     let args = [];
 
+    
+    let aclJoin = '';
+    if( config.acl.enabled === true && opts.ignoreAcl !== true ) {
+      aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = rdf.directory_id`;
+      
+      let aclWhere = [
+        '(acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE)'
+      ];
+
+      if( opts.userId !== null ) {
+        aclWhere.push(`(acl_lookup.user_id = $${args.length + 1} AND acl_lookup.can_read = TRUE)`);
+        args.push(opts.userId);
+      }
+
+      linkWhere.push(`(${aclWhere.join(' OR ')})`);
+      nodeWhere.push(`(${aclWhere.join(' OR ')})`);
+    }
+
     if( opts.partition ) {
       if( !Array.isArray(opts.partition) ) {
         opts.partition = [opts.partition];
@@ -314,14 +332,16 @@ class Database {
     let nodeQuery = '';
     if( nodeWhere.length > 0 ) {
       nodeQuery = `UNION
-      SELECT DISTINCT file_id FROM ${config.database.schema}.rdf_node_view
+      SELECT DISTINCT file_id FROM ${config.database.schema}.rdf_node_view rdf
+      ${aclJoin}
       WHERE ${nodeWhere.join(' AND ')}`;
     }
 
-    let resp = await this.client.query(`
+    let query = `
       with files as (
-        SELECT DISTINCT file_id FROM ${config.database.schema}.rdf_link_view
+        SELECT DISTINCT file_id FROM ${config.database.schema}.rdf_link_view rdf
         WHERE ${linkWhere.join(' AND ')}
+        ${aclJoin}
         ${nodeQuery}
         LIMIT $${args.length + 1} OFFSET $${args.length + 2}
       )
@@ -330,8 +350,13 @@ class Database {
       FROM files f
       JOIN ${config.database.schema}.file_view fv ON fv.file_id = f.file_id
       ORDER BY fv.fullname ASC
-    `, args);
+    `;
 
+    if( opts.debug ) {
+      return { query, args };
+    }
+
+    let resp = await this.client.query(query, args);
     return resp.rows;
   }
 
@@ -356,6 +381,22 @@ class Database {
 
     if( !opts.containment && !opts.subject && !opts.object ) {
       throw new Error('Containment, subject, or object must be specified for rdf queries');
+    }
+
+    let aclJoin = '';
+    if( config.acl.enabled === true && opts.ignoreAcl !== true ) {
+      aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = rdf.directory_id`;
+      
+      let aclWhere = [
+        '(acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE)'
+      ];
+
+      if( opts.userId !== null ) {
+        aclWhere.push(`(acl_lookup.user_id = $${args.length + 1} AND acl_lookup.can_read = TRUE)`);
+        args.push(opts.userId);
+      }
+
+      where.push(`(${aclWhere.join(' OR ')})`);
     }
 
     if( opts.partition ) {
@@ -388,13 +429,17 @@ class Database {
     let nodes = [];
     if( !opts.object ) {
       nodes = await this.client.query(`
-        SELECT * FROM ${config.database.schema}.rdf_node_view WHERE ${where.join(' AND ')} ${limit}
+        SELECT * FROM ${config.database.schema}.rdf_node_view rdf
+        ${aclJoin}
+        WHERE ${where.join(' AND ')} ${limit}
       `, args);
       nodes = nodes.rows;
     }
 
     let links = await this.client.query(`
-      SELECT * FROM ${config.database.schema}.rdf_link_view WHERE ${where.join(' AND ')} ${limit}
+      SELECT * FROM ${config.database.schema}.rdf_link_view rdf
+      ${aclJoin}
+      WHERE ${where.join(' AND ')} ${limit}
     `, args);
     links = links.rows;
 

@@ -196,6 +196,7 @@ CREATE OR REPLACE VIEW caskfs.rdf_link_view AS
 SELECT
     r.rdf_link_id,
     r.file_id,
+    f.directory_id AS directory_id,
     f.filepath as containment,
     r.graph,
     r.subject,
@@ -209,6 +210,7 @@ CREATE OR REPLACE VIEW caskfs.rdf_node_view AS
 SELECT
     d.rdf_node_id,
     d.file_id,
+    f.directory_id AS directory_id,
     f.filepath as containment,
     d.graph,
     d.subject,
