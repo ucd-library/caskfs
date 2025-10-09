@@ -1,4 +1,4 @@
-import getLogger from '../lib/logger.js';
+import {getLogger} from '../lib/logger.js';
 
 const logger = getLogger('client');
 

@@ -10,7 +10,7 @@ export function styles() {
     }
     caskfs-directory-list .breadcrumbs {
       padding: 0;
-      margin: .5rem;
+      margin: .5rem 0;
     }
     caskfs-directory-list .table-header {
       border-bottom: 2px solid var(--ucd-gold-80, #FFD24C);
@@ -27,6 +27,12 @@ export function styles() {
     }
     caskfs-directory-list .name-container input[type="checkbox"] {
       margin: 0;
+    }
+    caskfs-directory-list .no-contents {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      padding: 2rem 0;
     }
     @container (min-width: 500px) {
       caskfs-directory-list .table-header .desktop-view {
@@ -70,7 +76,10 @@ export function render() {
             </caskfs-directory-item>
           `)}
         </div>
-        <div ?hidden=${this.contents.length}>This directory is empty</div>
+        <div ?hidden=${this.contents.length} class='no-contents'>
+          <cork-icon icon="fas.circle-exclamation" class='primary'></cork-icon>
+          <div>This directory is empty</div>
+        </div>
       </div>
     </div>
   `;
