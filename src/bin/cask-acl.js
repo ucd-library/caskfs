@@ -1,8 +1,10 @@
 import { Command } from 'commander';
 import CaskFs from '../index.js';
 import { stringify as stringifyYaml } from 'yaml'
+import {optsWrapper, handleUser} from './opts-wrapper.js';
 
 const program = new Command();
+optsWrapper(program);
 
 const PERMISSIONS = ['public', 'read', 'write', 'admin'];
 
@@ -121,10 +123,15 @@ program.command('remove <directory>')
 
 program.command('get <path>')
   .description('Get the ACL for a directory')
-  .action(async (path) => {
+  .action(async (path, options={}) => {
+    handleUser(options);
+
     const cask = new CaskFs();
     cask.dbClient.connect();
-    let resp = await cask.getDirectoryAcl({ directory: path });
+    let resp = await cask.getDirectoryAcl({ 
+      directory: path,
+      user : options.user
+    });
 
     if( !resp ) {
       console.log(`No ACL found for ${path}`);

@@ -266,6 +266,7 @@ CREATE TABLE IF NOT EXISTS caskfs.file (
     hash_id         UUID NOT NULL REFERENCES caskfs.hash(hash_id),
     partition_keys  VARCHAR(256)[],
     metadata        JSONB NOT NULL DEFAULT '{}',
+    last_modified_by TEXT NOT NULL,
     created         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     modified        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(directory_id, name)
@@ -307,6 +308,7 @@ CREATE OR REPLACE FUNCTION caskfs.insert_file(
     p_hash_value VARCHAR(256),
     p_filename VARCHAR(256),
     p_partition_keys VARCHAR(256)[],
+    p_last_modified_by TEXT,
     p_digests JSONB DEFAULT '{}'::jsonb,
     p_size BIGINT DEFAULT 0,
     p_metadata JSONB DEFAULT '{}'::jsonb,
@@ -324,8 +326,8 @@ BEGIN
             size = EXCLUDED.size
         RETURNING hash_id
     )
-    INSERT INTO caskfs.file (directory_id, name, hash_id, metadata, partition_keys)
-    SELECT p_directory_id, p_filename, hash_id, p_metadata, p_partition_keys
+    INSERT INTO caskfs.file (directory_id, name, hash_id, metadata, partition_keys, last_modified_by)
+    SELECT p_directory_id, p_filename, hash_id, p_metadata, p_partition_keys, p_last_modified_by
     FROM hash_upsert
     RETURNING file_id INTO v_file_id;
 

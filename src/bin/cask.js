@@ -227,6 +227,9 @@ program
   .option('-g, --graph <graph-uri>', 'Only include files in the specified graph')
   .option('-s, --subject <subject-uri>', 'Only include files with the specified subject URI')
   .option('-o, --object <object-uri>', 'Only include files with the specified object URI')
+  .option('-l, --limit <number>', 'Limit the number of results returned', parseInt)
+  .option('-f, --offset <number>', 'Offset the results returned by the specified number', parseInt)
+  .option('-d, --debug-query', 'Output the SQL query used to find the files', false)
   .action(async (options) => {
     handleUser(options);
 
@@ -248,7 +251,10 @@ program
     handleUser(options);
 
     const cask = new CaskFs();
-    const resp = await cask.delete(filePath, { softDelete: options.softDelete });
+    const resp = await cask.delete(filePath, { 
+      softDelete: options.softDelete,
+      user: options.user
+    });
     console.log(resp);
     cask.dbClient.end();
   });
