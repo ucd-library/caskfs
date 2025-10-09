@@ -22,6 +22,35 @@ program.command('user-remove <username>')
     cask.dbClient.end();
   });
 
+program.command('user-role-get')
+  .description('Get a users roles or get users with a role')
+  .option('-u, --user <username>', 'username to get roles for')
+  .option('-r, --role <role>', 'role to get users for')
+  .action(async (options) => {
+    const { user: username, role } = options;
+    if( !username && !role ) {
+      throw new Error('Must provide either a username or a role');
+    }
+    if( role && username ) {
+      throw new Error('Must provide either a username or a role, not both');
+    }
+    const cask = new CaskFs();
+
+    if( role ) {
+      let resp = await cask.acl.getRole({ role, dbClient: cask.dbClient });
+      console.log(resp.map(r => r.user).join('\n'));
+      cask.dbClient.end();
+      return;
+    }
+
+    if( username ) {
+      let resp = await cask.acl.getUserRoles({ user: username, dbClient: cask.dbClient });
+      console.log(resp.join('\n'));
+      cask.dbClient.end();
+      return;
+    }
+  });
+
 program.command('user-role-set <username> <role>')
   .description('Set a user role')
   .action(async (username, role) => {
@@ -123,6 +152,8 @@ program.command('get <path>')
 program.command('test <path> <username> <permission>')
   .description('Test a user\'s access to a file or directory')
   .option('-f, --is-file', 'Indicate that the path is a file', false)
+  .option('-x, --no-cache', 'Disable caching for this check', false)
+  .option('-b, --no-admin-bypass', 'Do not allow admin users to bypass checks', false)
   .action(async (path, username, permission, options) => {
     const cask = new CaskFs();
 

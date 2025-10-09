@@ -2,6 +2,7 @@ import path from 'path';
 import PgClient from "./pg-client.js";
 import SqliteClient from "./sqlite-client.js";
 import config from '../config.js';
+import acl from '../acl.js';
 import { getLogger } from '../logger.js';
 import { MissingResourceError } from '../errors.js';
 
@@ -270,9 +271,14 @@ class Database {
     let nodeWhere = [];
     let args = [];
 
+    let aclOpts = {
+      user: opts.user,
+      ignoreAcl : opts.ignoreAcl,
+      dbClient : opts.dbClient || this
+    };
     
     let aclJoin = '';
-    if( config.acl.enabled === true && opts.ignoreAcl !== true ) {
+    if( await acl.aclLookupRequired(aclOpts) ) {
       aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = rdf.directory_id`;
       
       let aclWhere = [
@@ -383,8 +389,14 @@ class Database {
       throw new Error('Containment, subject, or object must be specified for rdf queries');
     }
 
+    let aclOpts = {
+      user: opts.user,
+      ignoreAcl : opts.ignoreAcl,
+      dbClient : opts.dbClient || this
+    };
+
     let aclJoin = '';
-    if( config.acl.enabled === true && opts.ignoreAcl !== true ) {
+    if( await acl.aclLookupRequired(aclOpts) ) {
       aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = rdf.directory_id`;
       
       let aclWhere = [
