@@ -133,7 +133,7 @@ class CaskFs {
       // currently we are opting in to replacing existing files
       if( opts.replace === true && fileExists ) {
         this.logger.info(`Starting replacement of existing file in CASKFS: ${filePath}`, context.logContext);
-        context.update({file: await this.metadata(filePath)});
+        context.update({file: await this.metadata(filePath, {dbClient, ignoreAcl: true})});
       } else if( opts.replace !== true && fileExists ) {
         throw new Error(`File already exists in CASKFS: ${filePath}`);
       }
@@ -218,19 +218,18 @@ class CaskFs {
         context.update({file: await this.metadata(filePath, {dbClient, ignoreAcl: true})});
       }
 
-      // if we have rdf data, process it now
-      if( metadata.resource_type === 'rdf' ) {
-        if( !context?.stagedFile?.hashExists || !fileExists ) {
-          // if replacing an existing file, delete old triples first
-          this.logger.info('Replacing existing RDF file, deleting old triples', context.logContext);
-          await this.rdf.delete(context, {dbClient, ignoreAcl: true});
+      // now add the layer3 RDF triples for the file
+      // if its an RDF file parse and add the file contents triples as well
+      if( !context?.stagedFile?.hashExists || !fileExists ) {
+        // if replacing an existing file, delete old triples first
+        this.logger.info('Replacing existing RDF file, deleting old triples', context.logContext);
+        await this.rdf.delete(context, {dbClient, ignoreAcl: true});
 
-          this.logger.info('Inserting RDF triples for file', context.logContext);
-          await this.rdf.insert(context, {dbClient, filepath: context.stagedFile.tmpFile, ignoreAcl: true});
-        } else {
-          this.logger.info('RDF file already exists in CASKFS, skipping RDF processing', context.logContext);
-        }
-      }
+        this.logger.info('Inserting RDF triples for file', context.logContext);
+        await this.rdf.insert(context, {dbClient, filepath: context.stagedFile.tmpFile, ignoreAcl: true});
+      } else {
+        this.logger.info('RDF file already exists in CASKFS, skipping RDF processing', context.logContext);
+      }      
 
       // finalize the write to move the temp file to its final location
       context.copied = await this.cas.finalizeWrite(
@@ -290,6 +289,8 @@ class CaskFs {
       throw new Error('FileContext with file path is required');
     }
 
+    let dbClient = opts.dbClient || this.dbClient;
+
     let filePath;
     if( typeof context.file === 'string' ) {
       filePath = context.file;
@@ -300,7 +301,7 @@ class CaskFs {
     await this.canWriteFile({...opts, filePath});
 
     if( opts.onlyOnChange ) {
-      let currentMetadata = await this.metadata(filePath);
+      let currentMetadata = await this.metadata(filePath, {dbClient, ignoreAcl: true});
       if( JSON.stringify(currentMetadata.metadata) === JSON.stringify(opts.metadata) &&
           JSON.stringify(currentMetadata.partition_keys) === JSON.stringify(opts.partitionKeys) ) {
         this.logger.info('No changes to metadata or partition keys, skipping update', context.logContext);
@@ -309,9 +310,9 @@ class CaskFs {
     }
 
     this.logger.info('Updating existing file metadata in CASKFS', context.logContext);
-    await (opts.dbClient || this.dbClient).updateFileMetadata(filePath, opts);
+    await dbClient.updateFileMetadata(filePath, opts);
 
-    return {metadata: this.metadata(filePath), updated: true};
+    return {metadata: this.metadata(filePath, {dbClient, ignoreAcl: true}), updated: true};
   }
 
   async metadata(filePath, opts={}) {
@@ -457,7 +458,7 @@ class CaskFs {
     await this.canWriteFile({...opts, filePath});
 
     let dbClient = opts.dbClient || this.dbClient;
-    let metadata = await this.metadata(filePath);
+    let metadata = await this.metadata(filePath, {dbClient, ignoreAcl: true});
 
     // remove RDF triples first
     this.rdf.delete({file: metadata});

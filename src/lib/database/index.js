@@ -279,7 +279,9 @@ class Database {
     
     let aclJoin = '';
     if( await acl.aclLookupRequired(aclOpts) ) {
-      aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = rdf.directory_id`;
+      aclJoin = `
+      LEFT JOIN ${config.database.schema}.file f ON f.file_id = rdf.file_id
+      LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = f.directory_id`;
       
       let aclWhere = [
         '(acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE)'
@@ -294,36 +296,36 @@ class Database {
       nodeWhere.push(`(${aclWhere.join(' OR ')})`);
     }
 
-    if( opts.partition ) {
-      if( !Array.isArray(opts.partition) ) {
-        opts.partition = [opts.partition];
+    if( opts.partitionKeys ) {
+      if( !Array.isArray(opts.partitionKeys) ) {
+        opts.partitionKeys = [opts.partitionKeys];
       }
-      linkWhere.push(`partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
-      nodeWhere.push(`partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
-      args.push(opts.partition);
+      linkWhere.push(`rdf.partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
+      nodeWhere.push(`rdf.partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
+      args.push(opts.partitionKeys);
     }
 
     if( opts.graph ) {
-      linkWhere.push(`graph = $${args.length + 1}`);
-      nodeWhere.push(`graph = $${args.length + 1}`);
+      linkWhere.push(`rdf.graph = $${args.length + 1}`);
+      nodeWhere.push(`rdf.graph = $${args.length + 1}`);
       args.push(opts.graph);
     }
 
     if( opts.predicate ) {
-      linkWhere.push(`predicate = $${args.length + 1}`);
-      nodeWhere.push(`predicate = $${args.length + 1}`);
+      linkWhere.push(`rdf.predicate = $${args.length + 1}`);
+      nodeWhere.push(`rdf.predicate = $${args.length + 1}`);
       args.push(opts.predicate);
     }
 
 
     if( opts.object ) {
-      linkWhere.push(`object = $${args.length + 1}`);
+      linkWhere.push(`rdf.object = $${args.length + 1}`);
       args.push(opts.object);
     }
 
     if( opts.subject ) {
-      linkWhere.push(`subject = $${args.length + 1}`);
-      nodeWhere.push(`subject = $${args.length + 1}`);
+      linkWhere.push(`rdf.subject = $${args.length + 1}`);
+      nodeWhere.push(`rdf.subject = $${args.length + 1}`);
       args.push(opts.subject);
     }
 
@@ -338,27 +340,27 @@ class Database {
     let nodeQuery = '';
     if( nodeWhere.length > 0 ) {
       nodeQuery = `UNION
-      SELECT DISTINCT file_id FROM ${config.database.schema}.rdf_node_view rdf
+      SELECT DISTINCT rdf.file_id FROM ${config.database.schema}.rdf_node_view rdf
       ${aclJoin}
       WHERE ${nodeWhere.join(' AND ')}`;
     }
 
     let query = `
       with files as (
-        SELECT DISTINCT file_id FROM ${config.database.schema}.rdf_link_view rdf
-        WHERE ${linkWhere.join(' AND ')}
+        SELECT DISTINCT rdf.file_id FROM ${config.database.schema}.rdf_link_view rdf
         ${aclJoin}
+        WHERE ${linkWhere.join(' AND ')}
         ${nodeQuery}
-        LIMIT $${args.length + 1} OFFSET $${args.length + 2}
+        LIMIT $${args.length - 1} OFFSET $${args.length}
       )
       SELECT
         fv.*
       FROM files f
       JOIN ${config.database.schema}.file_view fv ON fv.file_id = f.file_id
-      ORDER BY fv.fullname ASC
+      ORDER BY fv.filepath ASC
     `;
 
-    if( opts.debug ) {
+    if( opts.debugQuery ) {
       return { query, args };
     }
 
