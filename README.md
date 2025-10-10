@@ -1,6 +1,15 @@
 # CASK-FS
 <b>C</b>ontent-<b>A</b>ddressed <b>S</b>torage with <b>K</b>nowledge graph - <b>F</b>ile <b>S</b>ystem.
 
+Contents:
+- [Quick Start - Local Development](#quick-start---local-development)
+- [General Concepts](#general-concepts)
+  - [Content-Addressed Storage (CAS) - Layer 1](./docs/cas.md)
+  - [File System (FS) - Layer 2](./docs/fs.md)
+  - [Linked Data (RDF) - Layer 3](./docs/rdf.md)
+- [Interacting with CaskFS](#interacting-with-caskfs)
+- [As-a-Service](#as-a-service)
+
 
 # Quick Start - Local Development
 
@@ -25,31 +34,31 @@ Notes.  The `./devops/cli.sh` script sets the `CASKFS_ROOT_DIR` to the `cache` d
 
 ## Layers
 
+There are three layers to CaskFS:
+  1. The [Content-Addressed Storage (CAS) Layer 1](docs/cas.md) which stores all files by their SHA256 hash.  Additionally a metadata file is stored for each file in CAS, which contains a copy of all additional data stored about the file in the database.
+  2. The [File System (FS) Layer 2](docs/fs.md) which provides a filesystem-like hierarchy of files and directories, where files can be either binary files in or JSON-LD metadata files.
+  3. The [Linked Data (RDF) Layer 3](docs/rdf.md) which represents all linked data from the JSON-LD files (including references to binary/non-RDF files) and allows for linking (referencing) RDF and binary/non-RDF files.
+
+
 ```
 +-----------------------------+
 |      Layer 3: RDF Graph     |
-|  (Linked Data, find,        | <-- Provides links between files
-|       relationships)        |
-+-------------^---------------+
+|  (Linked Data, find,        | <-- RDF retrieval and 
+|       relationships)        |     file relationships
++-------------/\---------------+
               |
 +-------------|---------------+
 | Layer 2: Filesystem Layer   |
-| (Hierarchical files/dirs,   | <-- User interacts here
-|  binary & metadata)         |
-+-------------^---------------+
-              |
+| (Hierarchical files/dirs,   | <-- Data operations 
+|  binary & metadata)         |     (CRUD, list, etc)
 +-------------|---------------+
+              |
++------------ \/ ---------------+
 | Layer 1: CAS Storage Layer  |
 | (SHA256-addressed files,    |
 |  CAS metadata)              |
 +-----------------------------+
 ```
-
-There are three graph layers:
-  1. The [Content-Addressed Storage (CAS) Layer 1](docs/cas.md) which stores all files by their SHA256 hash.  Additionally a metadata file is stored for each file in CAS, which contains a copy of all additional data stored about the file in the database.
-  2. The [File System (FS) Layer 2](docs/fs.md) which provides a filesystem-like hierarchy of files and directories, where files can be either binary files in or JSON-LD metadata files.
-  3. The [Linked Data (RDF) Layer 3](docs/rdf.md) which represents all linked data from the JSON-LD files (including references to binary/non-RDF files) and allows for linking (referencing) RDF and binary/non-RDF files.
-
 
 # Interacting with CaskFS
 

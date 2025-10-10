@@ -1,6 +1,13 @@
-# Linked Data Layer 3 ( `rdf` ) 
+# Linked Data - Layer 3 ( `rdf` ) 
 
 The RDF layer is the top layer of CaskFS. This layer is responsible for handling RDF data operations such as querying the linked data graph by subject or containment, finding relationships between files, and retrieving RDF data.
+
+Contents:
+- [Key Features](#key-features)
+- [Linked Data - Rest API](rdf-rest-api.md)
+- [Linked Data - CLI Methods](#linked-data-cli-methods)
+- [Reference Binary File](#reference-binary-file)
+- [File Relationships](#file-relationships)
 
 ## Key Features
 
@@ -10,6 +17,22 @@ The RDF layer is the top layer of CaskFS. This layer is responsible for handling
 - **File Relationships**: Allows querying for relationships between files based on RDF triples that reference URI subjects or objects in other files.  You can then filter by; subject, predicate, partition keys or graph. See the [File Relationships](#file-relationships) section below for more details.
 - **Containment Search**: Allows querying the layer 3 graph to find files (containments).  You can find files by; subject, predicate, object (URI), partition keys or graph.
 
+## Linked Data CLI Methods
+
+### Find
+Find is the main method for querying the RDF graph in CaskFS.
+
+CLI: `cask find [options]`
+
+### Relationship
+Relationship is the main method for querying relationships between files in CaskFS.
+
+CLI: `cask rel [options]`
+
+### RDF
+RDF is the main method for fetching RDF data from a file in CaskFS.
+
+CLI: `cask rdf [options]`
 
 # Reference Binary File
 

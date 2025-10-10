@@ -1,7 +1,19 @@
-# API Specification
+# File System - Layer 2 - REST API
+
+Overview:
+ - [Filesystem Operations: /cask/fs](#filesystem-operations-caskfs)
+   - [Get File Contents or File Metadata](#get-file-contents-or-file-metadata)
+   - [Create a New File](#create-a-new-file)
+   - [Create or Update a File](#create-or-update-a-file)
+   - [Update a File Metadata](#update-a-file-metadata)
+   - [Delete a File](#delete-a-file)
+ - [Directory Operations: /cask/dir](#directory-operations-caskdir)
+   - [List Directory](#list-directory)
+   - [Create/Update Directory ACL](#createupdate-directory-acl)
 
 # Filesystem Operations: /cask/fs
 
+## Get File Contents or File Metadata
 - GET /cask/fs/{path+}
 
    - Description: Retrieve metadata about a file at the specified path.
@@ -16,9 +28,9 @@
      - 200 OK: Returns metadata about the file.
      - 404 Not Found: The specified path does not exist.
 
+## Create a New File
 - POST /cask/fs/{path+}
   
-   - Description: Create a new file at the specified path.
    - Parameters:
      - path (string, required): The path where the file will be created.
   - Query Parameters:
@@ -36,10 +48,12 @@
      - 400 Bad Request: Invalid parameters or request body.
      - 409 Conflict: A file already exists at the specified path.
 
+## Create or Update a File
 - PUT /cask/fs/{path+}
 
    - Description: Insert OR update an existing file at the specified path.  Everything about this endpoint is the same as the POST endpoint, except that it will overwrite an existing file if one exists at the specified path where POST would return a 409 Conflict.
-  
+
+## Update a File Metadata
 - PATCH /cask/fs/{path+}
 
    - Description: Update metadata for an existing file at the specified path.
@@ -56,6 +70,7 @@
      - 400 Bad Request: Invalid parameters or request body.
      - 404 Not Found: The specified path does not exist.
 
+## Delete a File
 - DELETE /cask/fs/{path+}
     - Description: Delete a file at the specified path.
     - Parameters:
@@ -68,6 +83,7 @@
 
 # Directory Operations: /cask/dir
 
+## List Directory
 - GET /cask/dir/{path+}
 
    - Description: List the contents of a directory at the specified path.
@@ -79,6 +95,7 @@
      - 200 OK: Returns a list of files and directories within the specified directory.
      - 404 Not Found: The specified path does not exist or is not a directory.
 
+## Create/Update Directory ACL
 - PUT /cask/dir/{path+}
 
    - Description: Create or update the ACL for a directory at the specified path.
@@ -92,79 +109,3 @@
      - 201 Created: The directory was successfully created.
      - 400 Bad Request: Invalid parameters.
      - 409 Conflict: A file or directory already exists at the specified path.
-
-# File Search: /cask/find
-
-- GET /cask/find
-
-   - Description: Search for files in the filesystem.
-   - Query Parameters:
-     - subject (string, optional): Find RDF files who contain this subject.
-     - predicate (string, required): Find RDF files who contain this predicate.
-     - object (string, optional): Find RDF files who contain this object.
-     - graph (string, optional): Find RDF files who contain this graph.
-     - partitionKeys (string, optional): Comma-separated list of partition keys to filter the search.
-   - Headers:
-     - Authorization (string, required): Bearer token for authentication.
-   - Responses:
-     - 200 OK: Returns a list of files matching the search query.
-     - 400 Bad Request: Invalid parameters.
-
-- POST /cask/find
-
-   - Description: Same as GET /cask/find but allows for a larger query in the request body.
-
-# Relationship Search: /cask/rel
-
-- GET /cask/rel
-
-   - Description: Search for relationships in RDF files.
-   - Query Parameters:
-     - subject (string, optional): Only include links with the specified subject URI.
-     - predicate (string, required): Only include links with the specified predicate, comma-separated list.
-     - ignorePredicate (string, optional): Comma-separated list of predicates to ignore.
-     - graph (string, optional): Only include links in the specified graph.
-     - partitionKeys (string, optional): Comma-separated list of partition keys to filter the search.
-   - Headers:
-     - Authorization (string, required): Bearer token for authentication.
-   - Responses:
-     - 200 OK: Returns a list of relationships matching the search query.
-     - 400 Bad Request: Invalid parameters.
-
-- POST /cask/rel
-
-   - Description: Same as GET /cask/rel but allows for a larger query in the request body.
-
-# Fetch Linked Data: /cask/rdf
-
-- GET /cask/rdf
-
-   - Description: Fetch and return RDF data from a given URL.  Either containment or subject parameter is required.
-   - Query Parameters:
-     - containment (string, required): The filepath or URL to fetch RDF data from.
-     - subject (string, optional): Filter results to include only triples with this subject URI.
-     - object (string, optional): Filter results to include only triples with this object URI.
-     - graph (string, optional): Filter results to include only triples in this graph.
-     - partitionKeys (string, optional): Comma-separated list of partition keys to filter the search.  Mostly used when the subject parameter is used to filter which files (Containments) in the CaskFS filesystem are searched for the subject.
-     - format (string, optional): Desired RDF serialization format. Alternative to providing `accept` header.  One of:
-       - jsonld (default)
-       - compacted
-       - expanded
-       - flattened
-       - cask
-       - nquads
-       - json
-   - Headers:
-     - Authorization (string, required): Bearer token for authentication.
-     - Accept (string, optional): Desired RDF serialization format
-      - application/ld+json
-      - application/ld+json; profile="http://www.w3.org/ns/json-ld#compacted"
-      - application/ld+json; profile="http://www.w3.org/ns/json-ld#expanded"
-      - application/ld+json; profile="http://www.w3.org/ns/json-ld#flattened"
-      - application/ld+json; profile="http://library.ucdavis.edu/cask#compacted"
-      - application/n-quads
-      - application/json
-   - Responses:
-     - 200 OK: Returns the fetched RDF data in the requested format.
-     - 400 Bad Request: Invalid parameters.
-     - 404 Not Found: The specified URL could not be reached or does not contain RDF data.
