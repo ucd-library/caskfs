@@ -228,7 +228,7 @@ SELECT
 FROM caskfs.directory d
 LEFT JOIN caskfs.directory_acl da ON d.directory_id = da.directory_id
 LEFT JOIN caskfs.root_directory_acl rda ON da.root_directory_acl_id = rda.root_directory_acl_id
-LEFT JOIN caskfs.directory rd ON rda.directory_id = rd.directory_id
+LEFT JOIN caskfs.directory rd ON rda.directory_id = rd.directory_id;
 
 
 CREATE OR REPLACE VIEW caskfs.directory_user_permissions AS
