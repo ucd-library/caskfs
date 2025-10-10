@@ -19,6 +19,8 @@ const config = {
 
   TYPE_PREDICATE: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
 
+  powerWashEnabled: (env.CASKFS_ENABLE_POWERWASH === 'true'),
+
   database : {
     client : env.CASKFS_DB_CLIENT || 'pg',
     schema : env.CASKFS_DB_SCHEMA || 'caskfs',

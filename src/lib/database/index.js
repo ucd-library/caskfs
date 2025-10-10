@@ -160,9 +160,11 @@ class Database {
         p_digests := $5::JSONB,
         p_size := $6::BIGINT,
         p_partition_keys := $7::VARCHAR[],
-        p_bucket := $8::VARCHAR
+        p_bucket := $8::VARCHAR,
+        p_last_modified_by := $9::VARCHAR
       ) AS file_id
-    `, [directoryId, fileParts.base, hash, metadata, digests, size, partitionKeys, bucket]);
+    `, [directoryId, fileParts.base, hash, metadata, digests, 
+       size, partitionKeys, bucket, opts.user]);
 
     return resp.rows[0].file_id;
   }
@@ -500,6 +502,9 @@ class Database {
     return data;
   }
 
+  powerWash() {
+    return this.client.query(`DROP SCHEMA IF EXISTS ${this.schema} CASCADE;`);
+  }
 
 }
 

@@ -15,6 +15,7 @@ class Cas {
     this.cloudStorageEnabled = opts.cloudStorageEnabled || config.cloudStorage.enabled;
     this.dbClient = opts.dbClient || new Database();
     this.logger = getLogger('cas');
+    this.rootSubPath = 'cas';
     this.pathPrefix = '';
   }
 
@@ -345,7 +346,17 @@ class Cas {
     if( this.cloudStorageEnabled ) {
       return this._getHashFilePath(hash);
     } 
-    return path.join(config.rootDir, this._getHashFilePath(hash));
+    return path.join(config.rootDir, this.rootSubPath, this._getHashFilePath(hash));
+  }
+
+  powerWash() {
+    if( this.cloudStorageEnabled ) {
+      throw new Error('Powerwash is not supported for cloud storage backends');
+    }
+    let dir = path.resolve(config.rootDir);
+    console.log('Powerwashing CASKFS root directory:', dir);
+    fs.rmSync(dir, { recursive: true, force: true });
+    console.log('CASKFS root directory removed:', dir);
   }
 
   /**

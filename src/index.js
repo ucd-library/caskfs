@@ -56,7 +56,7 @@ class CaskFs {
     });
     this.directory = new Directory({dbClient: this.dbClient});
 
-    this.authPath = {
+    this.autoPath = {
       bucket: new AutoPathBucket({dbClient: this.dbClient, schema: this.schema}),
       partition: new AutoPathPartition({dbClient: this.dbClient, schema: this.schema})
     };
@@ -206,7 +206,8 @@ class CaskFs {
           bucket: context.bucket,
           digests: context.stagedFile.digests,
           size: context.stagedFile.size,
-          partitionKeys: opts.partitionKeys
+          partitionKeys: opts.partitionKeys,
+          user: opts.user
         });
         context.update({file: await this.metadata(filePath, {dbClient, ignoreAcl: true})});
       } else {
@@ -590,7 +591,7 @@ class CaskFs {
       let {rootDirectoryAclId, directoryId} = await acl.ensureRootDirectoryAcl({
         dbClient : dbClient,
         directory : opts.directory,
-        isPublic : (opts.permission === 'true')
+        isPublic : (opts.permission === 'true') || opts.permission === true
       });
 
       await acl.setDirectoryAcl({ 
@@ -716,8 +717,8 @@ class CaskFs {
    */
   async getAutoPathValues(filePath, opts={}) {
     let results = {};
-    for( let type in this.authPath ) {
-      results[type] = await this.authPath[type].getFromPath(filePath);
+    for( let type in this.autoPath ) {
+      results[type] = await this.autoPath[type].getFromPath(filePath);
     }
 
     // override bucket if passed in opts
@@ -868,6 +869,22 @@ class CaskFs {
     return true;
   }
 
+  async powerWash() {
+    if( !config.powerWashEnabled ) {
+      throw new Error('Powerwash is not enabled in the configuration');
+    }
+    await this.cas.powerWash();
+    await this.dbClient.powerWash();
+    await this.dbClient.init();
+  }
+
+
+  /**
+   * @method close
+   * @description Close the database client connection.
+   * 
+   * @returns 
+   */
   close() {
     return this.dbClient.end();
   }
