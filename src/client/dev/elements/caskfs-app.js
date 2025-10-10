@@ -27,6 +27,7 @@ import '@ucd-lib/cork-icon';
 // cork models
 import '../../../api/models/AppStateModel.js';
 import '../../../api/models/DirectoryModel.js';
+import '../../../api/models/FsModel.js';
 Registry.ready();
 
 // need to do this after Registry.ready()

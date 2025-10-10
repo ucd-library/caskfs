@@ -17,7 +17,8 @@ export default class CaskfsDirectoryItem extends Mixin(LitElement)
       kind: { state: true },
       size: { state: true },
       modifiedDate: { state: true },
-      modifiedTime: { state: true }
+      modifiedTime: { state: true },
+      modifiedBy: { state: true }
     };
   }
 
@@ -62,6 +63,7 @@ export default class CaskfsDirectoryItem extends Mixin(LitElement)
     let modified = new Date(this.data?.modified);
     this.modifiedDate = isNaN(modified.getTime()) ? '--' : modified.toLocaleDateString();
     this.modifiedTime = isNaN(modified.getTime()) ? '--' : modified.toLocaleTimeString();
+    this.modifiedBy = this.data?.last_modified_by || '--';
   }
 
   _onSelectToggle(e) {
