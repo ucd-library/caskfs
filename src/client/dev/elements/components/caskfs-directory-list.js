@@ -58,7 +58,9 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
         data: file,
         name: file.filename,
         lastModified: new Date(file.modified),
-        size: Number(file.size)
+        size: Number(file.size),
+        kind: file.meta_data?.mimeType || '',
+        modifiedBy: file.last_modified_by || ''
       });
     }
     for ( const dir of res.payload.directories ) {
@@ -66,7 +68,9 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
         data: dir,
         name: dir.name.split('/').filter(Boolean).pop(),
         lastModified: new Date(dir.modified),
-        size: 0
+        size: 0,
+        kind: 'directory',
+        modifiedBy: ''
       });
     }
 

@@ -7,6 +7,10 @@ export function styles() {
       display: block;
       container-type: inline-size;
     }
+    [hidden] {
+      display: none !important;
+    }
+
     .container {
       display: flex;
       gap: .5rem;
@@ -29,13 +33,14 @@ return html`
   <div class='container'>
     <cork-icon-button 
       icon="fas.folder-plus" 
-      title="New Folder" 
-      link-aria-label="New Folder">
+      title="Create Empty Folder" 
+      link-aria-label="Create Empty Folder">
     </cork-icon-button>
     <cork-icon-button 
-      icon="fas.file-circle-plus" 
-      title="New File" 
-      link-aria-label="New File">
+      icon="fas.upload" 
+      title="Upload Files" 
+      @click=${this._onUploadClick}
+      link-aria-label="Upload Files">
     </cork-icon-button>
     <cork-icon-button
       icon='fas.turn-up'
@@ -50,6 +55,14 @@ return html`
       .value=${this.qsCtl.query.sort || ''} 
       .isDesc=${this.qsCtl.query.sortDirection === 'desc'}>
     </cork-sort-button>
+    <cork-icon-button
+      icon='fas.trash'
+      color='medium'
+      title='Delete Selected Items'
+      ?hidden=${!this.itemSelectCtl.selected.length}
+      @click=${this._onBulkDeleteClick}
+      link-aria-label='Delete Selected Items'>
+    </cork-icon-button>
   </div>
 
 `;}

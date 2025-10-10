@@ -26,7 +26,7 @@ export default class CaskfsDeleteForm extends Mixin(LitElement)
     this.items = [];
     this.reqOptions = {};
 
-    this._injectModel('AppStateModel', 'DirectoryModel');
+    this._injectModel('AppStateModel', 'DirectoryModel', 'FsModel');
   }
 
   willUpdate(props){
@@ -53,7 +53,7 @@ export default class CaskfsDeleteForm extends Mixin(LitElement)
   async submit(){
     let r;
     if ( this.isSingleFile ){
-      r = await this.DirectoryModel.deleteFile(this.items[0].filepath, this.reqOptions);
+      r = await this.FsModel.delete(this.items[0].filepath, this.reqOptions);
     }
 
     return r;

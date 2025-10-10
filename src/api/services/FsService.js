@@ -1,33 +1,35 @@
 import {BaseService} from '@ucd-lib/cork-app-utils';
-import DirectoryStore from '../stores/DirectoryStore.js';
+import FsStore from '../stores/FsStore.js';
 
 import payload from '../payload.js';
 
-class DirectoryService extends BaseService {
+class FsService extends BaseService {
 
   constructor() {
     super();
-    this.store = DirectoryStore;
+    this.store = FsStore;
   }
 
   get baseUrl(){
-    return '/api/dir';
+    return '/api/fs';
   }
 
-  async list(path){
-    let ido = {path};
+  async delete(path, options={}) {
+    let ido = { path, ...options };
     let id = payload.getKey(ido);
-    const store = this.store.data.list;
+    const store = this.store.data.delete;
 
     const appStateOptions = {
-      errorSettings: {message: 'Unable to list directory contents'}
-    }
+      errorSettings: {message: 'Unable to delete file'},
+      loaderSettings: {suppressLoader: true}
+    };
 
     await this.checkRequesting(
       id, store,
       () => this.request({
         url : `${this.baseUrl}${path}`,
-        checkCached : () => store.get(id),
+        qs: options,
+        fetchOptions: { method: 'DELETE' },
         onUpdate : resp => this.store.set(
           payload.generate(ido, resp),
           store,
@@ -42,5 +44,5 @@ class DirectoryService extends BaseService {
 
 }
 
-const service = new DirectoryService();
+const service = new FsService();
 export default service;

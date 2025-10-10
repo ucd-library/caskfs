@@ -10,6 +10,7 @@ import { Registry } from '@ucd-lib/cork-app-utils';
  * @param {String} opts.submitActionId The action id for the submit button. Default is '<host-tag-name>-SUBMIT'. Can be overridden by calling setModalSubmitButton
  * @param {Function|String} opts.submitCallback The callback to call when the submit button is clicked. 
   *   If a string is provided, it will be treated as the name of a method on the host element.
+ * @param {Boolean} opts.noCloseOnSubmit If true, the modal will not close automatically after submit is called. Default is false.
  */
 export default class ModalFormController {
 
@@ -23,6 +24,7 @@ export default class ModalFormController {
     this.submitText = opts.submitText || 'Submit';
     this.submitActionId = opts.submitActionId || this.host.tagName + '-SUBMIT';
     this.submitCallback = opts.submitCallback;
+    this.noCloseOnSubmit = opts.noCloseOnSubmit || false;
   }
 
   /**
@@ -87,6 +89,10 @@ export default class ModalFormController {
     ];
   }
 
+  closeModal(){
+    if ( this.modal ) this.modal.close();
+  }
+
   async submit(){
     return this._onAppDialogAction({action: {value: this.submitActionId}});
   }
@@ -110,6 +116,7 @@ export default class ModalFormController {
       r = await this.submitCallback(this.host);
     }
     this.modal.loading = false;
+    if ( this.noCloseOnSubmit ) return;
 
     // only close the modal if no validation errors
     r = Array.isArray(r) ? r : [r];
