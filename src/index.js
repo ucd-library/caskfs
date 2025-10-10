@@ -5,7 +5,7 @@ import mime from "mime";
 import Cas from "./lib/cas.js";
 import Rdf from "./lib/rdf.js";
 import Directory from "./lib/directory.js";
-import Acl from "./lib/acl.js";
+import acl from "./lib/acl.js";
 import { getLogger } from "./lib/logger.js";
 import createContext from "./lib/context.js";
 import AutoPathBucket from "./lib/auto-path/bucket.js";
@@ -56,12 +56,12 @@ class CaskFs {
     });
     this.directory = new Directory({dbClient: this.dbClient});
 
-    this.authPath = {
+    this.autoPath = {
       bucket: new AutoPathBucket({dbClient: this.dbClient, schema: this.schema}),
       partition: new AutoPathPartition({dbClient: this.dbClient, schema: this.schema})
     };
 
-    this.acl = new Acl();
+    this.acl = acl;
   }
 
   createContext(obj) {
@@ -133,7 +133,7 @@ class CaskFs {
       // currently we are opting in to replacing existing files
       if( opts.replace === true && fileExists ) {
         this.logger.info(`Starting replacement of existing file in CASKFS: ${filePath}`, context.logContext);
-        context.update({file: await this.metadata(filePath)});
+        context.update({file: await this.metadata(filePath, {dbClient, ignoreAcl: true})});
       } else if( opts.replace !== true && fileExists ) {
         throw new Error(`File already exists in CASKFS: ${filePath}`);
       }
@@ -206,31 +206,31 @@ class CaskFs {
           bucket: context.bucket,
           digests: context.stagedFile.digests,
           size: context.stagedFile.size,
-          partitionKeys: opts.partitionKeys
-      });
-        context.update({file: await this.metadata(filePath, {dbClient})});
+          partitionKeys: opts.partitionKeys,
+          user: opts.user
+        });
+        context.update({file: await this.metadata(filePath, {dbClient, ignoreAcl: true})});
       } else {
         await this.patchMetadata(
           context, 
-          {metadata, partitionKeys: opts.partitionKeys, onlyOnChange: true, dbClient: dbClient}
+          {metadata, partitionKeys: opts.partitionKeys, onlyOnChange: true, dbClient: dbClient, ignoreAcl: true}
         );
         context.replacedFile = context.file;
-        context.update({file: await this.metadata(filePath, {dbClient})});
+        context.update({file: await this.metadata(filePath, {dbClient, ignoreAcl: true})});
       }
 
-      // if we have rdf data, process it now
-      if( metadata.resource_type === 'rdf' ) {
-        if( !context?.stagedFile?.hashExists || !fileExists ) {
-          // if replacing an existing file, delete old triples first
-          this.logger.info('Replacing existing RDF file, deleting old triples', context.logContext);
-          await this.rdf.delete(context, {dbClient});
+      // now add the layer3 RDF triples for the file
+      // if its an RDF file parse and add the file contents triples as well
+      if( !context?.stagedFile?.hashExists || !fileExists ) {
+        // if replacing an existing file, delete old triples first
+        this.logger.info('Replacing existing RDF file, deleting old triples', context.logContext);
+        await this.rdf.delete(context, {dbClient, ignoreAcl: true});
 
-          this.logger.info('Inserting RDF triples for file', context.logContext);
-          await this.rdf.insert(context, {dbClient, filepath: context.stagedFile.tmpFile});
-        } else {
-          this.logger.info('RDF file already exists in CASKFS, skipping RDF processing', context.logContext);
-        }
-      }
+        this.logger.info('Inserting RDF triples for file', context.logContext);
+        await this.rdf.insert(context, {dbClient, filepath: context.stagedFile.tmpFile, ignoreAcl: true});
+      } else {
+        this.logger.info('RDF file already exists in CASKFS, skipping RDF processing', context.logContext);
+      }      
 
       // finalize the write to move the temp file to its final location
       context.copied = await this.cas.finalizeWrite(
@@ -290,6 +290,8 @@ class CaskFs {
       throw new Error('FileContext with file path is required');
     }
 
+    let dbClient = opts.dbClient || this.dbClient;
+
     let filePath;
     if( typeof context.file === 'string' ) {
       filePath = context.file;
@@ -300,7 +302,7 @@ class CaskFs {
     await this.canWriteFile({...opts, filePath});
 
     if( opts.onlyOnChange ) {
-      let currentMetadata = await this.metadata(filePath);
+      let currentMetadata = await this.metadata(filePath, {dbClient, ignoreAcl: true});
       if( JSON.stringify(currentMetadata.metadata) === JSON.stringify(opts.metadata) &&
           JSON.stringify(currentMetadata.partition_keys) === JSON.stringify(opts.partitionKeys) ) {
         this.logger.info('No changes to metadata or partition keys, skipping update', context.logContext);
@@ -309,9 +311,9 @@ class CaskFs {
     }
 
     this.logger.info('Updating existing file metadata in CASKFS', context.logContext);
-    await (opts.dbClient || this.dbClient).updateFileMetadata(filePath, opts);
+    await dbClient.updateFileMetadata(filePath, opts);
 
-    return {metadata: this.metadata(filePath), updated: true};
+    return {metadata: this.metadata(filePath, {dbClient, ignoreAcl: true}), updated: true};
   }
 
   async metadata(filePath, opts={}) {
@@ -378,11 +380,16 @@ class CaskFs {
   async relationships(filePath, opts={}) {
     await this.canReadFile({...opts, filePath});
 
-    if( this.acl.enabled && opts.user !== undefined && opts.user !== null) {
-      opts.userId = this.acl.getUserId({user: opts.user});
+    let dbClient = opts.dbClient || this.dbClient;
+
+    if( acl.enabled && opts.user !== undefined && opts.user !== null) {
+      opts.userId = acl.getUserId({
+        user: opts.user,
+        dbClient
+      });
     }
 
-    let metadata = await this.metadata(filePath);
+    let metadata = await this.metadata(filePath, {dbClient, ignoreAcl: true});
     return this.rdf.relationships(metadata, opts);
   }
 
@@ -452,7 +459,7 @@ class CaskFs {
     await this.canWriteFile({...opts, filePath});
 
     let dbClient = opts.dbClient || this.dbClient;
-    let metadata = await this.metadata(filePath);
+    let metadata = await this.metadata(filePath, {dbClient, ignoreAcl: true});
 
     // remove RDF triples first
     this.rdf.delete({file: metadata});
@@ -484,8 +491,8 @@ class CaskFs {
     // TODO: check if user has admin role to create roles
 
     opts.dbClient = opts.dbClient || this.dbClient;
-    await this.acl.ensureRole(opts);
-    return this.acl.getRole(opts);
+    await acl.ensureRole(opts);
+    return acl.getRole(opts);
   }
 
   /**
@@ -501,8 +508,8 @@ class CaskFs {
     // TODO: check if user has admin role to remove roles
 
     opts.dbClient = opts.dbClient || this.dbClient;
-    await this.acl.removeRole(opts);
-    await this.acl.refreshLookupTable({dbClient});
+    await acl.removeRole(opts);
+    await acl.refreshLookupTable({dbClient});
   }
 
   /**
@@ -518,7 +525,7 @@ class CaskFs {
     // TODO: check if user has admin role to create users
 
     opts.dbClient = opts.dbClient || this.dbClient;
-    return this.acl.ensureUser(opts);
+    return acl.ensureUser(opts);
   }
 
   /**
@@ -536,13 +543,13 @@ class CaskFs {
 
     return this.runInTransaction(async (dbClient) => {
       opts.dbClient = dbClient;
-      await this.acl.ensureUser(opts);
-      await this.acl.ensureRole(opts);
-      await this.acl.ensureUserRole(opts);
+      await acl.ensureUser(opts);
+      await acl.ensureRole(opts);
+      await acl.ensureUserRole(opts);
 
-      await this.acl.refreshLookupTable({dbClient});
+      await acl.refreshLookupTable({dbClient});
 
-      return this.acl.getRole(opts);
+      return acl.getRole(opts);
     });
   }
 
@@ -561,8 +568,8 @@ class CaskFs {
 
     await this.runInTransaction(async (dbClient) => {
       opts.dbClient = dbClient;
-      await this.acl.removeUserRole(opts);
-      await this.acl.refreshLookupTable({dbClient});
+      await acl.removeUserRole(opts);
+      await acl.refreshLookupTable({dbClient});
 
     });
   }
@@ -581,19 +588,19 @@ class CaskFs {
     });
 
     await this.runInTransaction(async (dbClient) => {
-      let {rootDirectoryAclId, directoryId} = await this.acl.ensureRootDirectoryAcl({
+      let {rootDirectoryAclId, directoryId} = await acl.ensureRootDirectoryAcl({
         dbClient : dbClient,
         directory : opts.directory,
-        isPublic : (opts.permission === 'true')
+        isPublic : (opts.permission === 'true') || opts.permission === true
       });
 
-      await this.acl.setDirectoryAcl({ 
+      await acl.setDirectoryAcl({ 
         dbClient : dbClient,
         rootDirectoryAclId,
         directoryId
       });
 
-      await this.acl.refreshLookupTable({dbClient});
+      await acl.refreshLookupTable({dbClient});
     });
   }
 
@@ -615,15 +622,15 @@ class CaskFs {
 
     await this.runInTransaction(async (dbClient) => {
       opts.dbClient = dbClient;
-      let {rootDirectoryAclId, directoryId} = await this.acl.setDirectoryPermission(opts);
+      let {rootDirectoryAclId, directoryId} = await acl.setDirectoryPermission(opts);
       
-      await this.acl.setDirectoryAcl({ 
+      await acl.setDirectoryAcl({ 
         dbClient : opts.dbClient,
         rootDirectoryAclId,
         directoryId
       });
 
-      await this.acl.refreshLookupTable({dbClient});
+      await acl.refreshLookupTable({dbClient});
     });
   }
 
@@ -644,8 +651,8 @@ class CaskFs {
 
     await this.runInTransaction(async (dbClient) => {
       opts.dbClient = dbClient;
-      await this.acl.removeDirectoryPermission(opts);
-      await this.acl.refreshLookupTable({dbClient});
+      await acl.removeDirectoryPermission(opts);
+      await acl.refreshLookupTable({dbClient});
     });
   }
 
@@ -667,8 +674,8 @@ class CaskFs {
 
     await this.runInTransaction(async (dbClient) => {
       opts.dbClient = dbClient;
-      await this.acl.removeRootDirectoryAcl(opts);
-      await this.acl.refreshLookupTable({dbClient});
+      await acl.removeRootDirectoryAcl(opts);
+      await acl.refreshLookupTable({dbClient});
     });
   }
 
@@ -679,7 +686,7 @@ class CaskFs {
     });
 
     opts.dbClient = opts.dbClient || this.dbClient;
-    return this.acl.getDirectoryAcl(opts);
+    return acl.getDirectoryAcl(opts);
   }
 
   /**
@@ -710,8 +717,8 @@ class CaskFs {
    */
   async getAutoPathValues(filePath, opts={}) {
     let results = {};
-    for( let type in this.authPath ) {
-      results[type] = await this.authPath[type].getFromPath(filePath);
+    for( let type in this.autoPath ) {
+      results[type] = await this.autoPath[type].getFromPath(filePath);
     }
 
     // override bucket if passed in opts
@@ -850,25 +857,34 @@ class CaskFs {
    */
   async checkPermissions(opts={}) {
     opts.dbClient = opts.dbClient || this.dbClient;
-    if( opts.ignoreAcl === true ) {
+
+    if( !(await acl.aclLookupRequired(opts)) ) {
       return true;
     }
 
-    if( this.acl.enabled === false ) {
-      return true;
-    }
-
-    if( await this.acl.isAdmin(opts.user) ) {
-      return true;
-    }
-
-    let hasAccess = await this.acl.hasPermission(opts);
+    let hasAccess = await acl.hasPermission(opts);
     if( !hasAccess ) {
-      throw new this.acl.AclAccessError('Access denied', opts.user, opts.filePath, opts.permission);
+      throw new acl.AclAccessError('Access denied', opts.user, opts.filePath, opts.permission);
     }
     return true;
   }
 
+  async powerWash() {
+    if( !config.powerWashEnabled ) {
+      throw new Error('Powerwash is not enabled in the configuration');
+    }
+    await this.cas.powerWash();
+    await this.dbClient.powerWash();
+    await this.dbClient.init();
+  }
+
+
+  /**
+   * @method close
+   * @description Close the database client connection.
+   * 
+   * @returns 
+   */
   close() {
     return this.dbClient.end();
   }

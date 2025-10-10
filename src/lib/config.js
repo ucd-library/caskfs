@@ -19,6 +19,8 @@ const config = {
 
   TYPE_PREDICATE: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
 
+  powerWashEnabled: (env.CASKFS_ENABLE_POWERWASH === 'true'),
+
   database : {
     client : env.CASKFS_DB_CLIENT || 'pg',
     schema : env.CASKFS_DB_SCHEMA || 'caskfs',
@@ -46,9 +48,10 @@ const config = {
   },
 
   acl : {
-    // enabled : (env.CASKFS_ACL_ENABLED !== 'false'),
-    enabled :  false,
+    enabled : (env.CASKFS_ACL_ENABLED !== 'false'),
     adminRole : env.CASKFS_ACL_ADMIN_ROLE || 'admin',
+    enabledCache : (env.CASKFS_ACL_ENABLED_CACHE === 'true'),
+    cacheTTL : parseInt(env.CASKFS_ACL_CACHE_TTL) || 10 // seconds
   }
 
 }

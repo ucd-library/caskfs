@@ -5,6 +5,8 @@ import fs from 'fs/promises';
 import CaskFs from '../index.js';
 import createContext from '../lib/context.js';
 import path from 'path';
+import os from 'os';
+import config from '../lib/config.js';
 import {optsWrapper, handleUser} from './opts-wrapper.js';
 
 const program = new Command();
@@ -16,7 +18,7 @@ program
   .argument('<file-path>', 'Full path (including filename) where the file will be written in the CASKFS')
   .requiredOption('-d, --data-file <data-file>', 'Path to the data file to write. Use "-" to read from stdin')
   .option('-r, --replace', 'Replace the file if it already exists', false)
-  .option('-p, --partition-keys <keys>', 'comma-separated list of partition keys')
+  .option('-k, --partition-keys <keys>', 'comma-separated list of partition keys')
   .option('-l, --jsonld', 'treat input as JSON-LD')
   .option('-m, --mime-type <mime-type>', 'MIME type of the file being written, default is auto-detected from file extension')
   .description('Write a file to the CASKFS')
@@ -46,6 +48,7 @@ program
     opts.partitionKeys = partitionKeys;
     opts.mimeType = mimeType;
     opts.replace = options.replace;
+    opts.user = options.user;
 
 
     let context = await createContext({file: filePath});
@@ -86,7 +89,8 @@ program
         let context = await createContext({file: destPath});
         await cask.write(context, {
           readPath: sourcePath,
-          replace: options.replace
+          replace: options.replace,
+          user: options.user
         });
       }
       cask.dbClient.end();
@@ -110,7 +114,8 @@ program
           context = await createContext({file: destFile});
           await cask.write(context, {
             readPath: file,
-            replace: options.replace
+            replace: options.replace,
+            user: options.user
           });
         } catch (err) {
           console.error(`Failed to copy ${file} to ${destFile}: ${err.message}`);
@@ -135,22 +140,25 @@ program
 program
   .command('metadata <file-path>')
   .description('Get metadata for a file in the CASKFS')
-  .action(async (filePath) => {
+  .action(async (filePath, options={}) => {
     handleUser(options);
 
     const cask = new CaskFs();
-    console.log(await cask.metadata(filePath));
+    console.log(await cask.metadata(filePath, options));
     cask.dbClient.end();
   });
 
 program
   .command('read <file-path>')
   .description('Read a file from the CASKFS and output to stdout')
-  .action(async (filePath) => {
+  .action(async (filePath, options={}) => {
     handleUser(options);
 
     const cask = new CaskFs();
-    console.log(await cask.read(filePath, { encoding: 'utf8' }));
+    console.log(await cask.read(filePath, { 
+      encoding: 'utf8',
+      user: options.user
+    }));
     cask.dbClient.end();
   });
 
@@ -161,7 +169,7 @@ program
   .option('-s, --subject <subject-uri>', 'Only include RDF triples with the specified subject')
   .option('-o, --object <object-uri>', 'Only include RDF triples with the specified object')
   .option('-g, --graph <graph-uri>', 'Only include RDF triples in the specified graph. Must be used with --subject or --containment')
-  .option('-p, --partition <keys>', 'Only include RDF triples with the specified partition keys (comma-separated). Must be used with --subject or --containment')
+  .option('-k, --partition-keys <keys>', 'Only include RDF triples with the specified partition keys (comma-separated). Must be used with --subject or --containment')
   .option('-f, --format <format>', 'RDF format to output: jsonld, compact, flattened, expanded, nquads or json. Default is jsonld', 'jsonld')
   .action(async (options) => {
     handleUser(options);
@@ -209,7 +217,7 @@ program
       options.ignorePredicate = options.ignorePredicate.split(',').map(k => k.trim());
     }
 
-    console.log(JSON.stringify(await cask.links(filePath, options), null, 2));
+    console.log(JSON.stringify(await cask.relationships(filePath, options), null, 2));
     cask.dbClient.end();
   });
 
@@ -221,6 +229,9 @@ program
   .option('-g, --graph <graph-uri>', 'Only include files in the specified graph')
   .option('-s, --subject <subject-uri>', 'Only include files with the specified subject URI')
   .option('-o, --object <object-uri>', 'Only include files with the specified object URI')
+  .option('-l, --limit <number>', 'Limit the number of results returned', parseInt)
+  .option('-f, --offset <number>', 'Offset the results returned by the specified number', parseInt)
+  .option('-d, --debug-query', 'Output the SQL query used to find the files', false)
   .action(async (options) => {
     handleUser(options);
 
@@ -242,7 +253,10 @@ program
     handleUser(options);
 
     const cask = new CaskFs();
-    const resp = await cask.delete(filePath, { softDelete: options.softDelete });
+    const resp = await cask.delete(filePath, { 
+      softDelete: options.softDelete,
+      user: options.user
+    });
     console.log(resp);
     cask.dbClient.end();
   });
@@ -257,7 +271,8 @@ program
     let partitionKeys = options.partitionKeys ? options.partitionKeys.split(',').map(k => k.trim()) : undefined;
     const caskfs = new CaskFs();
     const resp = await caskfs.ls({
-      directory
+      directory,
+      user: options.user
     });
 
     if (options.output === 'json') {
@@ -300,6 +315,66 @@ program
     const cask = new CaskFs();
     await cask.dbClient.init();
     cask.dbClient.end();
+  });
+
+program
+  .command('powerwash')
+  .description('Power wash the CASKFS - WARNING: This will delete ALL data and metadata!')
+  .option('-a, --include-admin', 'Set current user to admin role', false)
+  .action(async (options) => {
+    const readline = await import('readline');
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
+
+    let dir = path.resolve(config.rootDir);
+    console.warn(`\n**** WARNING ****
+* This will delete ALL data and metadata in the CASKFS root directory: ${dir}
+* This action is irreversible!
+*****************\n`);
+
+    const confirm = await new Promise(resolve => {
+      rl.question('Are you sure you want to continue? (yes/no): ', answer => {
+        rl.close();
+        resolve(answer.trim().toLowerCase());
+      });
+    });
+
+    if (confirm !== 'yes') {
+      console.log('Powerwash aborted.');
+      process.exit(0);
+    }
+
+    const cask = new CaskFs();
+    await cask.powerWash();
+
+    if( options.includeAdmin ) {
+      let user = os.userInfo().username;
+      console.log(`Setting user ${user} to have admin role`);
+      await cask.setUserRole({ user, role: config.acl.adminRole });
+    }
+
+    cask.dbClient.end();
+  });
+
+program
+  .command('whoami')
+  .description('Show the current user')
+  .action(async (options) => {
+    handleUser(options);
+    console.log(`Current User: ${options.user || 'public (no user)'}`);
+    if( options.user ) {
+      const cask = new CaskFs();
+      let resp = await cask.acl.getUserRoles({ user: options.user, dbClient: cask.dbClient });
+      console.log('Roles:');
+      if( resp.length === 0 ) {
+        console.log('  (none)');
+      } else {
+        console.log(' - '+resp.join('\n - '));
+      }
+      cask.dbClient.end();
+    }
   });
 
 program

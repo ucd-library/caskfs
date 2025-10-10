@@ -5,6 +5,8 @@ import config from "./config.js";
 import path from "path";
 import fsp from "fs/promises";
 import { getLogger } from './logger.js';
+import acl from './acl.js';
+import e from "express";
 
 const customLoader = async (url, options) => {
   url = new URL(url);
@@ -207,15 +209,12 @@ class Rdf {
             '@type': 'http://www.w3.org/2001/XMLSchema#integer'
           },
           'http://purl.org/dc/terms/created': {
-            '@value': file.created, 
+            '@value': file.created.toISOString(), 
             '@type': 'http://www.w3.org/2001/XMLSchema#dateTime'
           },
           'http://purl.org/dc/terms/modified': {
-            '@value': file.modified, 
+            '@value': file.modified.toISOString(), 
             '@type': 'http://www.w3.org/2001/XMLSchema#dateTime'
-          },
-          'http://www.ebu.ch/metadata/ontologies/ebucore/ebucore#hasMimeType': {
-            '@value': file.metadata.mimeType
           }
         }
       ]
@@ -224,6 +223,12 @@ class Rdf {
     if( file?.metadata?.resource_type === 'rdf' ) {
       caskFileNode['@graph'][0]['@type'].push('http://library.ucdavis.edu/cask#RDFSource');
     }
+    if( file.metadata.mimeType ) {
+      caskFileNode['@graph'][0]['http://www.ebu.ch/metadata/ontologies/ebucore/ebucore#hasMimeType'] = {
+        '@value': file.metadata.mimeType
+      };
+    }
+
 
     const caskQuads = this.quadsParser.parse(
       await jsonld.canonize(caskFileNode, {
@@ -235,7 +240,13 @@ class Rdf {
 
     // merge the cask quads with the data quads
     let parser = new QuadsParser({ format: parserMimeType });
-    const quads = [...caskQuads, ...parser.parse(nquads)];
+    let quads;
+
+    if( nquads ) {
+      quads = [...caskQuads, ...parser.parse(nquads)];
+    } else {
+      quads = caskQuads;
+    }
 
     const literalQuads = quads
       .filter(q => q.subject.termType === 'NamedNode' && q.predicate.termType === 'NamedNode' && q.object.termType !== 'NamedNode')
@@ -364,7 +375,7 @@ class Rdf {
       this.getReferencedBy(metadata.file_id, opts)
     ]);
 
-    if( opts.debug ) {
+    if( opts.debugQuery ) {
       return { outbound, inbound };
     }
 
@@ -405,9 +416,15 @@ class Rdf {
     let where = ['source_view.file_id = $1', 'referencing_view.file_id != $1'];
     let args = [fileId];
 
+    let aclOpts = {
+      user: opts.user,
+      ignoreAcl : opts.ignoreAcl,
+      dbClient : opts.dbClient || this.dbClient
+    };
+
     // handle acl filtering if enabled
     let aclJoin = '';
-    if( config.acl.enabled === true && opts.ignoreAcl !== true ) {
+    if( await acl.aclLookupRequired(aclOpts) ) {
       aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = referencing_view.directory_id`;
       
       let aclWhere = [
@@ -521,7 +538,7 @@ class Rdf {
     SELECT * FROM nodes
     ${limit}`;
 
-    if( opts.debug ) {
+    if( opts.debugQuery ) {
       return { query, args  };
     }
 
@@ -529,16 +546,19 @@ class Rdf {
     return res.rows;
   }
 
-  async getReferencedBy(fileId, opts={}) {
-    // let where = ['target_view.file_id != $1', 'source_view.subject = target_view.object'];
-    // let args = [fileId];
-    
+  async getReferencedBy(fileId, opts={}) {    
     let where = ['ref_by_view.file_id != $1'];
     let distinctWhere = ['v.file_id = $1'];
     let args = [fileId];  
 
+    let aclOpts = {
+      user: opts.user,
+      ignoreAcl : opts.ignoreAcl,
+      dbClient : opts.dbClient || this.dbClient
+    };
+
     let aclJoin = '';
-    if( config.acl.enabled === true && opts.ignoreAcl !== true ) {
+    if( await acl.aclLookupRequired(aclOpts) ) {
       aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = ref_by_view.directory_id`;
       
       let aclWhere = [
@@ -630,7 +650,7 @@ class Rdf {
       ${select}
       `;
 
-    if( opts.debug ) {
+    if( opts.debugQuery ) {
       return { query, args  };
     }
 

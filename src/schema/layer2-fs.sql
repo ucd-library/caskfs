@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS caskfs.acl_role_user (
   user_id          UUID NOT NULL REFERENCES caskfs.acl_user(user_id) ON DELETE CASCADE,
   created         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   modified        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires         TIMESTAMPTZ,
   UNIQUE(role_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_acl_role_user_userrole_id ON caskfs.acl_role_user(role_id, user_id);
@@ -230,7 +231,6 @@ LEFT JOIN caskfs.directory_acl da ON d.directory_id = da.directory_id
 LEFT JOIN caskfs.root_directory_acl rda ON da.root_directory_acl_id = rda.root_directory_acl_id
 LEFT JOIN caskfs.directory rd ON rda.directory_id = rd.directory_id;
 
-
 CREATE OR REPLACE VIEW caskfs.directory_user_permissions AS
 SELECT
     directory,
@@ -265,6 +265,7 @@ CREATE TABLE IF NOT EXISTS caskfs.file (
     hash_id         UUID NOT NULL REFERENCES caskfs.hash(hash_id),
     partition_keys  VARCHAR(256)[],
     metadata        JSONB NOT NULL DEFAULT '{}',
+    last_modified_by TEXT NOT NULL,
     created         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     modified        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(directory_id, name)
@@ -306,6 +307,7 @@ CREATE OR REPLACE FUNCTION caskfs.insert_file(
     p_hash_value VARCHAR(256),
     p_filename VARCHAR(256),
     p_partition_keys VARCHAR(256)[],
+    p_last_modified_by TEXT,
     p_digests JSONB DEFAULT '{}'::jsonb,
     p_size BIGINT DEFAULT 0,
     p_metadata JSONB DEFAULT '{}'::jsonb,
@@ -323,8 +325,8 @@ BEGIN
             size = EXCLUDED.size
         RETURNING hash_id
     )
-    INSERT INTO caskfs.file (directory_id, name, hash_id, metadata, partition_keys)
-    SELECT p_directory_id, p_filename, hash_id, p_metadata, p_partition_keys
+    INSERT INTO caskfs.file (directory_id, name, hash_id, metadata, partition_keys, last_modified_by)
+    SELECT p_directory_id, p_filename, hash_id, p_metadata, p_partition_keys, p_last_modified_by
     FROM hash_upsert
     RETURNING file_id INTO v_file_id;
 
