@@ -7,8 +7,7 @@ class DirectoryStore extends BaseStore {
     super();
 
     this.data = {
-      list: new LruStore({name: 'directory.list'}),
-      deleteFile: new LruStore({name: 'directory.deleteFile'})
+      list: new LruStore({name: 'directory.list'})
     };
     this.events = {
       DIRECTORY_ITEM_SELECT_UPDATE: 'directory-item-select-update',

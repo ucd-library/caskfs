@@ -34,10 +34,10 @@ export function styles() {
       gap: .5rem;
       padding: 2rem 0;
     }
-    @container (min-width: 500px) {
+    @container (min-width: 775px) {
       caskfs-directory-list .table-header .desktop-view {
         display: grid;
-        grid-template-columns: 3fr 1fr 1fr 1.5fr 30px;
+        grid-template-columns: 3fr 1fr 1fr 1.5fr 1fr 30px;
         gap: .5rem;
         width: 100%;
       }
@@ -62,6 +62,7 @@ export function render() {
               <div>Kind</div>
               <div>Size</div>
               <div>Modified</div>
+              <div>Modified By</div>
               <div></div>
             </div>
             <div class='mobile-view'>

@@ -1,15 +1,6 @@
 import { getLogger } from './logger.js';
+import { AclAccessError } from './errors.js';
 import config from './config.js';
-
-class AclAccessError extends Error {
-  constructor(message, user, filePath, permission) {
-    super(message);
-    this.name = 'AclAccessError';
-    this.user = user || 'PUBLIC';
-    this.filePath = filePath;
-    this.permission = permission;
-  }
-}
 
 class AclCache {
 

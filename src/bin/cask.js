@@ -99,7 +99,7 @@ program
 
     // recursively get all files in sourcePath
     let files = await fs.readdir(sourcePath, { withFileTypes: true, recursive: true });
-    files = files.filter(f => f.isFile()).map(f => path.join(f.path, f.name));
+    files = files.filter(f => f.isFile()).map(f => path.join(f.parentPath, f.name));
 
     let failed = [];
     let context;

@@ -295,6 +295,7 @@ SELECT
     f.partition_keys,
     f.created,
     f.modified,
+    f.last_modified_by,
     h.size AS size,
     h.bucket AS bucket
 FROM caskfs.file f

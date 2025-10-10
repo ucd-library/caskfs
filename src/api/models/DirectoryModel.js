@@ -11,6 +11,7 @@ class DirectoryModel extends BaseModel {
     this.service = DirectoryService;
       
     this.register('DirectoryModel');
+    this.inject('FsModel');
   }
 
   list(path) {
@@ -20,15 +21,8 @@ class DirectoryModel extends BaseModel {
     return this.service.list(path);
   }
 
-  async deleteFile(path, options={}) {
-    const res = await this.service.deleteFile(path, options);
-    if ( res.state === 'loaded' ) {
-      this.purgeCache();
-    }
-    return res;
-  }
-
-  purgeCache(){
+  purgeCache(noFsPurge) {
+    if ( !noFsPurge ) this.FsModel.purgeCache(true);
     this.store.data.list.purge();
 
     // clear any selected items

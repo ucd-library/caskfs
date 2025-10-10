@@ -10,7 +10,7 @@ export function styles() {
     .desktop-view {
       display: none;
     }
-    @container (min-width: 500px) {
+    @container (min-width: 775px) {
       .mobile-view {
         display: none;
       }
@@ -29,7 +29,7 @@ export function styles() {
       grid-template-columns: 1fr 30px;
     }
     .desktop-view .item-line {
-      grid-template-columns: 3fr 1fr 1fr 1.5fr 30px;
+      grid-template-columns: 3fr 1fr 1fr 1.5fr 1fr 30px;
     }
     .item-line:hover {
       background-color: var(--ucd-gold-30, #FFF9E6);
@@ -62,6 +62,13 @@ export function styles() {
     .link-button:hover, .link-button:focus {
       color: var(--tahoe, #00b2e3);
     }
+    .link-button--align-top {
+      align-items: flex-start;
+    }
+    .link-button--align-top cork-icon {
+      margin-top: .25rem;
+    }
+
     .delete-icon {
       --cork-icon-button-size: 1.25rem;
       margin-top: 2px;
@@ -95,7 +102,7 @@ export function styles() {
 
     @container (min-width: 400px) {
       .details {
-        max-width: 350px;
+        max-width: 500px;
         flex-wrap: wrap;
         flex-direction: row;
         justify-content: space-between;
@@ -141,6 +148,10 @@ function renderMobileView(){
               <div>Modified:</div>
               ${renderModifiedDate.call(this)}
             </div>
+            <div>
+              <div>Modified By:</div>
+              <div>${this.modifiedBy}</div>
+            </div>
           </div>
         </div>
         ${renderDeleteIcon.call(this)}
@@ -157,6 +168,7 @@ function renderDesktopView(){
         <div>${this.kind}</div>
         <div>${this.size}</div>
         ${renderModifiedDate.call(this)}
+        <div>${this.modifiedBy}</div>
         ${renderDeleteIcon.call(this)}
       </div>
     </div>
@@ -184,7 +196,7 @@ function renderName(){
         @input=${this._onSelectToggle} 
         .checked=${this.selectCtl.hostIsSelected} 
         aria-label='Select Item'>
-      <button @click=${this._onItemClick} class='link-button link-button--bold'>
+      <button @click=${this._onItemClick} class='link-button link-button--bold link-button--align-top'>
         <cork-icon icon=${this.isDirectory ? 'fas.folder' : 'fas.file'} class='type-icon'></cork-icon>
         <div>${this.name}</div>
       </button>

@@ -6,3 +6,13 @@ export class MissingResourceError extends Error {
     this.identifier = identifier;
   }
 }
+
+export class AclAccessError extends Error {
+  constructor(message, user, filePath, permission) {
+    super(message);
+    this.name = 'AclAccessError';
+    this.user = user || 'PUBLIC';
+    this.filePath = filePath;
+    this.permission = permission;
+  }
+}
