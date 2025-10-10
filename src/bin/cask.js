@@ -5,6 +5,8 @@ import fs from 'fs/promises';
 import CaskFs from '../index.js';
 import createContext from '../lib/context.js';
 import path from 'path';
+import os from 'os';
+import config from '../lib/config.js';
 import {optsWrapper, handleUser} from './opts-wrapper.js';
 
 const program = new Command();
@@ -16,7 +18,7 @@ program
   .argument('<file-path>', 'Full path (including filename) where the file will be written in the CASKFS')
   .requiredOption('-d, --data-file <data-file>', 'Path to the data file to write. Use "-" to read from stdin')
   .option('-r, --replace', 'Replace the file if it already exists', false)
-  .option('-p, --partition-keys <keys>', 'comma-separated list of partition keys')
+  .option('-k, --partition-keys <keys>', 'comma-separated list of partition keys')
   .option('-l, --jsonld', 'treat input as JSON-LD')
   .option('-m, --mime-type <mime-type>', 'MIME type of the file being written, default is auto-detected from file extension')
   .description('Write a file to the CASKFS')
@@ -167,7 +169,7 @@ program
   .option('-s, --subject <subject-uri>', 'Only include RDF triples with the specified subject')
   .option('-o, --object <object-uri>', 'Only include RDF triples with the specified object')
   .option('-g, --graph <graph-uri>', 'Only include RDF triples in the specified graph. Must be used with --subject or --containment')
-  .option('-p, --partition <keys>', 'Only include RDF triples with the specified partition keys (comma-separated). Must be used with --subject or --containment')
+  .option('-k, --partition-keys <keys>', 'Only include RDF triples with the specified partition keys (comma-separated). Must be used with --subject or --containment')
   .option('-f, --format <format>', 'RDF format to output: jsonld, compact, flattened, expanded, nquads or json. Default is jsonld', 'jsonld')
   .action(async (options) => {
     handleUser(options);
@@ -312,6 +314,47 @@ program
   .action(async () => {
     const cask = new CaskFs();
     await cask.dbClient.init();
+    cask.dbClient.end();
+  });
+
+program
+  .command('powerwash')
+  .description('Power wash the CASKFS - WARNING: This will delete ALL data and metadata!')
+  .option('-a, --include-admin', 'Set current user to admin role', false)
+  .action(async (options) => {
+    const readline = await import('readline');
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
+
+    let dir = path.resolve(config.rootDir);
+    console.warn(`\n**** WARNING ****
+* This will delete ALL data and metadata in the CASKFS root directory: ${dir}
+* This action is irreversible!
+*****************\n`);
+
+    const confirm = await new Promise(resolve => {
+      rl.question('Are you sure you want to continue? (yes/no): ', answer => {
+        rl.close();
+        resolve(answer.trim().toLowerCase());
+      });
+    });
+
+    if (confirm !== 'yes') {
+      console.log('Powerwash aborted.');
+      process.exit(0);
+    }
+
+    const cask = new CaskFs();
+    await cask.powerWash();
+
+    if( options.includeAdmin ) {
+      let user = os.userInfo().username;
+      console.log(`Setting user ${user} to have admin role`);
+      await cask.setUserRole({ user, role: config.acl.adminRole });
+    }
+
     cask.dbClient.end();
   });
 

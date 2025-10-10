@@ -15,7 +15,7 @@ program
       cask.dbClient.end();
       return;
     }
-    console.log(await cask.authPath[type].getFromPath(filePath));
+    console.log(await cask.autoPath[type].getFromPath(filePath));
     cask.dbClient.end();
   });
 
@@ -44,7 +44,14 @@ program
     console.log('Setting auto-path rule:', options);
 
     const cask = new CaskFs();
-    await cask.authPath[type].set(opts);
+
+    if( Object.keys(cask.autoPath).indexOf(type) === -1 ) {
+      console.error(`Invalid type "${type}". Must be one of: ${types.join(', ')}`);
+      cask.dbClient.end();
+      return;
+    }
+
+    await cask.autoPath[type].set(opts);
     cask.dbClient.end();
   });
 
@@ -55,7 +62,7 @@ program
   .description('Remove an auto-path rule')
   .action(async (type, name) => {
     const cask = new CaskFs();
-    await cask.authPath[type].remove(name);
+    await cask.autoPath[type].remove(name);
     cask.dbClient.end();
   });
 
@@ -69,7 +76,7 @@ program
       cask.dbClient.end();
       return;
     }
-    console.table(await cask.authPath[type].getConfig(true));
+    console.table(await cask.autoPath[type].getConfig(true));
     cask.dbClient.end();
   });
 
