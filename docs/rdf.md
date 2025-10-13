@@ -17,7 +17,7 @@ Contents:
 - **Linked Data**: Supports reading and parsing JSON-LD and n3 files.  Along with the the [Layer 2 File System](fs.md) node, all triples (or quads) in the JSON-LD or n3 file are included in Layer 3 queries.
 - **Binary File Metadata**: Allows for adding metadata to binary files by referencing binary files subjects from JSON-LD files.  See the [Reference Binary File](#reference-binary-file) section below for more details.
 - **File Relationships**: Allows querying for relationships between files based on RDF triples that reference URI subjects or objects in other files.  You can then filter by; subject, predicate, partition keys or graph. See the [File Relationships](#file-relationships) section below for more details.
-- **Containment Search**: Allows querying the layer 3 graph to find files (containments).  You can find files by; subject, predicate, object (URI), partition keys or graph.
+- **File Search**: Allows querying the layer 3 graph to find files.  You can find files that contain a; subject, predicate, object (URI not literal), partition keys or graph.
 
 ## Linked Data CLI Methods
 
