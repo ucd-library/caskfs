@@ -13,7 +13,7 @@ Contents:
 ## Key Features
 
 - **Filesystem Interface**: Provides a familiar filesystem interface for users to interact with files and directories.
-- **Role-Based Access Control**: Implements role-based access control to manage permissions for different users at the directory level.
+- **Role-Based Access Control**: Implements [role-based access control](rbac.md) to manage permissions for different users at the directory level.
 - **Virtual Directories**: Like cloud storage systems, CaskFS directories are virtual and do not exist as physical entities in the storage backend.  This allows for concepts like empty directories and directories with the same name as files or files nested within files.  This allows for easy syncing between your existing cloud storage and CaskFS.
 - **Partition Key**: Each file can be associated with one or more partition keys, which can be used to group related files together. This is most useful when interfacting with CaskFS via the [RDF Layer (Layer 3)](rdf.md) as all queries are scoped to a specific partition key.
 - **Auto Partition Key**: Each file can be automatically assigned a partition key based on the directory it is created in.  You can specify rules for how partition keys are assigned based on directory paths. See the [Auto Path Documentation](auto-path.md) for more details.
