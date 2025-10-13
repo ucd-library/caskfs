@@ -1,5 +1,7 @@
 # File System - Layer 2 - REST API
 
+[Back to File System Overview](./fs.md)
+
 Overview:
  - [Filesystem Operations: /cask/fs](#filesystem-operations-caskfs)
    - [Get File Contents or File Metadata](#get-file-contents-or-file-metadata)
@@ -10,6 +12,7 @@ Overview:
  - [Directory Operations: /cask/dir](#directory-operations-caskdir)
    - [List Directory](#list-directory)
    - [Create/Update Directory ACL](#createupdate-directory-acl)
+ - [Optimistic Sync](#optimistic-sync)
 
 # Filesystem Operations: /cask/fs
 
@@ -109,3 +112,29 @@ Overview:
      - 201 Created: The directory was successfully created.
      - 400 Bad Request: Invalid parameters.
      - 409 Conflict: A file or directory already exists at the specified path.
+
+## Optimistic Sync
+
+This is a root endpoint that allows for syncing a batch of files to the filesystem.  This is an optimistic operation that will attempt to write all files in the batch, and will return information about which files were successfully written, which files failed, and which files did not exist in the CAS.  It's up to the client to determine how to handle failures and new insertions.
+
+- POST /cask/sync
+
+  - Description: Sync a batch of files to the filesystem.  This is an optimistic operation that will attempt to write all files in the batch, and will return information about which files were successfully written, which files failed, and which files did not exist in the CAS.
+  - Parameters:
+    - replace (boolean, optional): If true, will replace existing files.  Default is false.
+  - Headers:
+    - Authorization (string, required): Bearer token for authentication.
+  - Body:
+    - JSON object containing objects with the following fields:
+      - filePath (string, required): The path to the file to sync.
+      - hash (string, required): The content sha256 hash of the file to sync.
+      - mimeType (string, optional): The mime type of the file to sync.
+      - metadata (object, optional): Additional metadata to associate with the file.
+      - partitionKeys (array, optional): Array of partition keys to associate with the file.
+      - bucket (string, optional): The bucket to associate with the file.  Cloud storage only.
+  - Responses:
+    - 200 OK: The files were successfully synced.  This response will contain three arrays:
+      - success: Array of file paths that were successfully written.
+      - errors: Array of objects containing file paths and error messages for files that failed to write.
+      - doesNotExist: Array of file paths that did not exist in the CAS.
+    - 400 Bad Request: Invalid parameters or request body.

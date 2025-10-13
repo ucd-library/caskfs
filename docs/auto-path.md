@@ -1,5 +1,7 @@
 # Auto Path Rules
 
+[Back to File System Overview](./fs.md)
+
 Auto Path Rules allow for automatic assignment of partition keys and bucket names based on file paths. This feature is particularly useful for segmenting data or storage supporting multiple different requirements.
 
 ## Key Features

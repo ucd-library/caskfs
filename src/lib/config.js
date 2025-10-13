@@ -52,6 +52,10 @@ const config = {
     adminRole : env.CASKFS_ACL_ADMIN_ROLE || 'admin',
     enabledCache : (env.CASKFS_ACL_ENABLED_CACHE === 'true'),
     cacheTTL : parseInt(env.CASKFS_ACL_CACHE_TTL) || 10 // seconds
+  },
+
+  sync : {
+    maxFilesPerBatch : parseInt(env.CASKFS_SYNC_MAX_FILES_PER_BATCH) || 1000
   }
 
 }

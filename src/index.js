@@ -11,6 +11,7 @@ import createContext from "./lib/context.js";
 import AutoPathBucket from "./lib/auto-path/bucket.js";
 import AutoPathPartition from "./lib/auto-path/partition.js";
 import { MissingResourceError } from "./lib/errors.js";
+import { create } from "domain";
 
 class CaskFs {
 
@@ -271,6 +272,62 @@ class CaskFs {
     await dbClient.end();
 
     return context;
+  }
+
+  /**
+   * @method sync
+   * @description Attempt to optimistically write a list of files to the CaskFS.
+   * Each file must have a filePath and hash value. If the hash value does not 
+   * exist in the CaskFS, it will be reported in the doesNotExist array.
+   *
+   * @param {Object} opts
+   * @param {Boolean} opts.replace if true, replace existing file at filePath. Default is false (error if exists)
+   * @param {Array} opts.files array of files to sync, each with filePath and hash properties.  Files can have
+   *                          optional partitionKeys (array), bucket (string), mimeType (string), metadata (object)
+   * @returns {Promise<Object>} result object with success, errors, and doesNotExist arrays
+   */
+  async sync(opts={}) {
+    let files = opts.files;
+    let replace = opts.replace || false;
+
+    if( files.length > config.sync.maxFilesPerBatch ) {
+      throw new Error(`Too many files to sync in a single batch, max is ${config.sync.maxFilesPerBatch}`);
+    }
+
+    if( !files || !Array.isArray(files) || files.length === 0 ) {
+      this.logger.warn('No files to sync', context.logContext);
+      return context;
+    }
+
+    let success = [];
+    let errors = [];
+    let doesNotExist = [];
+
+    for( let file of files ) {
+      if( !file.filePath || !file.hash ) {
+        errors.push({file, error: new Error('filePath and hash are required')});
+        continue;
+      }
+
+      // set the global replace for sync
+      file.replace = replace;
+
+      try {
+        await this.write(
+          await createContext({file: file.filePath}),
+          file
+        );
+        success.push(file.filePath);
+      } catch (error) {
+        if( error instanceof this.cas.HashNotFoundError ) {
+          doesNotExist.push(file.filePath);
+        } else {
+          errors.push({file, error});
+        }
+      }
+    }
+
+    return {success, errors, doesNotExist};
   }
 
   /**

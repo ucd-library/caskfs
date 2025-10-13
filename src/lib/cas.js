@@ -9,6 +9,13 @@ import { getLogger } from './logger.js';
 import GCSStorage from './storage/gcs.js';
 import FSStorage from './storage/fs.js';
 
+class HashNotFoundError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'HashNotFoundError';
+  }
+}
+
 class Cas {
 
   constructor(opts={}) {
@@ -17,6 +24,8 @@ class Cas {
     this.logger = getLogger('cas');
     this.rootSubPath = 'cas';
     this.pathPrefix = '';
+
+    this.HashNotFoundError = HashNotFoundError;
   }
 
   init() {
@@ -183,7 +192,7 @@ class Cas {
 
     // just ensure the file exists
     if( !await this.exists(fullPath) ) {
-      throw new Error(`File with hash ${opts.hash} does not exist in CASKFS`);
+      throw new HashNotFoundError(`File with hash ${opts.hash} does not exist in CASKFS`);
     }
 
     // JM - should we just do a db lookup, or recalculate all hashes
