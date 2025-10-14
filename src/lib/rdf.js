@@ -357,11 +357,15 @@ class Rdf {
 
 
   /**
-   * @method links
+   * @method relationships
    * @description Get the outbound and inbound links for a given containment record.
    * 
-   * @param {Object} metadata 
-   * @param {String} predicate 
+   * @param {Object} metadata file metadata record from the file_view
+   * @param {Object} opts options
+   * @param {String} opts.requestor user making the request (for ACL checks)
+   * @param {Boolean} opts.stats if true, will ignore ACL checks (for admin users)
+   * @param {String|Array} opts.predicate predicate or array of predicates to filter by
+   * 
    * 
    * @returns 
    */

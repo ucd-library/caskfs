@@ -49,10 +49,9 @@ program
     opts.mimeType = mimeType;
     opts.replace = options.replace;
     opts.user = options.user;
+    opts.filePath = filePath;
 
-
-    let context = await createContext({file: filePath});
-    await cask.write(context, opts);
+    await cask.write(opts);
 
     cask.dbClient.end();
   });

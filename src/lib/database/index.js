@@ -239,6 +239,10 @@ class Database {
    * @returns {Promise<Array>} array of child directory objects
    */
   async getChildDirectories(directory, opts={}) {
+    if( opts.ignoreAcl ) {
+      this.logger.warn('Ignoring ACL checks. This should only be done for admin users.');
+    }
+
     const sql = `
       with dir as (
         select directory_id from ${config.database.schema}.directory where fullname = $1

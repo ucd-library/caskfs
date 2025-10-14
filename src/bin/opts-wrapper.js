@@ -1,4 +1,3 @@
-// import { program } from 'commander';
 import os from 'os';
 
 let programInstance = null;

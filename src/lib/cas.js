@@ -364,8 +364,14 @@ class Cas {
     }
     let dir = path.resolve(config.rootDir);
     console.log('Powerwashing CASKFS root directory:', dir);
-    fs.rmSync(dir, { recursive: true, force: true });
-    console.log('CASKFS root directory removed:', dir);
+    
+    // Remove contents of directory but keep the directory itself
+    const items = fs.readdirSync(dir);
+    for (const item of items) {
+      const itemPath = path.join(dir, item);
+      fs.rmSync(itemPath, { recursive: true, force: true });
+    }
+    console.log('CASKFS root directory contents removed from:', dir);
   }
 
   /**
