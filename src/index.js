@@ -66,10 +66,6 @@ class CaskFs {
     this.acl = acl;
   }
 
-  createContext(obj) {
-    return createContext(obj);
-  }
-
   /**
    * @method exists
    * @description Check if a file exists in the CASKFS.
@@ -80,7 +76,7 @@ class CaskFs {
    * @returns {Boolean} true if the file exists, false otherwise
    */
   async exists(context) {
-    context = createContext(context);
+    context = createContext(context, this.dbClient);
     await this.canReadFile(context);
 
     if( context.file === true) {
@@ -109,7 +105,7 @@ class CaskFs {
    * @returns {Object} result object with copied (boolean) and fileId (string)
    */
   async write(context) {
-    context = createContext(context);
+    context = createContext(context, this.dbClient);
 
     if( !context.data.filePath ) {
       throw new Error('FileContext with file path is required');
@@ -162,7 +158,7 @@ class CaskFs {
         this.logger.debug('Attempting to auto-detect mime type, not specified in options', context.logContext);
 
         // if known RDF extension, set to JSON-LD
-        if( filePath.endsWith(this.jsonldExt) || opts?.readPath?.endsWith(this.jsonldExt) ) {
+        if( filePath.endsWith(this.jsonldExt) || context?.readPath?.endsWith(this.jsonldExt) ) {
           this.logger.debug('Detected JSON-LD file based on file extension', context.logContext);
           metadata.mimeType = this.jsonLdMimeType;
         } else {
@@ -171,9 +167,9 @@ class CaskFs {
           metadata.mimeType = mime.getType(filePath);
         }
         // if still not found and we have a readPath, try to detect from that
-        if( !metadata.mimeType && opts.readPath ) {
+        if( !metadata.mimeType && context.readPath ) {
           this.logger.debug('Detecting mime type from readPath file extension using mime package', context.logContext);
-          metadata.mimeType = mime.getType(opts.readPath);
+          metadata.mimeType = mime.getType(context.readPath);
         }
       }
 
@@ -182,7 +178,7 @@ class CaskFs {
           metadata.mimeType === this.jsonLdMimeType ||
           metadata.mimeType === this.n3MimeType ||
           metadata.mimeType === this.turtleMimeType ||
-          opts.readPath?.endsWith(this.jsonldExt) ) {
+          context.readPath?.endsWith(this.jsonldExt) ) {
         this.logger.debug('Detected RDF file based on mime type or file extension', context.logContext);
         metadata.resource_type = 'rdf';
       } else {
@@ -199,7 +195,7 @@ class CaskFs {
 
       // build partition keys and bucket from both path and opts
       let autoPathKeys = await this.getAutoPathValues(context);
-      opts.partitionKeys = autoPathKeys.partitionKeys || null;
+      context.update({partitionKeys: autoPathKeys.partitionKeys || null});
 
       if( this.cas.cloudStorageEnabled ) {
         let bucket = autoPathKeys.bucket;
@@ -210,7 +206,7 @@ class CaskFs {
       }
 
       // write the file record
-      if( !fileExists ) {
+      if( !context.data.fileExists ) {
         this.logger.info('Inserting new file record into CASKFS', context.logContext);
         await dbClient.insertFile({
           directoryId,
@@ -220,8 +216,8 @@ class CaskFs {
           bucket: context.data.bucket,
           digests: context.data.stagedFile.digests,
           size: context.data.stagedFile.size,
-          partitionKeys: opts.partitionKeys,
-          user: opts.user
+          partitionKeys: context.data.partitionKeys,
+          user: context.data.requestor
         });
         context.update({
           file: await this.metadata(context)
@@ -242,18 +238,22 @@ class CaskFs {
       if( !context?.stagedFile?.hashExists || !fileExists ) {
         // if replacing an existing file, delete old triples first
         this.logger.info('Replacing existing RDF file, deleting old triples', context.logContext);
-        await this.rdf.delete(context, {dbClient, ignoreAcl: true});
+        await this.rdf.delete(context.data.file, {dbClient, ignoreAcl: true});
 
         this.logger.info('Inserting RDF triples for file', context.logContext);
-        await this.rdf.insert(context, {dbClient, filepath: context.stagedFile.tmpFile, ignoreAcl: true});
+        await this.rdf.insert(context.data.file.file_id, 
+          {
+            dbClient, 
+            filepath: context.data.stagedFile.tmpFile
+          });
       } else {
         this.logger.info('RDF file already exists, skipping RDF processing', context.logContext);
       }      
 
       // finalize the write to move the temp file to its final location
       context.copied = await this.cas.finalizeWrite(
-        context.stagedFile.tmpFile, 
-        context.stagedFile.hashFile, 
+        context.data.stagedFile.tmpFile, 
+        context.data.stagedFile.hashFile, 
         {bucket: metadata.bucket, dbClient}
       );
 
@@ -336,7 +336,7 @@ class CaskFs {
 
       try {
         await this.write(
-          await createContext(file, this.dbClient)
+          createContext(file, context.data.dbClient || this.dbClient)
         );
         success.push(file.filePath);
       } catch (error) {
@@ -401,6 +401,7 @@ class CaskFs {
    * @param {Object|CaskFSContext} context context or object with filePath property
    * @param {String} context.filePath file path to get metadata for
    * @param {Object} context.requestor user name of the requestor
+   * @param {Boolean} context.stats if true, include additional stats (rdfLinks, rdfNodes) in the metadata
    *
    * @returns {Promise<Object>} metadata object
    */
@@ -423,7 +424,7 @@ class CaskFs {
     let data = res.rows[0];
     data.fullPath = this.cas.diskPath(data.hash_value);
 
-    if( opts.stats ) {
+    if( context.stats ) {
       res = await dbClient.query(`
         SELECT COUNT(*) AS count FROM ${this.schema}.rdf_link WHERE file_id = $1
       `, [data.file_id]);
@@ -541,7 +542,7 @@ class CaskFs {
   }
 
   async stats(opts={}) {
-    context = createContext(opts);
+    context = createContext(opts, this.dbClient);
     await this.allowAdminAction(context);
 
     context.setDbClientIfNotSet(this.dbClient);
@@ -565,16 +566,15 @@ class CaskFs {
    * @returns {Promise<Object>} result object with metadata, fileDeleted (boolean), referencesRemaining (int)
    */
   async delete(context={}, opts={}) {
-    context = createContext(context);
+    context = createContext(context, this.dbClient);
 
-    context.setDbClientIfNotSet(this.dbClient);
     await this.canWriteFile(context);
 
 
     let metadata = await this.metadata(context);
 
     // remove RDF triples first
-    this.rdf.delete({file: metadata});
+    this.rdf.delete(metadata);
 
     // remove the file record
     await context.data.dbClient.query(`
@@ -601,7 +601,7 @@ class CaskFs {
    * @returns {Promise<Object>} result of the insert query
    */
   async ensureRole(context={}) {
-    context = createContext(context);
+    context = createContext(context, this.dbClient);
     await this.allowAdminAction(context);
 
     await acl.ensureRole({
@@ -620,7 +620,7 @@ class CaskFs {
    * @returns {Promise<Object>} result of the delete query
    */
   async removeRole(context={}) {
-    context = createContext(context);
+    context = createContext(context, this.dbClient);
     await this.allowAdminAction(context);
 
     return this.runInTransaction(async (dbClient) => {
@@ -642,13 +642,44 @@ class CaskFs {
    * @returns {Promise<Object>} result of the insert query
    */
   async ensureUser(context={}) {
-    context = createContext(context);
+    context = createContext(context, this.dbClient);
     await this.allowAdminAction(context);
 
     return acl.ensureUser({
       user: context.data.user,
       dbClient: context.dbClient || this.dbClient
     });
+  }
+
+  /**
+   * @method ensureUserRoles
+   * @description Ensure that a set of user/role associations exist, 
+   * creating users and roles as needed. userRoles should have the format:
+   * {
+   *  "user1": ["role1", "role2"],
+   *  "user2": ["role2"]
+   * }
+   *
+   * @param {Object|CaskFSContext} context
+   * @param {Object} context.dbClient Optional. database client instance, defaults to instance dbClient
+   * @param {String} config.requestor user name of the requestor
+   * @param {Object} userRoles
+   * 
+   * @returns {Promise<void>}
+   */
+  async ensureUserRoles(context={}, userRoles={}) {
+    context = createContext(context, this.dbClient);
+    await this.allowAdminAction(context);
+
+    for (const user in userRoles) {
+      for (const role of userRoles[user]) {
+        await acl.ensureUserRole({
+          user,
+          role,
+          dbClient: context.dbClient || this.dbClient
+        });
+      }
+    }
   }
 
   /**
@@ -662,7 +693,7 @@ class CaskFs {
    * @returns {Promise<Object>} result of the insert query
    */
   async setUserRole(context={}) {
-    context = createContext(context);
+    context = createContext(context, this.dbClient);
     await this.allowAdminAction(context);
 
     return this.runInTransaction(async (dbClient) => {
@@ -693,7 +724,7 @@ class CaskFs {
    * @returns {Promise<Object>} result of the delete query
    */
   async removeUserRole(context={}) {
-    context = createContext(context);
+    context = createContext(context, this.dbClient);
 
     await this.allowAdminAction(context);
 
@@ -718,7 +749,7 @@ class CaskFs {
    */
   async setDirectoryPublic(context={}) {
 
-    context = createContext(context);
+    context = createContext(context, this.dbClient);
     await this.canUpdateDirAcl(context);
 
     await this.runInTransaction(async (dbClient) => {
@@ -750,7 +781,7 @@ class CaskFs {
    * @param {String} context.requestor user name of the requestor
    */
   async setDirectoryPermission(context={}) {
-    context = createContext(context);
+    context = createContext(context, this.dbClient);
     await this.canUpdateDirAcl(context);
 
     await this.runInTransaction(async (dbClient) => {
@@ -781,7 +812,7 @@ class CaskFs {
    * @param {Object} context.dbClient Optional. database client instance, defaults to instance dbClient
    */
   async removeDirectoryPermission(context={}) {
-    context = createContext(context);
+    context = createContext(context, this.dbClient);
 
     await this.canUpdateDirAcl(context);
 
@@ -807,7 +838,7 @@ class CaskFs {
    * @returns {Promise<void>}
    */
   async removeDirectoryAcl(context={}) {
-    context = createContext(context);
+    context = createContext(context, this.dbClient);
 
     await this.canUpdateDirAcl(context);
 
@@ -830,7 +861,7 @@ class CaskFs {
    * @returns {Promise<Object>} directory ACL object
    */
   async getDirectoryAcl(context={}) {
-    context = createContext(context);
+    context = createContext(context, this.dbClient);
 
     await this.canUpdateDirAcl(context);
 
@@ -869,7 +900,7 @@ class CaskFs {
    * @returns {Promise<Object>} object with bucket and partitionKeys array
    */
   async getAutoPathValues(context={}) {
-    context = createContext(context);
+    context = createContext(context, this.dbClient);
 
     let results = {};
     for( let type in this.autoPath ) {

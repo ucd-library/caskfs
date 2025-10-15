@@ -136,7 +136,7 @@ class Acl {
     let result = await dbClient.query(`
       SELECT 1 FROM ${config.database.schema}.acl_user_roles_view
       WHERE "user" = $1 AND "role" = $2
-    `, [opts.user, role]);
+    `, [opts.requestor, role]);
 
 
 

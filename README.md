@@ -6,7 +6,7 @@ Contents:
 - [General Concepts](#general-concepts)
   - [Content-Addressed Storage (CAS) - Layer 1](./docs/cas.md)
   - [File System (FS) - Layer 2](./docs/fs.md)
-  - [Linked Data (RDF) - Layer 3](./docs/rdf.md)
+  - [Linked Data (RDF) - Layer 3](./docs/ld.md)
 - [Interacting with CaskFS](#interacting-with-caskfs)
 - [As-a-Service](#as-a-service)
 
@@ -37,7 +37,7 @@ Notes.  The `./devops/cli.sh` script sets the `CASKFS_ROOT_DIR` to the `cache` d
 There are three layers to CaskFS:
   1. The [Content-Addressed Storage (CAS) Layer 1](docs/cas.md) which stores all files by their SHA256 hash.  Additionally a metadata file is stored for each file in CAS, which contains a copy of all additional data stored about the file in the database.
   2. The [File System (FS) Layer 2](docs/fs.md) which provides a filesystem-like hierarchy of files and directories, where files can be either binary files in or JSON-LD metadata files.
-  3. The [Linked Data (RDF) Layer 3](docs/rdf.md) which represents all linked data from the JSON-LD files (including references to binary/non-RDF files) and allows for linking (referencing) RDF and binary/non-RDF files.
+  3. The [Linked Data (RDF) Layer 3](docs/ld.md) which represents all linked data from the JSON-LD files (including references to binary/non-RDF files) and allows for linking (referencing) RDF and binary/non-RDF files.
 
 
 ```
@@ -62,7 +62,7 @@ There are three layers to CaskFS:
 
 # Interacting with CaskFS
 
-Writes are done via [the filesystem layer](docs/fs.md).  [The CAS layer](docs/cas.md) is not directly interacted with.  [The RDF layer 3](docs/rdf.md) is a readonly layer allowing for; retrieving RDF data, finding relationships between files, and querying for files based on their RDF data.
+Writes are done via [the filesystem layer](docs/fs.md).  [The CAS layer](docs/cas.md) is not directly interacted with.  [The RDF layer 3](docs/ld.md) is a readonly layer allowing for; retrieving RDF data, finding relationships between files, and querying for files based on their RDF data.
 
 There is both a CLI and REST API for interacting with CaskFS.  The CLI is a thin wrapper (will have) two flavors; one for when you have direct access to the CAS disk storage and Database, and one for when you only have access to the REST API (Still to be implemented).
 

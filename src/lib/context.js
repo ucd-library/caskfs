@@ -23,11 +23,13 @@ class CaskFSContext {
   constructor(obj={}, dbClient=null) {
     this.data = {
       corkTraceId: obj.corkTraceId || uuidV4(),
-      requestor: obj.requestor || config.acl.defaultRequestor,
+      requestor: config.acl.defaultRequestor,
       dbClient: dbClient || null
     }
 
     this.logSignal = {};
+
+    this.update(obj);
   }
 
   update(obj={}) {

@@ -147,12 +147,12 @@ class Rdf {
    * 
    * @returns 
    */
-  async insert(context, opts={}) {
+  async insert(fileId, opts={}) {
     let dbClient = opts.dbClient || this.dbClient;
 
     let file = await dbClient.query(`
         SELECT * FROM ${config.database.schema}.file_view WHERE file_id = $1
-      `, [context.file.file_id]);
+      `, [fileId]);
 
     file = file.rows[0];
     let filepath = path.join(file.directory, file.filename);
@@ -345,11 +345,11 @@ class Rdf {
       }
     }
 
-    await dbClient.query(`select caskfs.insert_rdf_link_bulk($1::UUID, $2::JSONB)`, [context.file.file_id, JSON.stringify(otherQuads)]);
-    await dbClient.query(`select caskfs.insert_rdf_node_bulk($1::UUID, $2::JSONB)`, [context.file.file_id, JSON.stringify(nodes)]);
+    await dbClient.query(`select caskfs.insert_rdf_link_bulk($1::UUID, $2::JSONB)`, [file.file_id, JSON.stringify(otherQuads)]);
+    await dbClient.query(`select caskfs.insert_rdf_node_bulk($1::UUID, $2::JSONB)`, [file.file_id, JSON.stringify(nodes)]);
 
     return {
-      context,
+      file,
       links: otherQuads,
       nodes: nodeData
     };
@@ -672,9 +672,9 @@ class Rdf {
    *  
    * @returns {Promise}
    */
-  delete(context, opts={}) {
-    this.logger.info('Deleting RDF data for file', context.logContext);
-    return (opts.dbClient || this.dbClient).query('select caskfs.remove_rdf_by_file($1)', [context.file.file_id]);
+  delete(fileMetadata, opts={}) {
+    this.logger.info('Deleting RDF data for file', fileMetadata.filepath);
+    return (opts.dbClient || this.dbClient).query('select caskfs.remove_rdf_by_file($1)', [fileMetadata.file_id]);
   }
 
   _getContextProperty(uri='') {

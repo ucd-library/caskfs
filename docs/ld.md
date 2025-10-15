@@ -6,7 +6,7 @@ The RDF layer is the top layer of CaskFS. This layer is responsible for handling
 
 Contents:
 - [Key Features](#key-features)
-- [Linked Data - Rest API](rdf-rest-api.md)
+- [Linked Data - Rest API](ld-rest-api.md)
 - [Linked Data - CLI Methods](#linked-data-cli-methods)
 - [Reference Binary File](#reference-binary-file)
 - [File Relationships](#file-relationships)

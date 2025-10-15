@@ -1,6 +1,6 @@
 # RDF - Layer 3 - Rest API
 
-[Back to RDF Overview](../rdf.md)
+[Back to RDF Overview](../ld.md)
 
 Overview:
  - [File Search: /cask/find](#file-search-caskfind)
@@ -49,11 +49,11 @@ Overview:
 
    - Description: Same as GET /cask/rel but allows for a larger query in the request body.
 
-# Fetch Linked Data: /cask/rdf
+# Fetch Linked Data: /cask/ld
 
-- GET /cask/rdf
+- GET /cask/ld
 
-   - Description: Fetch and return RDF data from a given URL.  Either containment or subject parameter is required.
+   - Description: Fetch and return Linked Data from a given URL.  Either containment or subject parameter is required.
    - Query Parameters:
      - containment (string, required): The filepath or URL to fetch RDF data from.
      - subject (string, optional): Filter results to include only triples with this subject URI.
