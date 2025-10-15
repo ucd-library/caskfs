@@ -27,10 +27,20 @@ export default class ScrollController {
   get lastPagePosition(){
     const currentPage = this.AppStateModel.store?.data?.page;
     if ( !currentPage ) return null;
+    const last = this.lastPageHistory(currentPage);
+    return last?.scrollY || 0;
+  }
+
+  /**
+   * @description Get last history entry for a given page
+   * @param {String} page - page id
+   * @returns {Object|null} - last history entry or null
+   */
+  lastPageHistory(page){
     const hist = SCROLL_STATE.history;
     for ( let i = hist.length-1; i >= 0; i-- ) {
-      if ( hist[i].page === currentPage ) {
-        return hist[i].scrollY;
+      if ( hist[i].page === page ) {
+        return hist[i];
       }
     }
     return null;
@@ -99,7 +109,7 @@ export default class ScrollController {
   _onAppStateUpdate(e) {
     if ( !e.lastPage ) return;
     if ( !SCROLL_STATE.scrollY ) return;
-    SCROLL_STATE.history.push({page: e.lastPage, scrollY: SCROLL_STATE.scrollY});
+    SCROLL_STATE.history.push({page: e.lastPage, scrollY: SCROLL_STATE.scrollY, location: e.lastLocation});
     if ( SCROLL_STATE.history.length > 20 ) SCROLL_STATE.history.shift();
   }
 }

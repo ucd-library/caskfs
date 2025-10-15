@@ -37,11 +37,14 @@
     "yaml": "^2.8.1"
   },
   "devDependencies": {
+    "@material/switch": "^14.0.0",
     "@ucd-lib/cork-app-build": "^0.5.0",
     "@ucd-lib/cork-app-state": "^3.1.0",
+    "@ucd-lib/cork-app-utils": "^6.4.1",
     "@ucd-lib/cork-icon": "^1.4.2",
     "@ucd-lib/theme-elements": "^3.3.0",
     "@ucd-lib/theme-sass": "^6.0.1",
+    "prismjs": "^1.30.0",
     "webpack": "^5.102.0",
     "webpack-cli": "^5.1.4"
   }

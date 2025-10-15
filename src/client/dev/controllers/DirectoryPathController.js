@@ -45,6 +45,21 @@ export default class DirectoryPathController {
     this.AppStateModel.setLocation(url);
   }
 
+  /**
+   * @description Check if the AppStateModel path matches the path managed by this controller
+   * @param {Array} path - optional path to compare against. If not provided, will use current AppStateModel path
+   * @returns {boolean}
+   */
+  isAppStatePathEqual(path){
+    if ( !path ) path = this.AppStateModel.store.data.location.path;
+    const appStatePath = ['/', ...path.slice(this.pathStartIndex).filter(Boolean)];
+    if ( appStatePath.length !== this.path.length ) return false;
+    for ( let i = 0; i < appStatePath.length; i++ ) {
+      if ( appStatePath[i] !== this.path[i] ) return false;
+    }
+    return true;
+  }
+
   async _onAppStateUpdate(e) {
 
     let resolveUpdateComplete;

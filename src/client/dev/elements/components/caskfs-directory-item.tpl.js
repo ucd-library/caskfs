@@ -116,8 +116,8 @@ export function styles() {
 
 export function render() { 
   const classes = {
-    'is-directory': this.isDirectory,
-    'is-file': !this.isDirectory,
+    'is-directory': this.fsUtils.isDirectory,
+    'is-file': !this.fsUtils.isDirectory,
     'is-selected': this.selectCtl.hostIsSelected,
     'select-hidden': this.hideSelect,
     'select-visible': !this.hideSelect
@@ -138,11 +138,11 @@ function renderMobileView(){
           <div class='details'>
             <div>
               <div>Kind:</div>
-              <div>${this.kind}</div>
+              <div>${this.fsUtils.kind}</div>
             </div>
             <div>
               <div>Size:</div>
-              <div>${this.size}</div>
+              <div>${this.fsUtils.size}</div>
             </div>
             <div>
               <div>Modified:</div>
@@ -150,7 +150,7 @@ function renderMobileView(){
             </div>
             <div>
               <div>Modified By:</div>
-              <div>${this.modifiedBy}</div>
+              <div>${this.fsUtils.modifiedBy}</div>
             </div>
           </div>
         </div>
@@ -165,10 +165,10 @@ function renderDesktopView(){
     <div class='desktop-view'>
       <div class='item-line'>
         ${renderName.call(this)}
-        <div>${this.kind}</div>
-        <div>${this.size}</div>
+        <div>${this.fsUtils.kind}</div>
+        <div>${this.fsUtils.size}</div>
         ${renderModifiedDate.call(this)}
-        <div>${this.modifiedBy}</div>
+        <div>${this.fsUtils.modifiedBy}</div>
         ${renderDeleteIcon.call(this)}
       </div>
     </div>
@@ -193,12 +193,12 @@ function renderName(){
     <div class='name-container'>
       <input type='checkbox' 
         ?hidden=${this.hideSelect}
-        @input=${this._onSelectToggle} 
+        @input=${() => this.selectCtl.toggle()} 
         .checked=${this.selectCtl.hostIsSelected} 
         aria-label='Select Item'>
       <button @click=${this._onItemClick} class='link-button link-button--bold link-button--align-top'>
-        <cork-icon icon=${this.isDirectory ? 'fas.folder' : 'fas.file'} class='type-icon'></cork-icon>
-        <div>${this.name}</div>
+        <cork-icon icon=${this.fsUtils.isDirectory ? 'fas.folder' : 'fas.file'} class='type-icon'></cork-icon>
+        <div>${this.fsUtils.name}</div>
       </button>
     </div>
   `;
@@ -207,8 +207,8 @@ function renderName(){
 function renderModifiedDate(){
   return html`
     <div class='date-container'>
-      <div>${this.modifiedDate}</div> 
-      <div>${this.modifiedTime}</div>
+      <div>${this.fsUtils.modifiedDate}</div> 
+      <div>${this.fsUtils.modifiedTime}</div>
     </div>
   `;
 }

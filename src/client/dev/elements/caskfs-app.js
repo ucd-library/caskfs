@@ -16,10 +16,12 @@ import './pages/caskfs-page-home.js';
 import './pages/caskfs-page-directory.js';
 import './pages/caskfs-page-file-search.js';
 import './pages/caskfs-page-partitions.js';
+import './pages/caskfs-page-file-single.js';
 import './components/cork-app-error.js';
 import './components/cork-app-loader.tpl.js';
 import './components/cork-app-toast.js';
 import './components/cork-app-dialog-modal.js';
+import './components/cork-toggle-switch.js';
 
 // icon elements
 import '@ucd-lib/cork-icon';

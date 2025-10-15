@@ -7,7 +7,8 @@ class FsStore extends BaseStore {
     super();
 
     this.data = {
-      delete: new LruStore({name: 'fs.delete'})
+      delete: new LruStore({name: 'fs.delete'}),
+      metadata: new LruStore({name: 'fs.metadata'}),
     };
     this.events = {};
   }

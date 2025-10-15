@@ -23,8 +23,13 @@ class FsModel extends BaseModel {
     return res;
   }
 
+  getMetadata(path) {
+    return this.service.getMetadata(path);
+  }
+
   purgeCache(noDirPurge) {
     if ( !noDirPurge ) this.DirectoryModel.purgeCache(true);
+    this.store.data.metadata.purge();
   }
 
 }

@@ -28,7 +28,7 @@ export default (app) => {
   `<script src='/js/dev/${config.webapp.bundleName}?v=${(new Date()).toISOString()}'></script>` : 
   `<script src='/js/dist/${config.webapp.bundleName}?v=${bundleVersion}'></script>`; 
 
-  const routes = ['directory', 'file-search', 'config'];
+  const routes = ['directory', 'file-search', 'config', 'file'];
   const appTitle = 'CaskFs';
 
   spaMiddleware({

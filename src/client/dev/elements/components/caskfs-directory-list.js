@@ -8,6 +8,7 @@ import AppComponentController from '../../controllers/AppComponentController.js'
 import DirectoryPathController from '../../controllers/DirectoryPathController.js';
 import QueryStringController from '../../controllers/QueryStringController.js';
 import DirectoryItemSelectController from '../../controllers/DirectoryItemSelectController.js';
+import ScrollController from '../../controllers/ScrollController.js';
 
 export default class CaskfsDirectoryList extends Mixin(LitElement)
   .with(LitCorkUtils, MainDomElement) {
@@ -32,13 +33,20 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
     this.directoryPathCtl = new DirectoryPathController(this, 'pathStartIndex');
     this.qsCtl = new QueryStringController(this);
     this.selectCtl = new DirectoryItemSelectController(this);
+    this.scrollCtl = new ScrollController(this);
 
     this._injectModel('AppStateModel', 'DirectoryModel');
   }
 
-  _onAppStateUpdate(e) {
+  async _onAppStateUpdate(e) {
     if ( !this.appComponentCtl.isOnActivePage ) return;
-    this.listContents();
+    await this.listContents();
+
+    // restore scroll position if returning to this page
+    const lastHistory = this.scrollCtl.lastPageHistory(e.page);
+    if ( lastHistory && this.directoryPathCtl.isAppStatePathEqual(lastHistory.location?.path) ) {
+      this.scrollCtl.scrollToLastPagePosition();
+    } 
   }
 
   async listContents() {
@@ -93,7 +101,7 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
       this.directoryPathCtl.setLocation(e.detail.data.name);
       return;
     }
-    console.log('File clicked', e.detail);
+    this.AppStateModel.setLocation(`/file${e.detail.data.filepath}`);
   }
 
 }
