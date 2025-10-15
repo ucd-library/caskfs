@@ -10,7 +10,7 @@ import { getLogger } from "./lib/logger.js";
 import { createContext, CaskFSContext } from "./lib/context.js";
 import AutoPathBucket from "./lib/auto-path/bucket.js";
 import AutoPathPartition from "./lib/auto-path/partition.js";
-import { MissingResourceError, AclAccessError } from "./lib/errors.js";
+import { MissingResourceError, AclAccessError, DuplicateFileError } from "./lib/errors.js";
 
 class CaskFs {
 
@@ -129,8 +129,9 @@ class CaskFs {
       metadata: {},
       fileExists: false,
       primaryDigest: config.digests[0],
-      ignoreAcl: true // ignore ACL checks for internal operations
+      dbClient
     });
+    let metadata = context.data.metadata;
 
     //any operations that fail should rollback the transaction and delete the temp file
     try {
@@ -147,7 +148,7 @@ class CaskFs {
           file: await this.metadata(context)
         });
       } else if( context.data.replace !== true && context.data.fileExists ) {
-        throw new Error(`File already exists in CaskFS: ${filePath}`);
+        throw new DuplicateFileError(filePath);
       }
 
       // stage the write to get the hash value and write the temp file
@@ -158,20 +159,20 @@ class CaskFs {
       // if passed in, use that, otherwise try to detect from file extension
       metadata.mimeType = context.data.mimeType || context.data.contentType;
       if( !metadata.mimeType ) {
-        this.logger.debug('Attempting to auto-detect mime type, not specified in options');
+        this.logger.debug('Attempting to auto-detect mime type, not specified in options', context.logContext);
 
         // if known RDF extension, set to JSON-LD
         if( filePath.endsWith(this.jsonldExt) || opts?.readPath?.endsWith(this.jsonldExt) ) {
-          this.logger.debug('Detected JSON-LD file based on file extension');
+          this.logger.debug('Detected JSON-LD file based on file extension', context.logContext);
           metadata.mimeType = this.jsonLdMimeType;
         } else {
-          this.logger.debug('Detecting mime type from file extension using mime package');
+          this.logger.debug('Detecting mime type from file extension using mime package', context.logContext);
           // otherwise try to detect from file extension
           metadata.mimeType = mime.getType(filePath);
         }
         // if still not found and we have a readPath, try to detect from that
         if( !metadata.mimeType && opts.readPath ) {
-          this.logger.debug('Detecting mime type from readPath file extension using mime package');
+          this.logger.debug('Detecting mime type from readPath file extension using mime package', context.logContext);
           metadata.mimeType = mime.getType(opts.readPath);
         }
       }
@@ -182,10 +183,10 @@ class CaskFs {
           metadata.mimeType === this.n3MimeType ||
           metadata.mimeType === this.turtleMimeType ||
           opts.readPath?.endsWith(this.jsonldExt) ) {
-        this.logger.debug('Detected RDF file based on mime type or file extension');
+        this.logger.debug('Detected RDF file based on mime type or file extension', context.logContext);
         metadata.resource_type = 'rdf';
       } else {
-        this.logger.debug('Detected generic file based on mime type or file extension');
+        this.logger.debug('Detected generic file based on mime type or file extension', context.logContext);
         metadata.resource_type = 'file';
       }
 
@@ -197,14 +198,15 @@ class CaskFs {
       let directoryId = await this.directory.mkdir(fileParts.dir, {dbClient});
 
       // build partition keys and bucket from both path and opts
-      let autoPathKeys = await this.getAutoPathValues(filePath, opts);
+      let autoPathKeys = await this.getAutoPathValues(context);
       opts.partitionKeys = autoPathKeys.partitionKeys || null;
 
       if( this.cas.cloudStorageEnabled ) {
-        context.bucket = autoPathKeys.bucket;
-        if( !context.bucket ) {
-          context.bucket = config.cloudStorage.defaultBucket;
+        let bucket = autoPathKeys.bucket;
+        if( !bucket ) {
+          bucket = config.cloudStorage.defaultBucket;
         }
+        context.update({bucket});
       }
 
       // write the file record
@@ -213,22 +215,26 @@ class CaskFs {
         await dbClient.insertFile({
           directoryId,
           filePath, 
-          hash: context.stagedFile.digests[context.primaryDigest], 
+          hash: context.data.stagedFile.digests[context.primaryDigest], 
           metadata, 
-          bucket: context.bucket,
-          digests: context.stagedFile.digests,
-          size: context.stagedFile.size,
+          bucket: context.data.bucket,
+          digests: context.data.stagedFile.digests,
+          size: context.data.stagedFile.size,
           partitionKeys: opts.partitionKeys,
           user: opts.user
         });
-        context.update({file: await this.metadata(filePath, {dbClient, ignoreAcl: true})});
+        context.update({
+          file: await this.metadata(context)
+        });
       } else {
         await this.patchMetadata(
           context, 
-          {metadata, partitionKeys: opts.partitionKeys, onlyOnChange: true, dbClient: dbClient, ignoreAcl: true}
+          {onlyOnChange: true}
         );
-        context.replacedFile = context.file;
-        context.update({file: await this.metadata(filePath, {dbClient, ignoreAcl: true})});
+        context.update({
+          file: await this.metadata(context),
+          replacedFile: context.file
+        });
       }
 
       // now add the layer3 RDF triples for the file
@@ -241,7 +247,7 @@ class CaskFs {
         this.logger.info('Inserting RDF triples for file', context.logContext);
         await this.rdf.insert(context, {dbClient, filepath: context.stagedFile.tmpFile, ignoreAcl: true});
       } else {
-        this.logger.info('RDF file already exists in CASKFS, skipping RDF processing', context.logContext);
+        this.logger.info('RDF file already exists, skipping RDF processing', context.logContext);
       }      
 
       // finalize the write to move the temp file to its final location
@@ -255,7 +261,7 @@ class CaskFs {
       await dbClient.query('COMMIT');
     } catch (err) {
       context.error = err;
-      this.logger.error('Error writing file to CASKFS, rolling back transaction',
+      this.logger.error('Error writing file, rolling back transaction',
         {error: err.message, stack: err.stack, ...context.logContext}
       );
 
@@ -270,7 +276,7 @@ class CaskFs {
       return context;
     }
 
-    this.logger.info(`File write to CASK FS complete: ${filePath}`, {copied: context.copied}, context.logContext);
+    this.logger.info(`File write complete: ${filePath}`, {copied: context.copied}, context.logContext);
 
     // if we replaced an existing file, and the hash value is no longer referenced, delete it
     // this function will only delete the hash file if no other references exist
@@ -291,14 +297,17 @@ class CaskFs {
    * Each file must have a filePath and hash value. If the hash value does not 
    * exist in the CaskFS, it will be reported in the doesNotExist array.
    *
+   * @param {Object|CaskFSContext} context context or object with requestor property
+   * @param {String} context.requestor user name of the requestor
    * @param {Object} opts
    * @param {Boolean} opts.replace if true, replace existing file at filePath. Default is false (error if exists)
    * @param {Array} opts.files array of files to sync, each with filePath and hash properties.  Files can have
    *                          optional partitionKeys (array), bucket (string), mimeType (string), metadata (object)
    * @returns {Promise<Object>} result object with success, errors, and doesNotExist arrays
    */
-  async sync(opts={}) {
-    this.setUser(opts);
+  async sync(context, opts={}) {
+    context = createContext(context, this.dbClient);
+
     let files = opts.files;
     let replace = opts.replace || false;
 
@@ -323,15 +332,15 @@ class CaskFs {
 
       // set the global replace for sync
       file.replace = replace;
+      file.requestor = context.requestor;
 
       try {
         await this.write(
-          await createContext({file: file.filePath}),
-          file
+          await createContext(file, this.dbClient)
         );
         success.push(file.filePath);
       } catch (error) {
-        if( error instanceof this.cas.HashNotFoundError ) {
+        if( error instanceof HashNotFoundError ) {
           doesNotExist.push(file.filePath);
         } else {
           errors.push({file, error});
@@ -346,16 +355,17 @@ class CaskFs {
    * @method patchMetadata
    * @description Update the metadata and/or partition keys for a file in the CASKFS.
    *
-   * @param {String} filePath file path to update
-   * @param {Object} opts
-   * @param {Object} opts.metadata metadata object to merge with existing metadata
-   * @param {String|Array} opts.partitionKeys partition key or array of partition keys to add
+   * @param {Object|CaskFSContext} context context or object with filePath property
+   * @param {String} context.filePath file path to update
+   * @param {Object} context.metadata metadata object to merge with existing metadata
+   * @param {String|Array} context.partitionKeys partition key or array of partition keys to add
+   * @param {Object} opts options object
    * @param {Boolean} opts.onlyOnChange if true, only update if metadata or partition keys are different than existing. Default: false
    *
    * @returns {Promise<Object>} updated metadata object
    */
-  async patchMetadata(context) {
-    context = createContext(context);
+  async patchMetadata(context, opts={}) {
+    context = createContext(context, this.dbClient);
 
     if( !context.data.filePath ) {
       throw new Error('Context with filePath is required');
@@ -366,28 +376,41 @@ class CaskFs {
 
     await this.canWriteFile(context);
 
-    if( context.data.onlyOnChange ) {
-      let currentMetadata = await this.metadata(filePath, {dbClient, ignoreAcl: true});
-      if( JSON.stringify(currentMetadata.metadata) === JSON.stringify(opts.metadata) &&
-          JSON.stringify(currentMetadata.partition_keys) === JSON.stringify(opts.partitionKeys) ) {
+    if( opts.onlyOnChange ) {
+      let currentMetadata = await this.metadata(context);
+      if( JSON.stringify(currentMetadata.metadata) === JSON.stringify(context.data.metadata) &&
+          JSON.stringify(currentMetadata.partition_keys) === JSON.stringify(context.data.partitionKeys) ) {
         this.logger.info('No changes to metadata or partition keys, skipping update', context.logContext);
         return {metadata: currentMetadata, updated: false};
       }
     }
 
-    this.logger.info('Updating existing file metadata in CASKFS', context.logContext);
-    await dbClient.updateFileMetadata(filePath, opts);
+    this.logger.info('Updating existing file metadata', context.logContext);
+    await dbClient.updateFileMetadata(filePath, context.data);
 
-    return {metadata: this.metadata(filePath, {dbClient, ignoreAcl: true}), updated: true};
+    return {
+      metadata: await this.metadata(context),
+      updated: true
+    };
   }
 
-  async metadata(filePath, opts={}) {
-    this.setUser(opts);
-    let dbClient = opts.dbClient || this.dbClient;
+  /**
+   * @method metadata
+   * @description Get the metadata for a file in the CaskFS.
+   *
+   * @param {Object|CaskFSContext} context context or object with filePath property
+   * @param {String} context.filePath file path to get metadata for
+   * @param {Object} context.requestor user name of the requestor
+   *
+   * @returns {Promise<Object>} metadata object
+   */
+  async metadata(context) {
+    context = createContext(context, this.dbClient);
+    let dbClient = context.data.dbClient;
 
-    await this.canReadFile({...opts, filePath});
+    await this.canReadFile(context);
 
-    let fileParts = path.parse(filePath);
+    let fileParts = path.parse(context.data.filePath);
 
     let res = await dbClient.query(`
       SELECT * FROM ${this.schema}.file_view WHERE directory = $1 AND filename = $2
@@ -419,24 +442,26 @@ class CaskFs {
    * @method read
    * @description Read a file contents from the CASKFS. Can return as a stream or buffer.
    *
-   * @param {String} filePath file path to read
+   * @param {Object|CaskFSContext} context context or object with filePath property
+   * @param {String} context.filePath file path to read
+   * @param {Object} context.requestor user name of the requestor
    * @param {Object} opts options object
    * @param {Boolean} opts.stream if true, return a stream. If false, return a Promise to content. Default: false
    * @param {String} opts.encoding encoding to use when reading the file. Default: null (buffer)
    *
    * @returns {Promise<Buffer>|Stream} file contents as a Buffer or Stream
    */
-  async read(filePath, opts={}) {
-    this.setUser(opts);
-    await this.canReadFile({...opts, filePath});
+  async read(context, opts={}) {
+    context = createContext(context, this.dbClient);
+    await this.canReadFile(context);
 
-    let fileParts = path.parse(filePath);
+    let fileParts = path.parse(context.data.filePath);
     let res = await this.dbClient.query(`
       SELECT hash_value FROM ${this.schema}.file_view WHERE directory = $1 AND filename = $2
     `, [fileParts.dir, fileParts.base]);
 
     if( res.rows.length === 0 ) {
-      throw new Error(`File not found in CASKFS: ${filePath}`);
+      throw new MissingResourceError('File', context.data.filePath);
     }
 
     let hash = res.rows[0].hash_value;

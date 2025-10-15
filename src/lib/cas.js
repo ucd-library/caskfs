@@ -8,13 +8,7 @@ import Database from './database/index.js';
 import { getLogger } from './logger.js';
 import GCSStorage from './storage/gcs.js';
 import FSStorage from './storage/fs.js';
-
-class HashNotFoundError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'HashNotFoundError';
-  }
-}
+import { HashNotFoundError } from './errors.js';
 
 class Cas {
 
@@ -24,8 +18,6 @@ class Cas {
     this.logger = getLogger('cas');
     this.rootSubPath = 'cas';
     this.pathPrefix = '';
-
-    this.HashNotFoundError = HashNotFoundError;
   }
 
   init() {
@@ -43,29 +35,29 @@ class Cas {
     return Promise.resolve();
   }
 
-  async stageWrite(context, opts) {
+  async stageWrite(context) {
     let digests;
 
     // create a temp file to write the stream to
     let tmpFile = path.join(config.rootDir, 'tmp', uuidV4());
-    this.logger.debug('Staging write to temp file', tmpFile);
+    this.logger.debug('Staging write to temp file', tmpFile, context.logSignal);
 
     // ensure the directory exists
     await fsp.mkdir(path.dirname(tmpFile), {recursive: true});
 
     // stage by write tmp file and calculate digests
-    if( opts.readStream ) {
-      this.logger.debug('Staging write from readStream');
-      digests = await this.writeStream(tmpFile, opts);
-    } else if( opts.readPath ) {
-      this.logger.debug('Staging write from readPath');
-      digests = await this.writePath(tmpFile, opts);
-    } else if( opts.data ) {
-      this.logger.debug('Staging write from data');
-      digests = await this.writeData(tmpFile, opts);
-    } else if( opts.hash ) {
-      this.logger.debug('Staging write from existing hash');
-      digests = await this.writeHash(tmpFile, opts);
+    if( context.data.readStream ) {
+      this.logger.debug('Staging write from readStream', context.logSignal);
+      digests = await this.writeStream(tmpFile, context.data.readStream);
+    } else if( context.data.readPath ) {
+      this.logger.debug('Staging write from readPath', context.logSignal);
+      digests = await this.writePath(tmpFile, context.data);
+    } else if( context.data ) {
+      this.logger.debug('Staging write from data', context.logSignal);
+      digests = await this.writeData(tmpFile, context.data);
+    } else if( context.hash ) {
+      this.logger.debug('Staging write from existing hash', context.logSignal);
+      digests = await this.writeHash(tmpFile, context.data);
     } else {
       throw new Error('No input specified for write operation');
     }
@@ -87,14 +79,15 @@ class Cas {
     // get file stats
     let stats = await fsp.stat(statsFile);
 
-    context.stagedFile = { 
+    let stagedFile = { 
       digests, 
       tmpFile,
       size: stats.size,
       hashFile, 
       hashExists: fileExists 
     };
-    return context.stagedFile;
+
+    context.update({ stagedFile });
   }
 
 
@@ -136,11 +129,11 @@ class Cas {
    * @method writeStream
    * @description Write a readable stream to a file while calculating digests.
    * 
-   * @param {ReadableStream} stream readable stream to write
    * @param {String} filePath path to the file to write
+   * @param {ReadableStream} stream readable stream to write
    * @returns {Promise} resolves with the calculated digests
    */
-  writeStream(stream, filePath) {
+  writeStream(filePath, stream) {
     let digests = {};
     for( let algo of config.digests ) {
       digests[algo] = crypto.createHash(algo);
@@ -166,7 +159,7 @@ class Cas {
 
   async writePath(tmpFile, opts) {
     if( !path.isAbsolute(opts.readPath) ) {
-      throw new Error('readPath must be an absolute path');
+      throw new Error('readPath must be an absolute path: ' + opts.readPath);
     }
     if( !fs.existsSync(opts.readPath) ) {
       throw new Error(`readPath does not exist: ${opts.readPath}`);
