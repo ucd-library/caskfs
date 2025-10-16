@@ -5,17 +5,46 @@ import fs from 'fs/promises';
 import fsSync from 'fs';
 import CaskFs from '../index.js';
 import {createContext} from '../lib/context.js';
+import {silenceLoggers} from '../lib/logger.js';
 import path from 'path';
 import os from 'os';
 import config from '../lib/config.js';
 import {parse as parseYaml} from 'yaml';
 import {optsWrapper, handleUser} from './opts-wrapper.js';
+import cliProgress from 'cli-progress';
+import printLogo from './print-logo.js';
+import { fileURLToPath } from 'url';
+
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(
+  fsSync.readFileSync(path.resolve(__dirname, '..', '..', 'package.json'), 'utf-8')
+);
 
 const program = new Command();
 optsWrapper(program)
 
 // set default requestor to current user if not set
 config.acl.defaultRequestor = os.userInfo().username;
+
+program
+  .name('pgfarm')
+  // .option('-V, --version', 'show version')
+  .action(async () => {
+
+    let versionInfo = pkg.version;
+    try {
+      let latest = await getLatestVersion();
+      if( latest !== versionInfo ) {
+        versionInfo = `${versionInfo} (latest: ${colors.green(latest)}. Run '${colors.yellow(`npm install -g @ucd-lib/pgfarm@${latest}`)}' to update)`;
+      } else {
+        versionInfo += colors.green(' (latest)');
+      }
+    } catch(e) {}
+
+
+    printLogo(pkg);
+  });
 
 program
   .command('write')
@@ -67,6 +96,8 @@ program
   .option('-d, --dry-run', 'Show what would be copied without actually copying', false)
   .option('-b, --bucket <bucket>', 'Target bucket when copying to GCS')
   .action(async (sourcePath, destPath, options) => {
+    silenceLoggers();
+    
     handleUser(options);
     
     if( !path.isAbsolute(sourcePath) ) {
@@ -110,6 +141,18 @@ program
 
     let failed = [];
     let context;
+
+    console.log('Copying files from directory', sourcePath);
+    console.log('');
+    
+    let pbar = new cliProgress.Bar(
+      {etaBuffer: 50}, 
+      cliProgress.Presets.shades_classic
+    ); 
+    let total = files.filter(f => !f.match(/\/\./)).length;
+    let filesCopied = 0;
+    pbar.start(total, 0);
+
     for( let file of files ) {
       if( file.match(/\/\./) ) continue; // skip hidden files
 
@@ -124,10 +167,11 @@ program
       });
 
       location = await cask.getCasLocation(context);
-      console.log(`Copying file ${file} to (${location}) ${destFile}`);
+      // console.log(`Copying file ${file} to (${location}) ${destFile}`);
       if( !options.dryRun ) {
         try {
           await cask.write(context);
+          pbar.update(filesCopied++);
         } catch (err) {
           console.error(`Failed to copy ${file} to ${destFile}: ${err.message}`);
           console.error(err.stack);
@@ -139,8 +183,12 @@ program
       }
     }
 
+    pbar.stop();
+
+    console.log(`\nCopied ${filesCopied-failed.length} files to CaskFS`);
+
     if( failed.length > 0 ) {
-      console.log(`\nThe following files failed to copy:`);
+      console.log(`\nThe following ${failed.length} files failed to copy:`);
       failed.forEach(f => console.log(`  - ${f}`));
     }
 
@@ -175,7 +223,7 @@ program
       requestor: options.requestor,
       user: options.user
     });
-    console.log(await cask.read(context));
+    console.log((await cask.read(context)).toString('utf-8'));
     cask.dbClient.end();
   });
 
@@ -336,7 +384,7 @@ program
 
     if( options.userRolesFile ) {
       let userRoles = await loadUserRolesFile(options.userRolesFile);
-      await cask.ensureUserRoles(userRoles);
+      await cask.ensureUserRoles(handleUser({}), userRoles);
     }
 
     cask.dbClient.end();
@@ -349,7 +397,7 @@ program
     let userRoles = await loadUserRolesFile(userRolesFile);
 
     const cask = new CaskFs();
-    await cask.ensureUserRoles(userRoles);
+    await cask.ensureUserRoles(handleUser({}), userRoles);
     cask.dbClient.end();
   });
 
@@ -393,8 +441,9 @@ program
     }
 
     if( options.userRolesFile ) {
+      console.log(`Loading user roles from ${options.userRolesFile}`);
       let userRoles = await loadUserRolesFile(options.userRolesFile);
-      await cask.ensureUserRoles(userRoles);
+      await cask.ensureUserRoles(handleUser({}), userRoles);
     }
 
     cask.dbClient.end();

@@ -53,13 +53,13 @@ Overview:
 
 - GET /cask/ld
 
-   - Description: Fetch and return Linked Data from a given URL.  Either containment or subject parameter is required.
+   - Description: Fetch and return Linked Data from a given URL.  Either file or subject parameter is required.
    - Query Parameters:
-     - containment (string, required): The filepath or URL to fetch RDF data from.
+     - file (string, required): The filepath or URL to fetch RDF data from.
      - subject (string, optional): Filter results to include only triples with this subject URI.
      - object (string, optional): Filter results to include only triples with this object URI.
      - graph (string, optional): Filter results to include only triples in this graph.
-     - partitionKeys (string, optional): Comma-separated list of partition keys to filter the search.  Mostly used when the subject parameter is used to filter which files (Containments) in the CaskFS filesystem are searched for the subject.
+     - partitionKeys (string, optional): Comma-separated list of partition keys to filter the search.  Mostly used when the subject parameter is used to filter which files in the CaskFS filesystem are searched for the subject.
      - format (string, optional): Desired RDF serialization format. Alternative to providing `accept` header.  One of:
        - jsonld (default)
        - compacted

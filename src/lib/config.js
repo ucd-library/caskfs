@@ -7,6 +7,8 @@ const config = {
 
   rootDir : env.CASKFS_ROOT_DIR || '/opt/caskfs',
 
+  logLevel : env.CASKFS_LOG_LEVEL || 'info',
+
   schemaPrefix: schemaPrefix,
   fileGraph : schemaPrefix + 'file',
   defaultGraph : schemaPrefix + 'default',

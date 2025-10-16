@@ -3,7 +3,7 @@ import path from "path";
 import config from "./lib/config.js";
 import mime from "mime";
 import Cas from "./lib/cas.js";
-import Rdf from "./lib/rdf.js";
+import Rdf from "./lib/ld.js";
 import Directory from "./lib/directory.js";
 import acl from "./lib/acl.js";
 import { getLogger } from "./lib/logger.js";
@@ -211,7 +211,7 @@ class CaskFs {
         await dbClient.insertFile({
           directoryId,
           filePath, 
-          hash: context.data.stagedFile.digests[context.primaryDigest], 
+          hash: context.data.stagedFile.digests[context.data.primaryDigest], 
           metadata, 
           bucket: context.data.bucket,
           digests: context.data.stagedFile.digests,
@@ -235,7 +235,7 @@ class CaskFs {
 
       // now add the layer3 RDF triples for the file
       // if its an RDF file parse and add the file contents triples as well
-      if( !context?.stagedFile?.hashExists || !fileExists ) {
+      if( !context?.data?.stagedFile?.hashExists || !fileExists ) {
         // if replacing an existing file, delete old triples first
         this.logger.info('Replacing existing RDF file, deleting old triples', context.logContext);
         await this.rdf.delete(context.data.file, {dbClient, ignoreAcl: true});
@@ -251,16 +251,17 @@ class CaskFs {
       }      
 
       // finalize the write to move the temp file to its final location
-      context.copied = await this.cas.finalizeWrite(
+      let copied = await this.cas.finalizeWrite(
         context.data.stagedFile.tmpFile, 
         context.data.stagedFile.hashFile, 
         {bucket: metadata.bucket, dbClient}
       );
+      context.update({copied});
 
       // finally commit the transaction
       await dbClient.query('COMMIT');
     } catch (err) {
-      context.error = err;
+      context.update({error: err});
       this.logger.error('Error writing file, rolling back transaction',
         {error: err.message, stack: err.stack, ...context.logContext}
       );
@@ -276,13 +277,13 @@ class CaskFs {
       return context;
     }
 
-    this.logger.info(`File write complete: ${filePath}`, {copied: context.copied}, context.logContext);
+    this.logger.info(`File write complete: ${filePath}`, {copied: context.data.copied}, context.logContext);
 
     // if we replaced an existing file, and the hash value is no longer referenced, delete it
     // this function will only delete the hash file if no other references exist
-    if( context.copied && opts.softDelete !== true && context.replacedFile ) {
-      this.logger.info(`Checking for unreferenced hash value to delete: ${context.replacedFile.hash_value}`, context.logContext);
-      await this.cas.delete(context.replacedFile.hash_value);
+    if( context.data.copied && context.data.softDelete !== true && context.data.replacedFile ) {
+      this.logger.info(`Checking for unreferenced hash value to delete: ${context.data.replacedFile.hash_value}`, context.logContext);
+      await this.cas.delete(context.data.replacedFile.hash_value);
     }
 
     // close the pg client socket connection

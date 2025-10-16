@@ -394,10 +394,13 @@ class Cas {
    * 
    * @returns {Promise} resolves with an object containing the digests
    */
-  _getFileHash(filePath) {
+  _getFileHash(filePath, digestsAlgo=null) {
+    if( !digestsAlgo ) {
+      digestsAlgo = config.digests;
+    }
     let digests = {};
 
-    for( let algo of config.digests ) {
+    for( let algo of digestsAlgo ) {
       let hash = crypto.createHash(algo);
       digests[algo] = hash;
     }
@@ -410,7 +413,7 @@ class Cas {
 
     let prom = new Promise((resolve, reject) => {
       stream.on('end', () => {
-        for( let algo of config.digests ) {
+        for( let algo of digestsAlgo ) {
           digests[algo] = digests[algo].digest('hex');
         }
         resolve(digests);

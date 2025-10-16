@@ -258,8 +258,8 @@ class Database {
   }
 
   /**
-   * @method findContainments
-   * @description Find containments that match the given criteria.
+   * @method findFiles
+   * @description Find files that match the given criteria.
    *
    * @param {Object} opts
    * @param {String|Array} opts.partition partition key or array of partition keys to match
@@ -270,9 +270,9 @@ class Database {
    * @param {Number} opts.limit limit number of results. Default 100
    * @param {Number} opts.offset offset for results. Default 0
    *
-   * @returns {Promise<Array>} array of matching containment URIs
+   * @returns {Promise<Array>} array of matching file URIs
    */
-  async findContainments(opts={}) {
+  async findFiles(opts={}) {
     let linkWhere = [];
     let nodeWhere = [];
     let args = [];
@@ -377,13 +377,13 @@ class Database {
   /**
    * @method findRdfNodes
    * @description Internal method to query RDF data from the database based on given options.  A subject or
-   * a containment must be specified. Will return jsonld dataset of nodes and links that match the query.
+   * a file must be specified. Will return jsonld dataset of nodes and links that match the query.
    * Will limit to 10,000 nodes AND 10,000 links.
    *
    * @param {Object} opts query options
-   * @param {String} opts.containment containment file path to filter by
+   * @param {String} opts.file file path to filter by
    * @param {String} opts.subject subject URI to filter by
-   * @param {String} opts.graph graph URI to filter by (must be used with subject or containment)
+   * @param {String} opts.graph graph URI to filter by (must be used with subject or file)
    * @param {String|Array} opts.partition partition key or array of partition keys to filter by
    * @param {Number} opts.limit limit number of results. Default 10000 nodes and 10000 links
    *
@@ -393,8 +393,8 @@ class Database {
     let where = [];
     let args = [];
 
-    if( !opts.containment && !opts.subject && !opts.object ) {
-      throw new Error('Containment, subject, or object must be specified for rdf queries');
+    if( !opts.file && !opts.subject && !opts.object ) {
+      throw new Error('File, subject, or object must be specified for rdf queries');
     }
 
     let aclOpts = {
@@ -438,9 +438,9 @@ class Database {
       where.push(`subject = $${args.length + 1}`);
       args.push(opts.subject);
     }
-    if( opts.containment ) {
-      where.push(`containment = $${args.length + 1}`);
-      args.push(opts.containment);
+    if( opts.file ) {
+      where.push(`file = $${args.length + 1}`);
+      args.push(opts.file);
     }
 
     let limit = 'LIMIT $'+(args.length + 1);
