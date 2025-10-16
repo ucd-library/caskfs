@@ -32,6 +32,10 @@ class FsModel extends BaseModel {
     this.store.data.metadata.purge();
   }
 
+  fileDownloadUrl(path) {
+    return `${this.service.baseUrl}${path}`;
+  }
+
 }
 
 const model = new FsModel();

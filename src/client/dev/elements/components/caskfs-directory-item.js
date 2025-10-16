@@ -46,6 +46,7 @@ export default class CaskfsDirectoryItem extends Mixin(LitElement)
         isDirectory: this.fsUtils.isDirectory
       }
     }));
+    this.renderRoot.activeElement?.blur();
   }
 
   _onDeleteClick(){

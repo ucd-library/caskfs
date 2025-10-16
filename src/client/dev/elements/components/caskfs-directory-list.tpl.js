@@ -1,5 +1,6 @@
 import { html, css } from 'lit';
 import './caskfs-directory-item.js';
+import './caskfs-fs-breadcrumbs.js';
 
 export function styles() {
   const elementStyles = css`
@@ -8,8 +9,7 @@ export function styles() {
       width: 100%;
       container-type: inline-size;
     }
-    caskfs-directory-list .breadcrumbs {
-      padding: 0;
+    caskfs-directory-list caskfs-fs-breadcrumbs {
       margin: .5rem 0;
     }
     caskfs-directory-list .table-header {
@@ -53,7 +53,7 @@ export function styles() {
 export function render() { 
   return html`
     <div>
-      <ol class='breadcrumbs'>${this.directoryPathCtl.breadcrumbs.map(crumb => crumb.currentPage ? html`<li>${crumb.name}</li>` : html`<li><a href="${crumb.url}">${crumb.name}</a></li>`)}</ol>
+      <caskfs-fs-breadcrumbs></caskfs-fs-breadcrumbs>
       <div>
         <div ?hidden=${!this.contents.length}>
           <div class='table-header'>

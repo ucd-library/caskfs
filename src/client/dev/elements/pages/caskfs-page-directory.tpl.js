@@ -40,9 +40,9 @@ return html`
   <div>
     <div class="l-container u-space-mt--large">
       <div class='content'>
-        <caskfs-directory-controls path-start-index="1"></caskfs-directory-controls>
+        <caskfs-directory-controls></caskfs-directory-controls>
         <div class='spacer'></div>
-        <caskfs-directory-list path-start-index="1"></caskfs-directory-list>
+        <caskfs-directory-list></caskfs-directory-list>
       </div>
     </div>
   </div>

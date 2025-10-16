@@ -47,6 +47,15 @@ export default class ScrollController {
   }
 
   /**
+   * @description Get all history entries for a given page. Most recent first.
+   * @param {String} page - page id
+   * @returns {Array} 
+   */
+  pageHistory(page){
+    return SCROLL_STATE.history.filter(h => h.page === page).reverse();
+  }
+
+  /**
    * @description Scroll to last known scroll position for the current page
    * @returns
    */
@@ -109,7 +118,12 @@ export default class ScrollController {
   _onAppStateUpdate(e) {
     if ( !e.lastPage ) return;
     if ( !SCROLL_STATE.scrollY ) return;
-    SCROLL_STATE.history.push({page: e.lastPage, scrollY: SCROLL_STATE.scrollY, location: e.lastLocation});
+    const record = {page: e.lastPage, scrollY: SCROLL_STATE.scrollY, location: e.lastLocation};
+    record.scrollTo = () => { 
+      if ( !record.scrollY ) return;
+      window.scrollTo(0, record.scrollY); 
+    };
+    SCROLL_STATE.history.push(record);
     if ( SCROLL_STATE.history.length > 20 ) SCROLL_STATE.history.shift();
   }
 }

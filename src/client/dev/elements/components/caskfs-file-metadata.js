@@ -14,7 +14,7 @@ export default class CaskfsFileMetadata extends Mixin(LitElement)
 
   static get properties() {
     return {
-      pathStartIndex: { type: Number, attribute: 'path-start-index' },
+      pathStartIndex: { type: Number },
       data: { type: Object },
       highlightedData: { state: true },
       fsUtils: { state: true },
@@ -36,7 +36,7 @@ export default class CaskfsFileMetadata extends Mixin(LitElement)
     this.showRaw = false;
 
     this.appComponentCtl = new AppComponentController(this);
-    this.directoryPathCtl = new DirectoryPathController(this, 'pathStartIndex');
+    this.directoryPathCtl = new DirectoryPathController(this);
 
     this._injectModel('AppStateModel', 'FsModel');
   }

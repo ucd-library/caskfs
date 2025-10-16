@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import handleError from './handleError.js';
 import caskFs from './caskFs.js';
+import { pipeline } from 'stream/promises';
 
 const router = Router();
 
@@ -15,17 +16,48 @@ router.get(/(.*)/, async (req, res) => {
   try {
 
     const filePath = req.params[0] || '/';
+    const metadata = await caskFs.metadata(filePath);
 
     if ( 
       (req.query?.metadata || '').trim().toLowerCase() === 'true' || 
       req.headers.accept && req.headers.accept.includes(METADATA_ACCEPT)  
     ){
       res.setHeader('Content-Type', METADATA_ACCEPT);
-      const metadata = await caskFs.metadata(filePath);
       return res.json(metadata);
     }
+    // Headers for the file response
+    const mime = metadata?.metadata?.mimeType || 'application/octet-stream';
+    const size = metadata?.size;
+    const etag = metadata?.hash_value;
 
-    res.status(504).json({ error: 'Not Implemented Yet' });
+    // Content-Type (+ charset for text-ish types)
+    const needsCharset = mime.startsWith('text/') || /(json|xml|yaml|csv)/i.test(mime);
+    res.setHeader('Content-Type', needsCharset ? `${mime}; charset=utf-8` : mime);
+
+    if (typeof size === 'number') {
+      res.setHeader('Content-Length', String(size));
+    }
+    if (etag) {
+      res.setHeader('ETag', etag);
+      if (req.headers['if-none-match'] === etag) {
+        res.status(304);
+        return res.end();
+      }
+    }
+
+    // We’re always streaming; advertise no range support for now
+    res.setHeader('Accept-Ranges', 'none');
+
+    res.setHeader('Content-Disposition', `attachment; filename="${metadata.filename}"`);
+
+    const readStream = await caskFs.read(filePath, { stream: true, encoding: null });
+
+    // Clean up if the client bails out mid-transfer
+    req.on('aborted', () => {
+      if (readStream?.destroy) readStream.destroy();
+    });
+
+    await pipeline(readStream, res);
 
   } catch (e) {
     return handleError(res, req, e);

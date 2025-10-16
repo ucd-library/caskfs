@@ -13,6 +13,7 @@ export default class CaskfsDeleteForm extends Mixin(LitElement)
     return {
       items: { },
       reqOptions: { type: Object },
+      successLocation: { type: String, attribute: 'success-location' },
       isSingleFile: { state: true },
       isSingleDirectory: { state: true }
     }
@@ -22,6 +23,7 @@ export default class CaskfsDeleteForm extends Mixin(LitElement)
     super();
     this.render = render.bind(this);
     this.modalCtl = new ModalFormController(this, {title: 'Confirm Deletion', submitText: 'Delete', submitCallback: '_onSubmitClick'});
+    this.successLocation = '';
 
     this.items = [];
     this.reqOptions = {};
@@ -34,8 +36,8 @@ export default class CaskfsDeleteForm extends Mixin(LitElement)
       if ( !this.items ) this.items = [];
       if ( !Array.isArray(this.items) ) this.items = [this.items];
       if ( this.items.length === 1 ) {
-        this.isSingleFile = !!this.items[0]?.file_id;
-        this.isSingleDirectory = !this.items[0]?.file_id;
+        this.isSingleFile = !!this.items[0]?.filepath;
+        this.isSingleDirectory = !this.items[0]?.filepath;
       }
       this.reqOptions = {};
     }
@@ -80,7 +82,11 @@ export default class CaskfsDeleteForm extends Mixin(LitElement)
         text = `Directory deleted successfully.`;
       }
       this.AppStateModel.showToast({text, type: 'success', showOnPageLoad: true});
-      this.AppStateModel.refresh();
+      if ( this.successLocation ) {
+        this.AppStateModel.setLocation(this.successLocation);
+      } else {
+        this.AppStateModel.refresh();
+      }
     }
 
     return r;

@@ -15,7 +15,6 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
 
   static get properties() {
     return {
-      pathStartIndex: { type: Number, attribute: 'path-start-index' },
       contents: { type: Array },
       selectedItems: { type: Array }
     }
@@ -30,7 +29,7 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
     this.selectedItems = [];
 
     this.appComponentCtl = new AppComponentController(this);
-    this.directoryPathCtl = new DirectoryPathController(this, 'pathStartIndex');
+    this.directoryPathCtl = new DirectoryPathController(this);
     this.qsCtl = new QueryStringController(this);
     this.selectCtl = new DirectoryItemSelectController(this);
     this.scrollCtl = new ScrollController(this);
@@ -43,10 +42,17 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
     await this.listContents();
 
     // restore scroll position if returning to this page
-    const lastHistory = this.scrollCtl.lastPageHistory(e.page);
-    if ( lastHistory && this.directoryPathCtl.isAppStatePathEqual(lastHistory.location?.path) ) {
-      this.scrollCtl.scrollToLastPagePosition();
-    } 
+    for ( const h of this.scrollCtl.pageHistory(e.page) ) {
+      if ( this.directoryPathCtl.isAppStatePathEqual(h.location?.path) ) {
+
+        // give the page a chance to render
+        this.requestUpdate();
+        await this.updateComplete;
+        
+        h.scrollTo();
+        break;
+      }
+    }
   }
 
   async listContents() {
