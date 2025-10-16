@@ -16,8 +16,7 @@ export default class CaskfsDirectoryControls extends Mixin(LitElement)
     return {
       sortOptions: {type: Array },
       sortValue: { type: String },
-      sortIsDesc: { type: Boolean },
-      pathStartIndex: { type: Number, attribute: 'path-start-index' }
+      sortIsDesc: { type: Boolean }
     };
   }
 
@@ -40,7 +39,7 @@ export default class CaskfsDirectoryControls extends Mixin(LitElement)
     this.sortValue = '';
     this.sortIsDesc = false;
 
-    this.directoryPathCtl = new DirectoryPathController(this, 'pathStartIndex');
+    this.directoryPathCtl = new DirectoryPathController(this);
     this.qsCtl = new QueryStringController(this);
     this.itemSelectCtl = new DirectoryItemSelectController(this);
 
