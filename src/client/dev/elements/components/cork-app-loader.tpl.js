@@ -74,7 +74,7 @@ return html`
   <div class='container'>
     <div class='icon-container'>
       <div class='icon'>
-        <cork-icon icon='ucdlib.ucdlib-logo'></cork-icon>
+        <cork-icon icon='ucdlib-core.ucdlib-logo'></cork-icon>
       </div>
       <div class="ripple"></div>
       <div class="ripple"></div>

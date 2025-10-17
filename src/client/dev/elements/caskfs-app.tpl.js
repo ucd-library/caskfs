@@ -24,6 +24,7 @@ return html`
     <caskfs-page-directory page-id='directory'></caskfs-page-directory>
     <caskfs-page-file-search page-id='file-search'></caskfs-page-file-search>
     <caskfs-page-partitions page-id='partitions'></caskfs-page-partitions>
+    <caskfs-page-file-single page-id='file'></caskfs-page-file-single>
   </ucdlib-pages>
 `;}
 

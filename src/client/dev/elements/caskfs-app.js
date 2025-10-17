@@ -11,15 +11,20 @@ import '@ucd-lib/theme-elements/brand/ucd-theme-pagination/ucd-theme-pagination.
 import { Registry, LitCorkUtils, Mixin } from '@ucd-lib/cork-app-utils';
 import { MainDomElement } from "@ucd-lib/theme-elements/utils/mixins/main-dom-element.js";
 
-// app pages and components
+// app pages
 import './pages/caskfs-page-home.js';
 import './pages/caskfs-page-directory.js';
 import './pages/caskfs-page-file-search.js';
 import './pages/caskfs-page-partitions.js';
+import './pages/caskfs-page-file-single.js';
+
+// app global components
 import './components/cork-app-error.js';
-import './components/cork-app-loader.tpl.js';
+import './components/cork-app-loader.js';
 import './components/cork-app-toast.js';
 import './components/cork-app-dialog-modal.js';
+import './components/cork-toggle-switch.js';
+import './components/caskfs-section-header.js';
 
 // icon elements
 import '@ucd-lib/cork-icon';
