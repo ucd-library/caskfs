@@ -398,7 +398,7 @@ class Database {
     }
 
     let aclOpts = {
-      user: opts.user,
+      requestor: opts.requestor,
       ignoreAcl : opts.ignoreAcl,
       dbClient : opts.dbClient || this
     };
@@ -410,6 +410,10 @@ class Database {
       let aclWhere = [
         '(acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE)'
       ];
+
+      if( !opts.userId && opts.requestor ) {
+        opts.userId = await acl.getUserId({user: opts.requestor, dbClient: aclOpts.dbClient});
+      }
 
       if( opts.userId !== null ) {
         aclWhere.push(`(acl_lookup.user_id = $${args.length + 1} AND acl_lookup.can_read = TRUE)`);
@@ -439,7 +443,7 @@ class Database {
       args.push(opts.subject);
     }
     if( opts.file ) {
-      where.push(`file = $${args.length + 1}`);
+      where.push(`filepath = $${args.length + 1}`);
       args.push(opts.file);
     }
 

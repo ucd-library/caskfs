@@ -17,6 +17,7 @@ let handleUser = (opts) => {
   } else {
     opts.requestor = os.userInfo().username;
   }
+  return opts;
 }
 
 export {optsWrapper, handleUser};

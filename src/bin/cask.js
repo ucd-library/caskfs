@@ -110,6 +110,19 @@ program
 ****\n`);
     }
 
+    let stats = {
+      fileTypes : {
+        linkedData: 0,
+        binary : 0
+      },
+      insertedFiles : 0,
+      replacedFiles : 0,
+      updatedMetadata : 0,
+      parsedLinkedData : 0,
+      casWrites : 0,
+      casDeletes : 0
+    };
+
     const cask = new CaskFs();
     let location;
 
@@ -171,13 +184,26 @@ program
       if( !options.dryRun ) {
         try {
           await cask.write(context);
+
+          if( context.data.actions.detectedLd ) {
+            stats.fileTypes.linkedData++;
+          } else {
+            stats.fileTypes.binary++;
+          }
+          if( context.data.actions.fileInsert ) stats.insertedFiles++;
+          if( context.data.actions.replacedFile ) stats.replacedFiles++;
+          if( context.data.actions.updatedMetadata ) stats.updatedMetadata++;
+          if( context.data.actions.parsedLinkedData ) stats.parsedLinkedData++;
+          if( context.data.actions.fileCopiedToCas ) stats.casWrites++;
+          if( context.data.actions.deletedOldHashFile ) stats.casDeletes++;
+
           pbar.update(filesCopied++);
         } catch (err) {
-          console.error(`Failed to copy ${file} to ${destFile}: ${err.message}`);
-          console.error(err.stack);
-          if( err.details ) {
-            console.error(err.details);
-          }
+          // console.error(`Failed to copy ${file} to ${destFile}: ${err.message}`);
+          // console.error(err.stack);
+          // if( err.details ) {
+          //   console.error(err.details);
+          // }
           failed.push(file);
         }
       }
@@ -191,6 +217,17 @@ program
       console.log(`\nThe following ${failed.length} files failed to copy:`);
       failed.forEach(f => console.log(`  - ${f}`));
     }
+
+    console.log('\nCopy statistics:');
+    console.log(`  - Total files processed: ${filesCopied}`);
+    console.log(`  - New files inserted: ${stats.insertedFiles}`);
+    console.log(`  - Existing files replaced: ${stats.replacedFiles}`);
+    console.log(`  - Files with updated metadata (includes inserts): ${stats.updatedMetadata}`);
+    console.log(`  - Binary files copied: ${stats.fileTypes.binary}`);
+    console.log(`  - Linked Data files copied: ${stats.fileTypes.linkedData}`);
+    console.log(`  - Linked Data files parsed: ${stats.parsedLinkedData}`);
+    console.log(`  - CAS writes: ${stats.casWrites}`);
+    console.log(`  - CAS deletes: ${stats.casDeletes}`);
 
     cask.dbClient.end();
     return;
@@ -265,6 +302,7 @@ program
   .option('-g, --graph <graph-uri>', 'Only include relationships in the specified graph')
   .option('-s, --subject <subject-uri>', 'Only include relationships with the specified subject URI')
   .option('-t, --stats', 'Show counts of file relationships by predicate instead of individual relationships', false)
+  .option('-d, --debug-query', 'Output the SQL query used to find the files', false)
   .action(async (filePath, options) => {
     handleUser(options);
 
@@ -282,7 +320,8 @@ program
       options.ignorePredicate = options.ignorePredicate.split(',').map(k => k.trim());
     }
 
-    console.log(JSON.stringify(await cask.relationships(filePath, options), null, 2));
+    options.filePath = filePath;
+    console.log(JSON.stringify(await cask.relationships(options), null, 2));
     cask.dbClient.end();
   });
 

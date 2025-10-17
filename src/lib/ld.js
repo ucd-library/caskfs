@@ -405,7 +405,7 @@ class Rdf {
     let data = {};
     for( let r of rows ) {
       if( !data[r.predicate] ) data[r.predicate] = new Set();
-      data[r.predicate].add(r.filepath);
+      data[r.predicate].add(r.file);
     }
     for( let p of Object.keys(data) ) {
       data[p] = Array.from(data[p]);

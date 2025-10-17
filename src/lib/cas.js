@@ -166,6 +166,14 @@ class Cas {
     }
 
     let digests = await this._getFileHash(opts.readPath);
+
+    let primary = config.digests[0];
+    let primaryHash = digests[primary];
+
+    // don't copy if the file already exists
+    if( await fs.existsSync(this.diskPath(primaryHash)) ) {
+      return digests;
+    }
     
     await fsp.copyFile(opts.readPath, tmpFile);
 

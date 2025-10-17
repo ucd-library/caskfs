@@ -159,8 +159,9 @@ class Acl {
    */
   async hasPermission(opts={}) {
     let { filePath, permission, dbClient } = opts;
+
     if( !filePath || !permission || !dbClient ) {
-      throw new Error('User, filePath, permission and dbClient are required');
+      throw new Error('filePath, permission and dbClient are required');
     }
 
     let cached = this.cache.getDirPermissions(opts.requestor || 'PUBLIC', filePath, permission);
@@ -791,6 +792,7 @@ class Acl {
     if( !dbClient ) {
       throw new Error('dbClient is required');
     }
+
     return dbClient.query(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${config.database.schema}.directory_user_permissions_lookup`);
   }
 

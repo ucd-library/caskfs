@@ -125,7 +125,16 @@ class CaskFs {
       metadata: {},
       fileExists: false,
       primaryDigest: config.digests[0],
-      dbClient
+      dbClient,
+      actions : {
+        replacedFile : false,
+        detectedLd : false,
+        fileInsert : false,
+        updatedMetadata : false,
+        parsedLinkedData : false,
+        fileCopiedToCas : false,
+        deletedOldHashFile : false
+      }
     });
     let metadata = context.data.metadata;
 
@@ -143,6 +152,7 @@ class CaskFs {
         context.update({
           file: await this.metadata(context)
         });
+        context.data.actions.replacedFile = true;
       } else if( context.data.replace !== true && context.data.fileExists ) {
         throw new DuplicateFileError(filePath);
       }
@@ -181,6 +191,7 @@ class CaskFs {
           context.readPath?.endsWith(this.jsonldExt) ) {
         this.logger.debug('Detected RDF file based on mime type or file extension', context.logContext);
         metadata.resource_type = 'rdf';
+        context.data.actions.detectedLd = true;
       } else {
         this.logger.debug('Detected generic file based on mime type or file extension', context.logContext);
         metadata.resource_type = 'file';
@@ -222,8 +233,10 @@ class CaskFs {
         context.update({
           file: await this.metadata(context)
         });
+        context.data.actions.fileInsert = true;
+        context.data.actions.updatedMetadata = true;
       } else {
-        await this.patchMetadata(
+        let {updated} = await this.patchMetadata(
           context, 
           {onlyOnChange: true}
         );
@@ -231,24 +244,29 @@ class CaskFs {
           file: await this.metadata(context),
           replacedFile: context.file
         });
+        context.data.actions.updatedMetadata = updated;
       }
 
       // now add the layer3 RDF triples for the file
       // if its an RDF file parse and add the file contents triples as well
-      if( !context?.data?.stagedFile?.hashExists || !fileExists ) {
+      if( !context.data.stagedFile.hashExists || !context.data.fileExists ) {
         // if replacing an existing file, delete old triples first
         this.logger.info('Replacing existing RDF file, deleting old triples', context.logContext);
         await this.rdf.delete(context.data.file, {dbClient, ignoreAcl: true});
+
+        let readFile = context.data.stagedFile.hashExists ? context.data.stagedFile.hashFile : context.data.stagedFile.tmpFile;
 
         this.logger.info('Inserting RDF triples for file', context.logContext);
         await this.rdf.insert(context.data.file.file_id, 
           {
             dbClient, 
-            filepath: context.data.stagedFile.tmpFile
+            filepath: readFile
           });
+
+        context.data.actions.parsedLinkedData = true;
       } else {
         this.logger.info('RDF file already exists, skipping RDF processing', context.logContext);
-      }      
+      }
 
       // finalize the write to move the temp file to its final location
       let copied = await this.cas.finalizeWrite(
@@ -257,6 +275,7 @@ class CaskFs {
         {bucket: metadata.bucket, dbClient}
       );
       context.update({copied});
+      context.data.actions.fileCopiedToCas = copied;
 
       // finally commit the transaction
       await dbClient.query('COMMIT');
@@ -283,7 +302,8 @@ class CaskFs {
     // this function will only delete the hash file if no other references exist
     if( context.data.copied && context.data.softDelete !== true && context.data.replacedFile ) {
       this.logger.info(`Checking for unreferenced hash value to delete: ${context.data.replacedFile.hash_value}`, context.logContext);
-      await this.cas.delete(context.data.replacedFile.hash_value);
+      let deleteResp = await this.cas.delete(context.data.replacedFile.hash_value);
+      context.data.actions.deletedOldHashFile = deleteResp.fileDeleted;
     }
 
     // close the pg client socket connection
@@ -419,7 +439,7 @@ class CaskFs {
     `, [fileParts.dir, fileParts.base]);
 
     if( res.rows.length === 0 ) {
-      throw new MissingResourceError('File', filePath);
+      throw new MissingResourceError('File', context.data.filePath);
     }
 
     let data = res.rows[0];
@@ -496,7 +516,7 @@ class CaskFs {
     }
 
     let metadata = await this.metadata(context);
-    return this.rdf.relationships(metadata, opts);
+    return this.rdf.relationships(metadata, context.data);
   }
 
   /**
@@ -783,6 +803,8 @@ class CaskFs {
    */
   async setDirectoryPermission(context={}) {
     context = createContext(context, this.dbClient);
+
+    context.update({filePath: context.data.directory});
     await this.canUpdateDirAcl(context);
 
     await this.runInTransaction(async (dbClient) => {
@@ -1006,7 +1028,7 @@ class CaskFs {
    * @returns 
    */
   async canReadFile(context={}) {
-    context.setDbClientIfNotSet(this.dbClient);
+    context = createContext(context, this.dbClient);
     return this.checkPermissions(
       context,
       {
@@ -1028,7 +1050,7 @@ class CaskFs {
    * @returns
    */
   async canWriteFile(context={}) {
-    context.setDbClientIfNotSet(this.dbClient);
+    context = createContext(context, this.dbClient);
     return this.checkPermissions(
       context,
       {
@@ -1050,7 +1072,7 @@ class CaskFs {
    * @returns 
    */
   async canUpdateDirAcl(context={}) {
-    context.setDbClientIfNotSet(this.dbClient);
+    context = createContext(context, this.dbClient);
     return this.checkPermissions(
       context, {permission: 'admin'}
     );
@@ -1065,6 +1087,7 @@ class CaskFs {
    * @param {String} context.data context object with properties
    * @param {String} context.data.requestor requestor user name
    * @param {String} context.data.filePath file path to check
+   * @param {String} context.data.permission permission to check (read, write, admin)
    * @param {Boolean} context.data.ignoreAcl if true, skip ACL checks and always return true
    * @param {DatabaseClient} context.data.dbClient optional database client to use
    * @param {Object} opts 
@@ -1080,7 +1103,7 @@ class CaskFs {
       ignoreAcl: context.data.ignoreAcl || false,
       requestor: context.data.requestor,
       filePath: context.data.filePath,
-      permission: opts.permission,
+      permission: opts.permission || context.data.permission,
       isFile: opts.isFile || false,
       dbClient: dbClient
     };

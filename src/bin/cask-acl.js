@@ -12,7 +12,7 @@ program.command('user-add <username>')
   .description('Add a new user')
   .action(async (username) => {
     const cask = new CaskFs();
-    await cask.ensureUser({ user: username });
+    await cask.ensureUser(handleUser({ user: username }));
     cask.dbClient.end();
   });
 
@@ -20,7 +20,7 @@ program.command('user-remove <username>')
   .description('Remove a user')
   .action(async (username) => {
     const cask = new CaskFs();
-    await cask.removeUser({ user: username });
+    await cask.removeUser(handleUser({ user: username }));
     cask.dbClient.end();
   });
 
@@ -39,14 +39,14 @@ program.command('user-role-get')
     const cask = new CaskFs();
 
     if( role ) {
-      let resp = await cask.acl.getRole({ role, dbClient: cask.dbClient });
+      let resp = await cask.acl.getRole(handleUser({ role, dbClient: cask.dbClient }));
       console.log(resp.map(r => r.user).join('\n'));
       cask.dbClient.end();
       return;
     }
 
     if( username ) {
-      let resp = await cask.acl.getUserRoles({ user: username, dbClient: cask.dbClient });
+      let resp = await cask.acl.getUserRoles(handleUser({ user: username, dbClient: cask.dbClient }));
       console.log(resp.join('\n'));
       cask.dbClient.end();
       return;
@@ -57,7 +57,7 @@ program.command('user-role-set <username> <role>')
   .description('Set a user role')
   .action(async (username, role) => {
     const cask = new CaskFs();
-    await cask.setUserRole({ user: username, role });
+    await cask.setUserRole(handleUser({ user: username, role }));
     cask.dbClient.end();
   });
 
@@ -65,7 +65,7 @@ program.command('user-role-remove <username> <role>')
   .description('Remove a user role')
   .action(async (username, role) => {
     const cask = new CaskFs();
-    await cask.removeUserRole({ user: username, role });
+    await cask.removeUserRole(handleUser({ user: username, role }));
     cask.dbClient.end();
   });
 
@@ -73,7 +73,7 @@ program.command('role-add <role>')
   .description('Add a new role')
   .action(async (role) => {
     const cask = new CaskFs();
-    await cask.ensureRole({ role });
+    await cask.ensureRole(handleUser({ role }));
     cask.dbClient.end();
   });
 
@@ -81,7 +81,7 @@ program.command('role-remove <role>')
   .description('Remove a role')
   .action(async (role) => {
     const cask = new CaskFs();
-    await cask.removeRole({ role });
+    await cask.removeRole(handleUser({ role }));
     cask.dbClient.end();
   });
 
@@ -106,7 +106,7 @@ program.command('permission-set <directory> <role> <permission>')
   .description('Set a permission for a role on a directory')
   .action(async (directory, role, permission) => {
     const cask = new CaskFs();
-    await cask.setDirectoryPermission({ directory, role, permission });
+    await cask.setDirectoryPermission(handleUser({ directory, role, permission }));
     cask.dbClient.end();
   });
 
@@ -114,7 +114,7 @@ program.command('permission-remove <directory> <role> <permission>')
   .description('Remove a permission for a role on a directory')
   .action(async (directory, role, permission) => {
     const cask = new CaskFs();
-    await cask.removeDirectoryPermission({ directory, role, permission });
+    await cask.removeDirectoryPermission(handleUser({ directory, role, permission }));
     cask.dbClient.end();
   });
 
@@ -122,7 +122,7 @@ program.command('remove <directory>')
   .description('Remove the ACL for a directory.  This will remove all permissions and any inheritance settings.')
   .action(async (directory) => {
     const cask = new CaskFs();
-    await cask.removeDirectoryAcl({ directory });
+    await cask.removeDirectoryAcl(handleUser({ directory }));
     cask.dbClient.end();
   });
 
@@ -135,7 +135,7 @@ program.command('get <path>')
     cask.dbClient.connect();
     let resp = await cask.getDirectoryAcl({ 
       directory: path,
-      user : options.user
+      requestor: options.requestor,
     });
 
     if( !resp ) {
@@ -182,12 +182,11 @@ program.command('test <path> <username> <permission>')
     await cask.dbClient.connect();
     let hasPermission = await cask.acl.hasPermission({ 
       dbClient: cask.dbClient,
-      user: username, 
+      requestor: username, 
       filePath: path, 
       permission, 
       isFile: options.isFile 
     });
-    console.log(hasPermission);
     cask.dbClient.end();
   });
 
