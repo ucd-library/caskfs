@@ -16,3 +16,18 @@ export class AclAccessError extends Error {
     this.permission = permission;
   }
 }
+
+export class HashNotFoundError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'HashNotFoundError';
+  }
+}
+
+export class DuplicateFileError extends Error {
+  constructor(filePath) {
+    super(`File already exists: ${filePath}`);
+    this.filePath = filePath;
+    this.name = 'DuplicateFileError';
+  }
+}

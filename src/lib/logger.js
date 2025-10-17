@@ -1,22 +1,26 @@
 import {createLogger} from '@ucd-lib/logger';
+import config from './config.js';
 
 const loggers = {};
-
-let DEFAULT_LOG_LEVEL = 'error';
 
 function getLogger(name) {
   if( loggers[name] ) return loggers[name];
   loggers[name] = createLogger({
     name,
     noInitMsg : true,
-    labelsProperties : ['name']
+    labelsProperties : ['name'],
+    level: config.logLevel
   });
   return loggers[name];
 }
 
 function setLogLevel(level) {
-  DEFAULT_LOG_LEVEL = level;
-  Object.values(loggers).forEach(logger => logger.setLevel(level));
+  config.logLevel = level;
+  Object.values(loggers).forEach(logger => logger.level = level);
 }
 
-export { getLogger, setLogLevel };
+function silenceLoggers() {
+  setLogLevel('fatal');
+}
+
+export { getLogger, setLogLevel, silenceLoggers };

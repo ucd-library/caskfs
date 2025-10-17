@@ -1,12 +1,13 @@
 const env = process.env;
 
-
 const schemaPrefix = env.CASKFS_SCHEMA_PREFIX || 'cask:/';
 
 const config = {
 
 
   rootDir : env.CASKFS_ROOT_DIR || '/opt/caskfs',
+
+  logLevel : env.CASKFS_LOG_LEVEL || 'info',
 
   schemaPrefix: schemaPrefix,
   fileGraph : schemaPrefix + 'file',
@@ -49,6 +50,7 @@ const config = {
 
   acl : {
     enabled : (env.CASKFS_ACL_ENABLED !== 'false'),
+    defaultRequestor : env.CASKFS_ACL_DEFAULT_REQUESTOR, // mostly used for internal scripts / integration tests
     adminRole : env.CASKFS_ACL_ADMIN_ROLE || 'admin',
     enabledCache : (env.CASKFS_ACL_ENABLED_CACHE === 'true'),
     cacheTTL : parseInt(env.CASKFS_ACL_CACHE_TTL) || 10 // seconds

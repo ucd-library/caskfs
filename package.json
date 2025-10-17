@@ -28,6 +28,7 @@
     "@google-cloud/storage": "^7.17.1",
     "@ucd-lib/logger": "^0.0.7",
     "@ucd-lib/spa-router-middleware": "^0.2.4",
+    "cli-progress": "^3.12.0",
     "commander": "^14.0.1",
     "express": "^5.1.0",
     "jsonld": "^8.3.3",

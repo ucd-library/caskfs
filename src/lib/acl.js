@@ -63,7 +63,6 @@ class Acl {
   constructor() {
     this.logger = getLogger('acl');
     this.enabled = config.acl.enabled !== undefined ? config.acl.enabled : false;
-    this.AclAccessError = AclAccessError;
     this.cache = new AclCache();
   }
 
@@ -75,7 +74,7 @@ class Acl {
    * - If the user is an admin, no lookup is required.
    * 
    * @param {Object} opts
-   * @param {String} opts.user - The user to check.
+   * @param {String} opts.requestor - The user to check.
    * @param {Object} opts.dbClient - The database client instance.
    * @param {Boolean} opts.ignoreAcl - If true, skip ACL lookup.
    *  
@@ -100,8 +99,8 @@ class Acl {
    * A wrapper around userInRole for convenience.
    * 
    * @param {Object} opts
-   * @param {String} opts.user - The user to check.
-   * @param {Object} opts.dbClient - The database client instance. 
+   * @param {String} opts.requestor - The user to check.
+   * @param {Object} opts.dbClient - The database client instance.
    * 
    * @returns {Promise<Boolean>} - True if the user is an admin, false otherwise.
    */
@@ -117,7 +116,7 @@ class Acl {
    * @description Check if a user is in a specific role.
    * 
    * @param {Object} opts
-   * @param {String} opts.user - The user to check.
+   * @param {String} opts.requestor - The user to check.
    * @param {String} opts.role - The role to check.
    * @param {Object} opts.dbClient - The database client instance.
    *
@@ -129,20 +128,20 @@ class Acl {
       throw new Error('User, role and dbClient are required');
     }
 
-    if( !opts.user ) return false;
+    if( !opts.requestor ) return false;
 
-    let cached = this.cache.getUserRole(opts.user, role);
+    let cached = this.cache.getUserRole(opts.requestor, role);
     if( cached !== null ) return cached;
 
     let result = await dbClient.query(`
       SELECT 1 FROM ${config.database.schema}.acl_user_roles_view
       WHERE "user" = $1 AND "role" = $2
-    `, [opts.user, role]);
+    `, [opts.requestor, role]);
 
 
 
     let value = result.rows.length > 0;
-    this.cache.setUserRole(opts.user, role, value);
+    this.cache.setUserRole(opts.requestor, role, value);
     return value;
   }
 
@@ -151,7 +150,7 @@ class Acl {
    * @description Check if a user has a specific permission on a file.
    * 
    * @param {Object} opts
-   * @param {String} opts.user - The user to check permissions for.
+   * @param {String} opts.requestor - The user to check permissions for.
    * @param {String} opts.filePath - The file or directory path to check permissions on.
    * @param {String} opts.permission - The permission to check (e.g. 'read', 'write', 'admin').
    * @param {Boolean} opts.isFile - Whether the path is a file. Default is false.
@@ -160,15 +159,16 @@ class Acl {
    */
   async hasPermission(opts={}) {
     let { filePath, permission, dbClient } = opts;
+
     if( !filePath || !permission || !dbClient ) {
-      throw new Error('User, filePath, permission and dbClient are required');
+      throw new Error('filePath, permission and dbClient are required');
     }
 
-    let cached = this.cache.getDirPermissions(opts.user || 'PUBLIC', filePath, permission);
+    let cached = this.cache.getDirPermissions(opts.requestor || 'PUBLIC', filePath, permission);
     if( cached !== null ) return cached;
 
     let permissionFilter;
-    if( !opts.user ) {
+    if( !opts.requestor ) {
       // cheat and only allow read access for public if no user is provided
       if( permission !== 'read' ) return false;
       permissionFilter = `can_read = true`;
@@ -179,13 +179,13 @@ class Acl {
     } else if( permission === 'admin' ) {
       permissionFilter = `is_admin = true`;
     } else {
-      throw new Error(`Invalid permission: ${permission}`);
+      throw new AclAccessError('Invalid permission', opts.requestor, filePath, permission);
     }
 
     let args = [filePath];
 
     // handle user being null (public access)
-    let user = opts.user;
+    let user = opts.requestor;
     let withQueries = [];
     let userSelectQuery = '';
     if( !user ) {
@@ -241,7 +241,7 @@ class Acl {
       `, args);
 
     let value = resp.rows.length > 0;
-    this.cache.setDirPermissions(opts.user || 'PUBLIC', filePath, permission, value);
+    this.cache.setDirPermissions(opts.requestor || 'PUBLIC', filePath, permission, value);
     return value;
   }
 
@@ -512,6 +512,17 @@ class Acl {
     return res.rows[0];
   }
 
+  /**
+   * @method getDirectoryAcl
+   * @description Get the ACL for a specific directory, including permissions and 
+   * roles.
+   * 
+   * @param {Object} opts 
+   * @param {Object} opts.dbClient Required. database client instance
+   * @param {String} opts.directory Required. directory path
+   * 
+   * @returns 
+   */
   async getDirectoryAcl(opts={}) {
     let {dbClient, directory} = opts;
     if( !dbClient || !directory ) {
@@ -781,6 +792,7 @@ class Acl {
     if( !dbClient ) {
       throw new Error('dbClient is required');
     }
+
     return dbClient.query(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${config.database.schema}.directory_user_permissions_lookup`);
   }
 

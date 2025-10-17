@@ -6,7 +6,6 @@ import path from "path";
 import fsp from "fs/promises";
 import { getLogger } from './logger.js';
 import acl from './acl.js';
-import e from "express";
 
 const customLoader = async (url, options) => {
   url = new URL(url);
@@ -41,13 +40,13 @@ class Rdf {
 
   /**
    * @method read
-   * @description Read RDF data from the CASKFS and return in the specified format.  A containment or subject
+   * @description Read RDF data from the CASKFS and return in the specified format.  A file or subject
    * must be specified.  Will return a JSON-LD dataset by default, or can return in other RDF formats.
    *
    * @param {Object} opts
-   * @param {String} opts.containment containment file path to filter by
+   * @param {String} opts.file file path to filter by
    * @param {String} opts.subject subject URI to filter by
-   * @param {String} opts.graph graph URI to filter by (must be used with subject or containment)
+   * @param {String} opts.graph graph URI to filter by (must be used with subject or file)
    * @param {String|Array} opts.partition partition key or array of partition keys to filter by
    * @param {String} opts.format RDF format to return: jsonld (default), compact, cask, flattened, expanded, nquads, json
    * 
@@ -55,7 +54,7 @@ class Rdf {
    */
   async read(opts={}) {
     let format = opts.format;
-    let filePath = opts.containment;
+    let filePath = opts.file;
 
     if( opts.subject && opts.subject.startsWith('/') ) {
       opts.subject = config.schemaPrefix + opts.subject;
@@ -110,24 +109,24 @@ class Rdf {
 
   /**
    * @method find
-   * @description Find files (containments) based on subject, graph, partition, predicate or object.
+   * @description Find files based on subject, graph, partition, predicate or object.
    * 
    * @param {*} opts 
    */
   find(opts={}) {
-    return this.dbClient.findContainments(opts);
+    return this.dbClient.findFiles(opts);
   }
 
   /**
    * @method query
    * @description Internal method to query RDF data from the database based on given options.  A subject or
-   * a containment must be specified. Will return jsonld dataset of nodes and links that match the query.  
+   * a file must be specified. Will return jsonld dataset of nodes and links that match the query.  
    * Will limit to 10,000 nodes AND 10,000 links.
    * 
    * @param {Object} opts query options
-   * @param {String} opts.containment containment file path to filter by
+   * @param {String} opts.file file path to filter by
    * @param {String} opts.subject subject URI to filter by
-   * @param {String} opts.graph graph URI to filter by (must be used with subject or containment)
+   * @param {String} opts.graph graph URI to filter by (must be used with subject or file)
    * @param {String|Array} opts.partition partition key or array of partition keys to filter by
    *  
    * @returns {Promise<Object>} JSON-LD dataset of nodes and links that match the query
@@ -147,12 +146,12 @@ class Rdf {
    * 
    * @returns 
    */
-  async insert(context, opts={}) {
+  async insert(fileId, opts={}) {
     let dbClient = opts.dbClient || this.dbClient;
 
     let file = await dbClient.query(`
         SELECT * FROM ${config.database.schema}.file_view WHERE file_id = $1
-      `, [context.file.file_id]);
+      `, [fileId]);
 
     file = file.rows[0];
     let filepath = path.join(file.directory, file.filename);
@@ -191,8 +190,7 @@ class Rdf {
         {
           '@id': config.schemaPrefix+filepath,
           '@type': [
-            'http://library.ucdavis.edu/cask#File',
-            'http://library.ucdavis.edu/cask#Containment'
+            'http://library.ucdavis.edu/cask#File'
           ],
           'http://schema.org/contentUrl': {
             '@id':'file://'+filepath
@@ -345,11 +343,11 @@ class Rdf {
       }
     }
 
-    await dbClient.query(`select caskfs.insert_rdf_link_bulk($1::UUID, $2::JSONB)`, [context.file.file_id, JSON.stringify(otherQuads)]);
-    await dbClient.query(`select caskfs.insert_rdf_node_bulk($1::UUID, $2::JSONB)`, [context.file.file_id, JSON.stringify(nodes)]);
+    await dbClient.query(`select caskfs.insert_rdf_link_bulk($1::UUID, $2::JSONB)`, [file.file_id, JSON.stringify(otherQuads)]);
+    await dbClient.query(`select caskfs.insert_rdf_node_bulk($1::UUID, $2::JSONB)`, [file.file_id, JSON.stringify(nodes)]);
 
     return {
-      context,
+      file,
       links: otherQuads,
       nodes: nodeData
     };
@@ -357,11 +355,15 @@ class Rdf {
 
 
   /**
-   * @method links
-   * @description Get the outbound and inbound links for a given containment record.
+   * @method relationships
+   * @description Get the outbound and inbound links for a given file.
    * 
-   * @param {Object} metadata 
-   * @param {String} predicate 
+   * @param {Object} metadata file metadata record from the file_view
+   * @param {Object} opts options
+   * @param {String} opts.requestor user making the request (for ACL checks)
+   * @param {Boolean} opts.stats if true, will ignore ACL checks (for admin users)
+   * @param {String|Array} opts.predicate predicate or array of predicates to filter by
+   * 
    * 
    * @returns 
    */
@@ -381,7 +383,7 @@ class Rdf {
 
     return { 
       source : {
-        containment: path.join(metadata.directory, metadata.filename),
+        file: path.join(metadata.directory, metadata.filename),
         resourceType : metadata.metadata.resource_type,
         mimeType: metadata.metadata.mimeType,
         partitionKeys: metadata.partition_keys
@@ -403,7 +405,7 @@ class Rdf {
     let data = {};
     for( let r of rows ) {
       if( !data[r.predicate] ) data[r.predicate] = new Set();
-      data[r.predicate].add(r.containment);
+      data[r.predicate].add(r.file);
     }
     for( let p of Object.keys(data) ) {
       data[p] = Array.from(data[p]);
@@ -516,7 +518,7 @@ class Rdf {
 
     let query = `WITH links AS (
         SELECT 
-            referencing_view.containment AS containment,
+            referencing_view.filepath AS file,
             source_view.predicate AS predicate
         FROM caskfs.rdf_link_view source_view
         -- Find other files where this object URI appears as a subject
@@ -526,7 +528,7 @@ class Rdf {
     ),
     nodes AS (
         SELECT
-            referencing_view.containment AS containment,
+            referencing_view.filepath AS file,
             source_view.predicate AS predicate
         FROM caskfs.rdf_link_view source_view
         JOIN caskfs.rdf_node_view referencing_view ON source_view.object = referencing_view.subject
@@ -624,7 +626,7 @@ class Rdf {
       args.push(opts.limit || 100);
 
       select = `SELECT 
-          ref_by_view.containment,
+          ref_by_view.filepath AS file,
           ref_by_view.predicate
           FROM distinct_subjects source_view
           -- Find other files where this object URI appears as a subject
@@ -668,9 +670,9 @@ class Rdf {
    *  
    * @returns {Promise}
    */
-  delete(context, opts={}) {
-    this.logger.info('Deleting RDF data for file', context.logContext);
-    return (opts.dbClient || this.dbClient).query('select caskfs.remove_rdf_by_file($1)', [context.file.file_id]);
+  delete(fileMetadata, opts={}) {
+    this.logger.info('Deleting RDF data for file', fileMetadata.filepath);
+    return (opts.dbClient || this.dbClient).query('select caskfs.remove_rdf_by_file($1)', [fileMetadata.file_id]);
   }
 
   _getContextProperty(uri='') {
@@ -736,7 +738,7 @@ class Rdf {
     return id;
   }
 
-  async caskCompact(data, containment) {
+  async caskCompact(data, filePath='') {
     const nquads = await jsonld.canonize(data, {
       algorithm: 'URDNA2015',
       format: 'application/n-quads'
@@ -747,18 +749,18 @@ class Rdf {
       .forEach(q => {
         if( !nodes[q.subject.value] ) {
           nodes[q.subject.value] = {
-            '@id': this._resolveIdPath(q.subject.value, containment),
+            '@id': this._resolveIdPath(q.subject.value, filePath),
             '@type': [],
           };
         }
         let node = nodes[q.subject.value];
-        this._caskCompactMergeProperty(node, q.predicate.value, q.object, containment);
+        this._caskCompactMergeProperty(node, q.predicate.value, q.object, filePath);
       });
 
     return Object.values(nodes);
   }
 
-  _caskCompactMergeProperty(node, property, object, containment) {
+  _caskCompactMergeProperty(node, property, object, filePath='') {
     let value;
     if( property === this.TYPE_PREDICATE ) {
       property = '@type';
@@ -783,7 +785,7 @@ class Rdf {
 
     } else {
       property = this._getContextProperty(property).property;
-      value = this._resolveIdPath(object.value, containment);
+      value = this._resolveIdPath(object.value, filePath);
     }
 
     if( !node[property] ) {

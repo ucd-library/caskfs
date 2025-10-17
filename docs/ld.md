@@ -2,11 +2,11 @@
 
 [Back to Overview](../README.md)
 
-The RDF layer is the top layer of CaskFS. This layer is responsible for handling RDF data operations such as querying the linked data graph by subject or containment, finding relationships between files, and retrieving RDF data.
+The RDF layer is the top layer of CaskFS. This layer is responsible for handling RDF data operations such as querying the linked data graph by subject or file, finding relationships between files, and retrieving RDF data.
 
 Contents:
 - [Key Features](#key-features)
-- [Linked Data - Rest API](rdf-rest-api.md)
+- [Linked Data - Rest API](ld-rest-api.md)
 - [Linked Data - CLI Methods](#linked-data-cli-methods)
 - [Reference Binary File](#reference-binary-file)
 - [File Relationships](#file-relationships)
@@ -142,9 +142,6 @@ Generates the following cask node:
   "@graph": [{
       "@id": "cask://path/to/image/1.png",
       "@type": "http://library.ucdavis.edu/cask#File",
-      "http://library.ucdavis.edu/cask#containment": {
-          "@id": "file:///path/to/image/1.png"
-      },
       "http://schema.org/contentUrl": {
         "@id": "file:///path/to/image/1.png"
       }
@@ -168,7 +165,7 @@ a relationship request for `/path/to/file1` will return the following:
 ```json
 {
   "source": {
-    "containment": "/path/to/file1",
+    "file": "/path/to/file1",
     "resourceType": "rdf",
     "mimeType": "application/ld+json",
     "partitionKeys": []

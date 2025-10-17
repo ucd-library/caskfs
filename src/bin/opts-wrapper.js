@@ -1,4 +1,3 @@
-// import { program } from 'commander';
 import os from 'os';
 
 let programInstance = null;
@@ -12,12 +11,13 @@ let optsWrapper = (program) => {
 let handleUser = (opts) => {
   let gOpts = programInstance.opts();
   if( gOpts.impersonate ) {
-    opts.user = gOpts.impersonate;
+    opts.requestor = gOpts.impersonate;
   } else if( gOpts.publicUser ) {
-    opts.user = null;
+    opts.requestor = null;
   } else {
-    opts.user = os.userInfo().username;
+    opts.requestor = os.userInfo().username;
   }
+  return opts;
 }
 
 export {optsWrapper, handleUser};
