@@ -80,9 +80,9 @@ class CaskFs {
     await this.canReadFile(context);
 
     if( context.file === true) {
-      return this.dbClient.fileExists(context.filePath);
+      return this.dbClient.fileExists(context.data.filePath);
     }
-    return this.dbClient.pathExists(context.filePath);
+    return this.dbClient.pathExists(context.data.filePath);
   }
 
   /**
@@ -116,7 +116,7 @@ class CaskFs {
 
     // open single connection to postgres and start a transaction
     let dbClient = new Database({
-      type: context.dbType || config.database.client
+      type: context.data.dbType || config.database.client
     });
     await dbClient.connect();
 
@@ -148,7 +148,7 @@ class CaskFs {
 
       // currently we are opting in to replacing existing files
       if( context.data.replace === true && context.data.fileExists ) {
-        this.logger.info(`Starting replacement of existing file`, context.logContext);
+        this.logger.info(`Starting replacement of existing file`, context.logSignal);
         context.update({
           file: await this.metadata(context)
         });
@@ -165,20 +165,20 @@ class CaskFs {
       // if passed in, use that, otherwise try to detect from file extension
       metadata.mimeType = context.data.mimeType || context.data.contentType;
       if( !metadata.mimeType ) {
-        this.logger.debug('Attempting to auto-detect mime type, not specified in options', context.logContext);
+        this.logger.debug('Attempting to auto-detect mime type, not specified in options', context.logSignal);
 
         // if known RDF extension, set to JSON-LD
-        if( filePath.endsWith(this.jsonldExt) || context?.readPath?.endsWith(this.jsonldExt) ) {
-          this.logger.debug('Detected JSON-LD file based on file extension', context.logContext);
+        if( filePath.endsWith(this.jsonldExt) || context?.data.readPath?.endsWith(this.jsonldExt) ) {
+          this.logger.debug('Detected JSON-LD file based on file extension', context.logSignal);
           metadata.mimeType = this.jsonLdMimeType;
         } else {
-          this.logger.debug('Detecting mime type from file extension using mime package', context.logContext);
+          this.logger.debug('Detecting mime type from file extension using mime package', context.logSignal);
           // otherwise try to detect from file extension
           metadata.mimeType = mime.getType(filePath);
         }
         // if still not found and we have a readPath, try to detect from that
         if( !metadata.mimeType && context.readPath ) {
-          this.logger.debug('Detecting mime type from readPath file extension using mime package', context.logContext);
+          this.logger.debug('Detecting mime type from readPath file extension using mime package', context.logSignal);
           metadata.mimeType = mime.getType(context.readPath);
         }
       }
@@ -189,11 +189,11 @@ class CaskFs {
           metadata.mimeType === this.n3MimeType ||
           metadata.mimeType === this.turtleMimeType ||
           context.readPath?.endsWith(this.jsonldExt) ) {
-        this.logger.debug('Detected RDF file based on mime type or file extension', context.logContext);
+        this.logger.debug('Detected RDF file based on mime type or file extension', context.logSignal);
         metadata.resource_type = 'rdf';
         context.data.actions.detectedLd = true;
       } else {
-        this.logger.debug('Detected generic file based on mime type or file extension', context.logContext);
+        this.logger.debug('Detected generic file based on mime type or file extension', context.logSignal);
         metadata.resource_type = 'file';
       }
 
@@ -218,7 +218,7 @@ class CaskFs {
 
       // write the file record
       if( !context.data.fileExists ) {
-        this.logger.info('Inserting new file record into CASKFS', context.logContext);
+        this.logger.info('Inserting new file record into CASKFS', context.logSignal);
         await dbClient.insertFile({
           directoryId,
           filePath, 
@@ -251,12 +251,12 @@ class CaskFs {
       // if its an RDF file parse and add the file contents triples as well
       if( !context.data.stagedFile.hashExists || !context.data.fileExists ) {
         // if replacing an existing file, delete old triples first
-        this.logger.info('Replacing existing RDF file, deleting old triples', context.logContext);
+        this.logger.info('Replacing existing RDF file, deleting old triples', context.logSignal);
         await this.rdf.delete(context.data.file, {dbClient, ignoreAcl: true});
 
         let readFile = context.data.stagedFile.hashExists ? context.data.stagedFile.hashFile : context.data.stagedFile.tmpFile;
 
-        this.logger.info('Inserting RDF triples for file', context.logContext);
+        this.logger.info('Inserting RDF triples for file', context.logSignal);
         await this.rdf.insert(context.data.file.file_id, 
           {
             dbClient, 
@@ -265,7 +265,7 @@ class CaskFs {
 
         context.data.actions.parsedLinkedData = true;
       } else {
-        this.logger.info('RDF file already exists, skipping RDF processing', context.logContext);
+        this.logger.info('RDF file already exists, skipping RDF processing', context.logSignal);
       }
 
       // finalize the write to move the temp file to its final location
@@ -282,7 +282,7 @@ class CaskFs {
     } catch (err) {
       context.update({error: err});
       this.logger.error('Error writing file, rolling back transaction',
-        {error: err.message, stack: err.stack, ...context.logContext}
+        {error: err.message, stack: err.stack, ...context.logSignal}
       );
 
       // if any error, rollback the transaction and delete the temp file
@@ -296,12 +296,12 @@ class CaskFs {
       return context;
     }
 
-    this.logger.info(`File write complete: ${filePath}`, {copied: context.data.copied}, context.logContext);
+    this.logger.info(`File write complete: ${filePath}`, {copied: context.data.copied}, context.logSignal);
 
     // if we replaced an existing file, and the hash value is no longer referenced, delete it
     // this function will only delete the hash file if no other references exist
     if( context.data.copied && context.data.softDelete !== true && context.data.replacedFile ) {
-      this.logger.info(`Checking for unreferenced hash value to delete: ${context.data.replacedFile.hash_value}`, context.logContext);
+      this.logger.info(`Checking for unreferenced hash value to delete: ${context.data.replacedFile.hash_value}`, context.logSignal);
       let deleteResp = await this.cas.delete(context.data.replacedFile.hash_value);
       context.data.actions.deletedOldHashFile = deleteResp.fileDeleted;
     }
@@ -337,7 +337,7 @@ class CaskFs {
     }
 
     if( !files || !Array.isArray(files) || files.length === 0 ) {
-      this.logger.warn('No files to sync', context.logContext);
+      this.logger.warn('No files to sync', context.logSignal);
       return context;
     }
 
@@ -401,12 +401,12 @@ class CaskFs {
       let currentMetadata = await this.metadata(context);
       if( JSON.stringify(currentMetadata.metadata) === JSON.stringify(context.data.metadata) &&
           JSON.stringify(currentMetadata.partition_keys) === JSON.stringify(context.data.partitionKeys) ) {
-        this.logger.info('No changes to metadata or partition keys, skipping update', context.logContext);
+        this.logger.info('No changes to metadata or partition keys, skipping update', context.logSignal);
         return {metadata: currentMetadata, updated: false};
       }
     }
 
-    this.logger.info('Updating existing file metadata', context.logContext);
+    this.logger.info('Updating existing file metadata', context.logSignal);
     await dbClient.updateFileMetadata(filePath, context.data);
 
     return {
