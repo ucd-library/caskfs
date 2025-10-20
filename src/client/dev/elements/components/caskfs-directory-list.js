@@ -71,7 +71,7 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
       contents.push({
         data: file,
         name: file.filename,
-        lastModified: new Date(file.modified),
+        lastModified: new Date(Math.round(new Date(file.modified).getTime() / 1000) * 1000),
         size: Number(file.size),
         kind: file.meta_data?.mimeType || '',
         modifiedBy: file.last_modified_by || ''
@@ -81,7 +81,7 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
       contents.push({
         data: dir,
         name: dir.name.split('/').filter(Boolean).pop(),
-        lastModified: new Date(dir.modified),
+        lastModified: new Date(Math.round(new Date(dir.modified).getTime() / 1000) * 1000),
         size: 0,
         kind: 'directory',
         modifiedBy: ''
@@ -89,14 +89,7 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
     }
 
     if ( this.qsCtl.query.sort ) {
-      contents.sort((a, b) => {
-        const aVal = a[this.qsCtl.query.sort];
-        const bVal = b[this.qsCtl.query.sort];
-        const sortDirection = this.qsCtl.query.sortDirection === 'desc' ? -1 : 1;
-        if ( aVal < bVal ) return -1 * sortDirection;
-        if ( aVal > bVal ) return 1 * sortDirection;
-        return 0;
-      });
+      contents = this.qsCtl.multiSort(contents);
     }
 
     this.contents = contents;

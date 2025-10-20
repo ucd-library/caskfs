@@ -10,7 +10,6 @@ export default class QueryStringController {
     this.AppStateModel = Registry.getModel('AppStateModel');
     this.appComponentController = new AppComponentController(host);
     this.query = {};
-    this.scrollTo = null;
 
     this.updateComplete = Promise.resolve();
   }
@@ -23,6 +22,73 @@ export default class QueryStringController {
   deleteParam(key){
     delete this.query[key];
     this.host.requestUpdate();
+  }
+
+  addSortField(field, isDesc=false){
+    const sort = this.sort;
+    const existing = sort.find(s => s.field === field);
+    if ( existing ) {
+      existing.isDesc = isDesc;
+    } else {
+      sort.push({ field, isDesc });
+    }
+    this.sort = sort;
+  }
+
+  removeSortField(field){
+    const sort = this.sort.filter(s => s.field !== field);
+    this.sort = sort;
+  }
+
+  multiSort(data) {
+    return data.sort((a, b) => {
+      for (const { field, isDesc } of this.sort) {
+        const dir = isDesc ? -1 : 1;
+        const av = a[field];
+        const bv = b[field];
+
+        // Handle undefined/null consistently
+        if (av == null && bv == null) continue;
+        if (av == null) return -1 * dir;
+        if (bv == null) return 1 * dir;
+
+        if (av < bv) return -1 * dir;
+        if (av > bv) return 1 * dir;
+      }
+      return 0;
+    });
+  }
+
+  get sort(){
+    return this.parseSortString(this.query.sort);
+  }
+
+  set sort(value){
+    if ( Array.isArray(value) ) {
+      this.query.sort = this.sortToString(value);
+    } else if ( typeof value === 'string' ) {
+      this.query.sort = value;
+    } else {
+      this.query.sort = '';
+    }
+    this.host.requestUpdate();
+  }
+
+  parseSortString(sortString=''){
+    return sortString
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+      .map(part => ({
+        field: part.replace(/^[-+]/, ''),
+        isDesc: part.startsWith('-')
+      }));
+  }
+
+  sortToString(sortArray=[]){
+    return sortArray
+      .map(s => (s.isDesc ? '-' : '+') + s.field)
+      .join(',');
   }
 
   getQuery(asObject){
@@ -63,6 +129,22 @@ export default class QueryStringController {
     this.query = q;
   }
 
+  syncState(e){
+    if ( !e ) e = this.AppStateModel.store.data;
+    const q = e.location?.query || {};
+    this.resetQuery();
+    for ( const key of Object.keys(q) ) {
+      if ( this.types[key] === 'array' ) {
+        this.query[key] = q[key] ? q[key].split(',') : [];
+      } else if ( this.types[key] === 'boolean' ) {
+        this.query[key] = q[key] === 'false' ? false : true;
+      } else {
+        this.query[key] = q[key];
+      }
+    }
+    this.host.requestUpdate();
+  }
+
   async _onAppStateUpdate(e) {
 
     // create a promise that resolves when query is set
@@ -76,23 +158,7 @@ export default class QueryStringController {
       if ( !this.appComponentController.isOnActivePage ) {
         return;
       }
-      const q = e.location?.query || {};
-      this.resetQuery();
-      for ( const key of Object.keys(q) ) {
-        if ( key === 'scrollTo' ) {
-          this.scrollTo = q[key];
-          continue;
-        }
-        if ( this.types[key] === 'array' ) {
-          this.query[key] = q[key] ? q[key].split(',') : [];
-        } else if ( this.types[key] === 'boolean' ) {
-          this.query[key] = q[key] === 'false' ? false : true;
-        } else {
-          this.query[key] = q[key];
-        }
-      }
-      this.host.requestUpdate();
-
+      this.syncState(e);
     } finally {
       // signal that query is set
       resolveUpdateComplete?.();
