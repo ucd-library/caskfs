@@ -10,7 +10,7 @@ import path from 'path';
 import os from 'os';
 import config from '../lib/config.js';
 import {parse as parseYaml} from 'yaml';
-import {optsWrapper, handleUser} from './opts-wrapper.js';
+import {optsWrapper, handleGlobalOpts} from './opts-wrapper.js';
 import cliProgress from 'cli-progress';
 import printLogo from './print-logo.js';
 import { fileURLToPath } from 'url';
@@ -59,7 +59,7 @@ program
     let opts = {};
     const cask = new CaskFs();
 
-    handleUser(options);
+    handleGlobalOpts(options);
 
     if (options.dataFile === '-') {
       opts.readStream = process.stdin;
@@ -98,7 +98,7 @@ program
   .action(async (sourcePath, destPath, options) => {
     silenceLoggers();
     
-    handleUser(options);
+    handleGlobalOpts(options);
     
     if( !path.isAbsolute(sourcePath) ) {
       sourcePath = path.resolve(process.cwd(), sourcePath);
@@ -237,7 +237,7 @@ program
   .command('metadata <file-path>')
   .description('Get metadata for a file')
   .action(async (filePath, options={}) => {
-    handleUser(options);
+    handleGlobalOpts(options);
 
     const cask = new CaskFs();
     const context = createContext({
@@ -252,7 +252,7 @@ program
   .command('read <file-path>')
   .description('Get contents of a file')
   .action(async (filePath, options={}) => {
-    handleUser(options);
+    handleGlobalOpts(options);
 
     const cask = new CaskFs();
     const context = createContext({
@@ -274,7 +274,7 @@ program
   .option('-k, --partition-keys <keys>', 'Only include RDF triples with the specified partition keys (comma-separated). Must be used with --subject or --file')
   .option('-e, --format <format>', 'RDF format to output: jsonld, compact, flattened, expanded, nquads or json. Default is jsonld', 'jsonld')
   .action(async (options) => {
-    handleUser(options);
+    handleGlobalOpts(options);
 
     const cask = new CaskFs();
 
@@ -304,7 +304,7 @@ program
   .option('-t, --stats', 'Show counts of file relationships by predicate instead of individual relationships', false)
   .option('-d, --debug-query', 'Output the SQL query used to find the files', false)
   .action(async (filePath, options) => {
-    handleUser(options);
+    handleGlobalOpts(options);
 
     const cask = new CaskFs();
 
@@ -337,7 +337,7 @@ program
   .option('-f, --offset <number>', 'Offset the results returned by the specified number', parseInt)
   .option('-d, --debug-query', 'Output the SQL query used to find the files', false)
   .action(async (options) => {
-    handleUser(options);
+    handleGlobalOpts(options);
 
     const cask = new CaskFs();
 
@@ -354,7 +354,7 @@ program
   .description('Remove a file from the filesystem layer and the underlying storage')
   .option('-s, --soft-delete', 'Never delete the file from the underlying storage, even if all references are removed', false)
   .action(async (filePath, options) => {
-    handleUser(options);
+    handleGlobalOpts(options);
 
     const cask = new CaskFs();
     const resp = await cask.delete(filePath, { 
@@ -370,13 +370,13 @@ program
   .option('-o, --output <output>', 'Output format: text (default) or json', 'text')
   .description('List files')
   .action(async (directory, options) => {
-    handleUser(options);
+    handleGlobalOpts(options);
 
     let partitionKeys = options.partitionKeys ? options.partitionKeys.split(',').map(k => k.trim()) : undefined;
     const caskfs = new CaskFs();
     const resp = await caskfs.ls({
       directory,
-      user: options.user
+      requestor: options.requestor
     });
 
     if (options.output === 'json') {
@@ -402,6 +402,7 @@ program
 
 program.command('acl', 'Manage ACL rules');
 program.command('auto-path', 'Manage auto-path rules');
+program.command('env', 'Manage cask cli environment');
 
 program
   .command('stats')
@@ -423,7 +424,7 @@ program
 
     if( options.userRolesFile ) {
       let userRoles = await loadUserRolesFile(options.userRolesFile);
-      await cask.ensureUserRoles(handleUser({}), userRoles);
+      await cask.ensureUserRoles(handleGlobalOpts({}), userRoles);
     }
 
     cask.dbClient.end();
@@ -436,7 +437,7 @@ program
     let userRoles = await loadUserRolesFile(userRolesFile);
 
     const cask = new CaskFs();
-    await cask.ensureUserRoles(handleUser({}), userRoles);
+    await cask.ensureUserRoles(handleGlobalOpts({}), userRoles);
     cask.dbClient.end();
   });
 
@@ -482,7 +483,7 @@ program
     if( options.userRolesFile ) {
       console.log(`Loading user roles from ${options.userRolesFile}`);
       let userRoles = await loadUserRolesFile(options.userRolesFile);
-      await cask.ensureUserRoles(handleUser({}), userRoles);
+      await cask.ensureUserRoles(handleGlobalOpts({}), userRoles);
     }
 
     cask.dbClient.end();
@@ -492,7 +493,7 @@ program
   .command('whoami')
   .description('Show the current user')
   .action(async (options) => {
-    handleUser(options);
+    handleGlobalOpts(options);
     console.log(`Current User: ${options.requestor || 'public (no user)'}`);
     if( options.requestor ) {
       const cask = new CaskFs();

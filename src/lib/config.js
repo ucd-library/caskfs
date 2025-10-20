@@ -27,6 +27,11 @@ const config = {
     schema : env.CASKFS_DB_SCHEMA || 'caskfs',
   },
 
+  http : {
+    host : env.CASKFS_HTTP_HOST || 'http://localhost:3000',
+    rootPath : env.CASKFS_HTTP_ROOT_PATH || '/cask',
+  },
+
   postgres : {
     host : env.CASKFS_PG_HOST || 'localhost',
     port : env.CASKFS_PG_PORT || 5432,
