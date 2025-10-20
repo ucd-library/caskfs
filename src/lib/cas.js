@@ -366,6 +366,11 @@ class Cas {
     let dir = path.resolve(config.rootDir);
     console.log('Powerwashing CASKFS root directory:', dir);
     
+    if( !fs.existsSync(dir) ) {
+      fs.mkdirSync(dir, { recursive: true });
+      return;
+    }
+
     // Remove contents of directory but keep the directory itself
     const items = fs.readdirSync(dir);
     for (const item of items) {

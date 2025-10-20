@@ -9,6 +9,11 @@
   },
   "directories": {},
   "scripts": {
+    "test": "node --test test/*.test.js",
+    "test:watch": "node --test --watch test/*.test.js",
+    "test:core": "node --test test/caskfs.test.js",
+    "test:integration": "node --test test/integration.test.js",
+    "test:verbose": "node --test --test-reporter=spec test/*.test.js",
     "client-watch": "cd ./src/client/build && node ./icons.js && webpack --config webpack-watch.config.js --watch",
     "client-build-dev": "cd ./src/client/build && node ./icons.js && webpack --config webpack-watch.config.js",
     "client-build-dist": "cd ./src/client/build && node ./icons.js && webpack --config webpack-dist.config.js",
