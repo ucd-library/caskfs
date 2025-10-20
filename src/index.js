@@ -90,6 +90,7 @@ class CaskFs {
    * @description Write a file to the CASKFS. Can write from a Buffer, Readable Stream, hash value or file path.
    *
    * @param {CaskFSContext|Object} context file context to write to in the CASKFS
+   * @param {String} context.filePath path to the file to write to in the CASKFS
    * @param {String} context.readPath path to a file to read and write to the CASKFS
    * @param {Stream} context.readStream readable stream to read and write to the CASKFS
    * @param {String} context.hash existing hash value of a file already in the CASKFS to reference
@@ -1102,9 +1103,9 @@ class CaskFs {
     let aclCheckOpts = {
       ignoreAcl: context.data.ignoreAcl || false,
       requestor: context.data.requestor,
-      filePath: context.data.filePath,
+      filePath: context.data.directory || context.data.filePath,
       permission: opts.permission || context.data.permission,
-      isFile: opts.isFile || false,
+      isFile: context.data.directory ? false : (opts.isFile || false),
       dbClient: dbClient
     };
 
