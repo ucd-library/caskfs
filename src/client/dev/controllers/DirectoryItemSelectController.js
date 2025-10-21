@@ -29,7 +29,7 @@ export default class DirectoryItemSelectController {
   static init(){
     const AppStateModel = Registry.getModel('AppStateModel');
     AppStateModel.EventBus.on('app-state-update', (e) => {
-      if ( e.location.pathname === e.lastLocation.pathname ) return;
+      //if ( e.location.pathname === e.lastLocation.pathname ) return;
       DirectoryItemSelectController.clear();
     });
   }

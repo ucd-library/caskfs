@@ -5,6 +5,7 @@ export default class QueryStringController {
 
   constructor(host, opts={}){
     this.types = opts.types || {};
+    this.pageSize = opts.pageSize || 20;
     this.host = host;
     host.addController(this);
     this.AppStateModel = Registry.getModel('AppStateModel');
@@ -22,6 +23,25 @@ export default class QueryStringController {
   deleteParam(key){
     delete this.query[key];
     this.host.requestUpdate();
+  }
+
+  get pageOffset(){
+    const page = this.query.page || 1;
+    return (page - 1) * this.pageSize;
+  }
+
+  maxPages(totalItems){
+    if ( Array.isArray(totalItems) ) {
+      totalItems = totalItems.length;
+    }
+    return Math.ceil(totalItems / this.pageSize);
+  }
+
+  paginateData(data){
+    const page = this.query.page || 1;
+    const start = (page - 1) * this.pageSize;
+    const end = start + this.pageSize;
+    return data.slice(start, end);
   }
 
   addSortField(field, isDesc=false){
@@ -100,6 +120,10 @@ export default class QueryStringController {
         }
       } else if ( this.types[key] === 'boolean' ) {
         if ( this.query[key] ) q[key] = 'true';
+      } else if ( key === 'pageSize' ) {
+        if ( this.query[key] && this.query[key] !== this.pageSize ) q[key] = this.query[key];
+      } else if ( key === 'page' ) {
+        if ( this.query[key] && this.query[key] !== 1 ) q[key] = this.query[key];
       } else {
         if ( this.query[key] ) q[key] = this.query[key];
       }
@@ -138,6 +162,12 @@ export default class QueryStringController {
         this.query[key] = q[key] ? q[key].split(',') : [];
       } else if ( this.types[key] === 'boolean' ) {
         this.query[key] = q[key] === 'false' ? false : true;
+      } else if ( key === 'pageSize' ) {
+        const ps = parseInt(q[key]);
+        this.query[key] = isNaN(ps) ? this.pageSize : ps;
+      } else if ( key === 'page' ) {
+        const p = parseInt(q[key]);
+        this.query[key] = isNaN(p) ? 1 : p;
       } else {
         this.query[key] = q[key];
       }

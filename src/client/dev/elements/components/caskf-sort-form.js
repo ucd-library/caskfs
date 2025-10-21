@@ -93,6 +93,7 @@ export default class CaskfSortForm extends Mixin(LitElement)
 
   async submit(){
     this.qsCtl.sort = this.selected.filter(s => s.field);
+    this.qsCtl.setParam('page', 1);
     this.qsCtl.setLocation();
   }
 

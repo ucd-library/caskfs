@@ -4,6 +4,7 @@ export function styles() {
   const elementStyles = css`
     caskfs-app {
       display: block;
+      padding-bottom: 2rem;
     }
   `;
 
