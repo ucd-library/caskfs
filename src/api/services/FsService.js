@@ -1,7 +1,7 @@
 import {BaseService} from '@ucd-lib/cork-app-utils';
 import FsStore from '../stores/FsStore.js';
 
-import payload from '../payload.js';
+import payload from '../utils/payload.js';
 
 class FsService extends BaseService {
 

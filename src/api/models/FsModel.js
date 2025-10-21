@@ -1,6 +1,7 @@
 import {BaseModel} from '@ucd-lib/cork-app-utils';
 import FsService from '../services/FsService.js';
 import FsStore from '../stores/FsStore.js';
+import clearCache from '../utils/clearCache.js';
 
 class FsModel extends BaseModel {
 
@@ -18,18 +19,13 @@ class FsModel extends BaseModel {
   async delete(path, options={}) {
     const res = await this.service.delete(path, options);
     if ( res.state === 'loaded' ) {
-      this.purgeCache();
+      clearCache();
     }
     return res;
   }
 
   getMetadata(path) {
     return this.service.getMetadata(path);
-  }
-
-  purgeCache(noDirPurge) {
-    if ( !noDirPurge ) this.DirectoryModel.purgeCache(true);
-    this.store.data.metadata.purge();
   }
 
   fileDownloadUrl(path) {

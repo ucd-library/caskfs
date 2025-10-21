@@ -16,7 +16,7 @@ router.get(/(.*)/, async (req, res) => {
   try {
 
     const filePath = req.params[0] || '/';
-    const metadata = await caskFs.metadata(filePath);
+    const metadata = await caskFs.metadata({filePath, corkTraceId: req.corkTraceId});
 
     if ( 
       (req.query?.metadata || '').trim().toLowerCase() === 'true' || 
@@ -85,7 +85,7 @@ router.delete(/(.*)/, async (req, res) => {
     const options = {
       softDelete: req.body?.softDelete === true || req.query?.softDelete === 'true'
     };
-    const result = await caskFs.delete(filePath, options);
+    const result = await caskFs.delete({filePath, corkTraceId: req.corkTraceId}, options);
     res.status(200).json(result);
   } catch (e) {
     return handleError(res, req, e);

@@ -22,7 +22,21 @@ return html`
   <div class='l-container u-space-mt--large'>
     <div class="l-basic--flipped">
       <div class="l-content">
-        <caskfs-file-metadata></caskfs-file-metadata>
+        <caskfs-file-metadata class='u-space-mb--large'></caskfs-file-metadata>
+        <div>
+          <caskfs-section-header text='Linked Data' icon='fas.diagram-project' brand-color='putah-creek'>
+            <div slot='actions'>
+              <cork-icon-button
+                icon="fas.arrow-up-right-from-square"
+                basic
+                title="View Linked Data Representation"
+                link-aria-label="View Linked Data Representation"
+                href="/ld${this.directoryPathCtl.pathname}"
+              ></cork-icon-button>
+            </div>
+          </caskfs-section-header>
+          <p>TODO: I think a very basic summary here would be useful. Like a total count of all inbound/outbound links, so the user knows if the link is even worth following. - SP</p>
+        </div>
       </div>
       <div class="l-sidebar-second">
         <button class="btn btn--alt3 btn--block u-space-mb" @click=${this._onDeleteRequest}>Delete File</button>

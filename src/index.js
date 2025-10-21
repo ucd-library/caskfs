@@ -564,7 +564,7 @@ class CaskFs {
   }
 
   async stats(opts={}) {
-    context = createContext(opts, this.dbClient);
+    const context = createContext(opts, this.dbClient);
     await this.allowAdminAction(context);
 
     context.setDbClientIfNotSet(this.dbClient);

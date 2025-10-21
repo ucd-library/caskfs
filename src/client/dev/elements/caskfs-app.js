@@ -33,6 +33,7 @@ import '@ucd-lib/cork-icon';
 import '../../../api/models/AppStateModel.js';
 import '../../../api/models/DirectoryModel.js';
 import '../../../api/models/FsModel.js';
+import '../../../api/models/SystemModel.js';
 Registry.ready();
 
 // need to do this after Registry.ready()
