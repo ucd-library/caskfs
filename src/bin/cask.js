@@ -9,6 +9,7 @@ import {silenceLoggers} from '../lib/logger.js';
 import path from 'path';
 import os from 'os';
 import config from '../lib/config.js';
+import environment from '../lib/environment.js';
 import {parse as parseYaml} from 'yaml';
 import {optsWrapper, handleGlobalOpts} from './opts-wrapper.js';
 import cliProgress from 'cli-progress';
@@ -516,6 +517,13 @@ program
   .description('Start the CaskFs web application')
   .option('-p, --port <port>', 'Port to run the web application on')
   .action(async (options) => {
+    handleGlobalOpts(options);
+
+    if( options.environment && options.environment?.config?.clientEnv === 'dev' ) {
+      console.log('Starting CaskFs web application in development mode');
+      config.webapp.isDevEnv = true;
+    }
+
     const { startServer } = await import('../client/index.js');
     startServer(options);
   });
