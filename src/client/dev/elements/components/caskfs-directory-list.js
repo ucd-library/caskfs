@@ -16,7 +16,8 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
   static get properties() {
     return {
       contents: { type: Array },
-      selectedItems: { type: Array }
+      selectedItems: { type: Array },
+      totalPages: { type: Number }
     }
   }
 
@@ -27,6 +28,7 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
     this.pathStartIndex = 0;
     this.contents = [];
     this.selectedItems = [];
+    this.totalPages = 1;
 
     this.appComponentCtl = new AppComponentController(this);
     this.directoryPathCtl = new DirectoryPathController(this);
@@ -40,6 +42,11 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
   async _onAppStateUpdate(e) {
     if ( !this.appComponentCtl.isOnActivePage ) return;
     await this.listContents();
+
+    if ( this.AppStateModel.store.data.lastLocation.pathname === e.location.pathname ) {
+      window.scrollTo(0, 0);
+      return;
+    }
 
     // restore scroll position if returning to this page
     for ( const h of this.scrollCtl.pageHistory(e.page) ) {
@@ -71,7 +78,7 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
       contents.push({
         data: file,
         name: file.filename,
-        lastModified: new Date(file.modified),
+        lastModified: new Date(Math.round(new Date(file.modified).getTime() / 1000) * 1000),
         size: Number(file.size),
         kind: file.meta_data?.mimeType || '',
         modifiedBy: file.last_modified_by || ''
@@ -81,7 +88,7 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
       contents.push({
         data: dir,
         name: dir.name.split('/').filter(Boolean).pop(),
-        lastModified: new Date(dir.modified),
+        lastModified: new Date(Math.round(new Date(dir.modified).getTime() / 1000) * 1000),
         size: 0,
         kind: 'directory',
         modifiedBy: ''
@@ -89,17 +96,10 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
     }
 
     if ( this.qsCtl.query.sort ) {
-      contents.sort((a, b) => {
-        const aVal = a[this.qsCtl.query.sort];
-        const bVal = b[this.qsCtl.query.sort];
-        const sortDirection = this.qsCtl.query.sortDirection === 'desc' ? -1 : 1;
-        if ( aVal < bVal ) return -1 * sortDirection;
-        if ( aVal > bVal ) return 1 * sortDirection;
-        return 0;
-      });
+      contents = this.qsCtl.multiSort(contents);
     }
-
-    this.contents = contents;
+    this.totalPages = this.qsCtl.maxPages(contents);
+    this.contents = this.qsCtl.paginateData(contents);
   }
 
   _onItemClick(e){
@@ -108,6 +108,11 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
       return;
     }
     this.AppStateModel.setLocation(`/file${e.detail.data.filepath}`);
+  }
+
+  _onPageChange(e){
+    this.qsCtl.setParam('page', e.detail.page);
+    this.qsCtl.setLocation();
   }
 
 }

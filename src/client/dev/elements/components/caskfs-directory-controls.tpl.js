@@ -1,5 +1,4 @@
 import { html, css } from 'lit';
-import './cork-sort-button.js';
 
 export function styles() {
   const elementStyles = css`
@@ -49,12 +48,12 @@ return html`
       @click=${() => this.directoryPathCtl.moveUp()}
       link-aria-label='Up One Level'>
     </cork-icon-button>
-    <cork-sort-button 
-      .options=${this.sortOptions} 
-      @option-select=${this._onSortOptionSelect}
-      .value=${this.qsCtl.query.sort || ''} 
-      .isDesc=${this.qsCtl.query.sortDirection === 'desc'}>
-    </cork-sort-button>
+    <cork-icon-button 
+      icon='fas.sort'
+      title='Sort Items'
+      @click=${this._onSortClick}
+      link-aria-label='Sort Items'>
+    </cork-icon-button>
     <cork-icon-button
       icon='fas.trash'
       color='medium'

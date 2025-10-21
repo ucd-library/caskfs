@@ -3,11 +3,11 @@ import {render, styles} from "./caskfs-directory-controls.tpl.js";
 import { LitCorkUtils, Mixin } from '@ucd-lib/cork-app-utils';
 
 import DirectoryPathController from '../../controllers/DirectoryPathController.js';
-import QueryStringController from '../../controllers/QueryStringController.js';
 import DirectoryItemSelectController from '../../controllers/DirectoryItemSelectController.js';
 
 import './caskfs-delete-form.js';
 import './caskfs-upload-form.js';
+import './caskf-sort-form.js';
 
 export default class CaskfsDirectoryControls extends Mixin(LitElement)
   .with(LitCorkUtils) {
@@ -31,29 +31,18 @@ export default class CaskfsDirectoryControls extends Mixin(LitElement)
 
     this.sortOptions = [
       { label: 'Name', value: 'name' },
-      { label: 'Last Modified', value: 'lastModified' },
-      { label: 'Size', value: 'size' },
+      { label: 'Last Modified', value: 'lastModified', type: 'date' },
+      { label: 'Size', value: 'size', type: 'number' },
       { label: 'Kind', value: 'kind' },
-      { label: 'Modified By', value: 'modifiedBy' }
+      { label: 'Modified By', value: 'modifiedBy', type: 'string' }
     ];
     this.sortValue = '';
     this.sortIsDesc = false;
 
     this.directoryPathCtl = new DirectoryPathController(this);
-    this.qsCtl = new QueryStringController(this);
     this.itemSelectCtl = new DirectoryItemSelectController(this);
 
     this._injectModel('AppStateModel');
-  }
-
-  _onSortOptionSelect(e){
-    this.qsCtl.setParam('sort', e.detail.value);
-    if ( e.detail.isDesc ) {
-      this.qsCtl.setParam('sortDirection', 'desc');
-    } else {
-      this.qsCtl.deleteParam('sortDirection');
-    }
-    this.qsCtl.setLocation();
   }
 
   _onBulkDeleteClick(){
@@ -65,6 +54,17 @@ export default class CaskfsDirectoryControls extends Mixin(LitElement)
   _onUploadClick(){
     this.AppStateModel.showDialogModal({
       content: () => html`<caskfs-upload-form></caskfs-upload-form>`,
+    });
+  }
+
+  _onSortClick(){
+    this.AppStateModel.showDialogModal({
+      content: () => html`
+        <caskf-sort-form
+          .options=${this.sortOptions}
+          .modalTitle=${"Sort Directory Items"}
+        ></caskf-sort-form>
+      `,
     });
   }
 

@@ -66,8 +66,10 @@ export default class ModalFormController {
    */
   setModalTitle(title){
     if ( !this.modal ) return;
-    title = title || this.title;
-    this.modal.modalTitle = title;
+    if ( title ) {
+      this.title = title;
+    }
+    this.modal.modalTitle = this.title;
   }
 
   /**
@@ -77,11 +79,13 @@ export default class ModalFormController {
    */
   setModalSubmitButton(text){
     if ( !this.modal ) return;
-    text = text || this.submitText;
+    if ( text ) {
+      this.submitText = text;
+    }
     this.modal.actions = [
       ...this.modal.actions.filter(a => a.value !== this.submitActionId),
       {
-        text,
+        text: this.submitText,
         value: this.submitActionId,
         disableOnLoading: true,
         disableClose: true

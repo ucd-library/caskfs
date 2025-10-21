@@ -70,12 +70,21 @@ export function render() {
             </div>
 
           </div>
-          ${this.contents.map(item => html`
-            <caskfs-directory-item 
-              @item-click=${e => this._onItemClick(e)}
-              .data=${item.data}>
-            </caskfs-directory-item>
-          `)}
+          <div>
+            ${this.contents.map(item => html`
+              <caskfs-directory-item 
+                @item-click=${e => this._onItemClick(e)}
+                .data=${item.data}>
+              </caskfs-directory-item>
+            `)}
+          </div>
+          <ucd-theme-pagination
+            current-page=${this.qsCtl.query.page || 1}
+            max-pages=${this.totalPages}
+            ellipses
+            xs-screen
+            @page-change=${this._onPageChange}
+          ></ucd-theme-pagination>
         </div>
         <div ?hidden=${this.contents.length} class='no-contents'>
           <cork-icon icon="fas.circle-exclamation" class='primary'></cork-icon>

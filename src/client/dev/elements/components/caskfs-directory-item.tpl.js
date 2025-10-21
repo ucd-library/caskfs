@@ -29,7 +29,13 @@ export function styles() {
       grid-template-columns: 1fr 30px;
     }
     .desktop-view .item-line {
-      grid-template-columns: 3fr 1fr 1fr 1.5fr 1fr 30px;
+      grid-template-columns: minmax(0, 3fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr) 30px;
+    }
+    .desktop-view .item-cell {
+      word-break: break-all;
+    }
+    .desktop-view .name-text {
+      word-break: break-all;
     }
     .item-line:hover {
       background-color: var(--ucd-gold-30, #FFF9E6);
@@ -165,10 +171,10 @@ function renderDesktopView(){
     <div class='desktop-view'>
       <div class='item-line'>
         ${renderName.call(this)}
-        <div>${this.fsUtils.kind}</div>
-        <div>${this.fsUtils.size}</div>
+        <div class='item-cell'>${this.fsUtils.kind}</div>
+        <div class='item-cell'>${this.fsUtils.size}</div>
         ${renderModifiedDate.call(this)}
-        <div>${this.fsUtils.modifiedBy}</div>
+        <div class='item-cell'>${this.fsUtils.modifiedBy}</div>
         ${renderDeleteIcon.call(this)}
       </div>
     </div>
@@ -198,7 +204,7 @@ function renderName(){
         aria-label='Select Item'>
       <button @click=${this._onItemClick} class='link-button link-button--bold link-button--align-top'>
         <cork-icon icon=${this.fsUtils.isDirectory ? 'fas.folder' : 'fas.file'} class='type-icon'></cork-icon>
-        <div>${this.fsUtils.name}</div>
+        <div class='name-text'>${this.fsUtils.name}</div>
       </button>
     </div>
   `;

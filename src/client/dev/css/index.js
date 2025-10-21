@@ -9,6 +9,7 @@ import headings from './headings.css';
 import { styles as directoryListStyles } from '../elements/components/caskfs-directory-list.tpl.js';
 import { styles as uploadFormStyles } from '../elements/components/caskfs-upload-form.tpl.js';
 import { styles as deleteFormStyles } from '../elements/components/caskfs-delete-form.tpl.js';
+import { styles as sortFormStyles } from '../elements/components/caskf-sort-form.tpl.js';
 
 function getLitStyles(styles){
   return styles().map(s => s.cssText).join('\n');
@@ -32,6 +33,7 @@ const styles = `
   ${getLitStyles(directoryListStyles)}
   ${getLitStyles(uploadFormStyles)}
   ${getLitStyles(deleteFormStyles)}
+  ${getLitStyles(sortFormStyles)}
 `;
 
 let sharedStyleElement = document.createElement('style');
