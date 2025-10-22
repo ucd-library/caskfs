@@ -40,7 +40,7 @@
   "devDependencies": {
     "@material/switch": "^14.0.0",
     "@ucd-lib/cork-app-build": "^0.5.0",
-    "@ucd-lib/cork-app-state": "^3.1.0",
+    "@ucd-lib/cork-app-state": "^3.2.0",
     "@ucd-lib/cork-app-utils": "^6.4.1",
     "@ucd-lib/cork-icon": "^1.4.2",
     "@ucd-lib/theme-elements": "^3.3.0",

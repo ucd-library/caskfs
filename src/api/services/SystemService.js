@@ -2,12 +2,17 @@ import {BaseService} from '@ucd-lib/cork-app-utils';
 import SystemStore from '../stores/SystemStore.js';
 
 import payload from '../utils/payload.js';
+import appPathUtils from '../../client/dev/utils/appPathUtils.js';
 
 class SystemService extends BaseService {
 
   constructor() {
     super();
     this.store = SystemStore;
+  }
+
+  get baseUrl(){
+    return `${appPathUtils.basePath}/api/system`;
   }
 
   async stats(){
@@ -22,7 +27,7 @@ class SystemService extends BaseService {
     await this.checkRequesting(
       id, store,
       () => this.request({
-        url : `/api/system/stats`,
+        url : `${this.baseUrl}/stats`,
         checkCached : () => store.get(id),
         onUpdate : resp => this.store.set(
           payload.generate(ido, resp),

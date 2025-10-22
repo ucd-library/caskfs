@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, json } from 'express';
 import handleError from './handleError.js';
 import caskFs from './caskFs.js';
 import { pipeline } from 'stream/promises';
@@ -79,7 +79,7 @@ router.patch(/(.*)/, (req, res) => {
   res.status(404).json({ error: 'Not Found' });
 });
 
-router.delete(/(.*)/, async (req, res) => {
+router.delete(/(.*)/, json(), async (req, res) => {
   try {
     const filePath = req.params[0] || '/';
     const options = {

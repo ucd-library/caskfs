@@ -107,7 +107,7 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
       this.directoryPathCtl.setLocation(e.detail.data.name);
       return;
     }
-    this.AppStateModel.setLocation(`/file${e.detail.data.filepath}`);
+    this.directoryPathCtl.setFileLocation(e.detail.data.filepath);
   }
 
   _onPageChange(e){
