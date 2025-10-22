@@ -1,5 +1,6 @@
 import { Registry, getLogger } from '@ucd-lib/cork-app-utils';
 import AppComponentController from './AppComponentController.js';
+import appPathUtils from '../utils/appPathUtils.js';
 
 export default class DirectoryPathController {
 
@@ -11,9 +12,9 @@ export default class DirectoryPathController {
     this.logger = getLogger('DirectoryPathController');
 
     this.pathPrefix = {
-      'directory': ['directory'],
-      'file': ['file']
-    }
+      'directory': appPathUtils.fullPath('directory', {returnArray: true}),
+      'file': appPathUtils.fullPath('file', {returnArray: true})
+    };
 
     this.path = [];
     this.breadcrumbs = [];
@@ -39,6 +40,14 @@ export default class DirectoryPathController {
     if ( this.path.length <= 1 ) return;
     this.path.pop();
     this.setLocation();
+  }
+
+  setFileLocation(path){
+    if ( typeof path === 'string' ) {
+      path = path.split('/').filter(Boolean);
+    }
+    const newPath = '/' + [ ...this.pathPrefix.file, ...path ].join('/');
+    this.AppStateModel.setLocation(newPath);
   }
 
   setLocation(path){

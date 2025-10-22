@@ -1,33 +1,33 @@
 import {BaseService} from '@ucd-lib/cork-app-utils';
-import DirectoryStore from '../stores/DirectoryStore.js';
+import SystemStore from '../stores/SystemStore.js';
 
 import payload from '../utils/payload.js';
 import appPathUtils from '../../client/dev/utils/appPathUtils.js';
 
-class DirectoryService extends BaseService {
+class SystemService extends BaseService {
 
   constructor() {
     super();
-    this.store = DirectoryStore;
+    this.store = SystemStore;
   }
 
   get baseUrl(){
-    return `${appPathUtils.basePath}/api/dir`;
+    return `${appPathUtils.basePath}/api/system`;
   }
 
-  async list(path){
-    let ido = {path};
+  async stats(){
+    let ido = {action: 'stats'};
     let id = payload.getKey(ido);
-    const store = this.store.data.list;
+    const store = this.store.data.stats;
 
     const appStateOptions = {
-      errorSettings: {message: 'Unable to list directory contents'}
-    }
+      errorSettings: {message: 'Unable to get system stats'}
+    };
 
     await this.checkRequesting(
       id, store,
       () => this.request({
-        url : `${this.baseUrl}${path}`,
+        url : `${this.baseUrl}/stats`,
         checkCached : () => store.get(id),
         onUpdate : resp => this.store.set(
           payload.generate(ido, resp),
@@ -43,5 +43,5 @@ class DirectoryService extends BaseService {
 
 }
 
-const service = new DirectoryService();
+const service = new SystemService();
 export default service;

@@ -10,7 +10,8 @@ router.get(/(.*)/, async (req, res) => {
   try {
     const directoryPath = req.params[0] || '/';
     const resp = await caskFs.ls({
-      directory: directoryPath
+      directory: directoryPath,
+      corkTraceId: req.corkTraceId
     });
     res.status(200).json(resp);
   } catch (e) {

@@ -1,7 +1,8 @@
 import {BaseService} from '@ucd-lib/cork-app-utils';
 import FsStore from '../stores/FsStore.js';
 
-import payload from '../payload.js';
+import payload from '../utils/payload.js';
+import appPathUtils from '../../client/dev/utils/appPathUtils.js';
 
 class FsService extends BaseService {
 
@@ -11,7 +12,7 @@ class FsService extends BaseService {
   }
 
   get baseUrl(){
-    return '/api/fs';
+    return `${appPathUtils.basePath}/api/fs`;
   }
 
   async delete(path, options={}) {
