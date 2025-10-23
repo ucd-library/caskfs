@@ -30,22 +30,25 @@ Overview:
 
 # Relationship Search: /cask/rel
 
-- GET /cask/rel
+- GET /cask/rel/{path+}
 
    - Description: Search for relationships in RDF files.
+   - Parameters:
+     - path (string, required): The path to the file.
    - Query Parameters:
      - subject (string, optional): Only include links with the specified subject URI.
-     - predicate (string, required): Only include links with the specified predicate, comma-separated list.
+     - predicate (string, optional): Only include links with the specified predicate, comma-separated list.
      - ignorePredicate (string, optional): Comma-separated list of predicates to ignore.
      - graph (string, optional): Only include links in the specified graph.
      - partitionKeys (string, optional): Comma-separated list of partition keys to filter the search.
+     - stats (string, optional): Show counts of file relationships by predicate instead of individual relationships
    - Headers:
      - Authorization (string, required): Bearer token for authentication.
    - Responses:
      - 200 OK: Returns a list of relationships matching the search query.
      - 400 Bad Request: Invalid parameters.
 
-- POST /cask/rel
+- POST /cask/rel/{path+}
 
    - Description: Same as GET /cask/rel but allows for a larger query in the request body.
 
