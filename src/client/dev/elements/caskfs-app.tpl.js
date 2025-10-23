@@ -1,9 +1,11 @@
 import { html, css } from 'lit';
+import appPathUtils from '../utils/appPathUtils.js';
 
 export function styles() {
   const elementStyles = css`
     caskfs-app {
       display: block;
+      padding-bottom: 2rem;
     }
   `;
 
@@ -33,15 +35,16 @@ function renderHeader(){
     <ucd-theme-header>
       <ucdlib-branding-bar
         site-name="UC Davis Library"
+        site-url=${appPathUtils.fullPath()}
         slogan="Cask File System">
       </ucdlib-branding-bar>
       <ucd-theme-primary-nav>
         <ul link-text='File System'>
-          <li><a href='/directory'>Directory</a></li>
-          <li><a href='/file-search'>File Search</a></li>
+          <li><a href=${appPathUtils.fullPath('/directory')}>Directory</a></li>
+          <li><a href=${appPathUtils.fullPath('/file-search')}>File Search</a></li>
         </ul>
         <ul link-text='Config'>
-          <li><a href='/config/partitions'>Partitions</a></li>
+          <li><a href=${appPathUtils.fullPath('/config/partitions')}>Partitions</a></li>
         </ul>
       </ucd-theme-primary-nav>
     </ucd-theme-header>

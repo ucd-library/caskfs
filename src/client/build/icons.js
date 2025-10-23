@@ -16,7 +16,9 @@ export function buildIconsets(){
         'caret-down', 'caret-up', 'check', 'file-circle-plus', 
         'folder-plus', 'plug-circle-exclamation', 
         'sort', 'turn-up', 'xmark', 'folder', 'file', 'trash',
-        'spinner', 'circle-exclamation', 'upload', 'circle-info'
+        'spinner', 'circle-exclamation', 'upload', 'circle-info',
+        'diagram-project', 'arrow-up-right-from-square', 'layer-group',
+        'fingerprint'
       ]
     }, 
     { name: 'ucdlib-core', 

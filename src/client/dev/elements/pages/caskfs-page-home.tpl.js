@@ -1,4 +1,5 @@
 import { html, css } from 'lit';
+import '../components/caskf-system-stats.js';
 
 export function styles() {
   const elementStyles = css`
@@ -13,6 +14,6 @@ export function styles() {
 export function render() { 
 return html`
   <div class='l-container u-space-mt--large'>
-    homepage
+    <caskf-system-stats></caskf-system-stats>
   </div>
 `;}

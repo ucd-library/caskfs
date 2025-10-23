@@ -66,7 +66,6 @@ export default class CaskfsFileMetadata extends Mixin(LitElement)
     const res = await this.FsModel.getMetadata(this.directoryPathCtl.pathname);
     if ( res.state === 'loaded' ) {
       this.data = res.payload;
-      console.log('metadata', this.data);
     }
   }
 

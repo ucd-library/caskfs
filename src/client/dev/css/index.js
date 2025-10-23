@@ -9,6 +9,8 @@ import headings from './headings.css';
 import { styles as directoryListStyles } from '../elements/components/caskfs-directory-list.tpl.js';
 import { styles as uploadFormStyles } from '../elements/components/caskfs-upload-form.tpl.js';
 import { styles as deleteFormStyles } from '../elements/components/caskfs-delete-form.tpl.js';
+import { styles as sortFormStyles } from '../elements/components/caskf-sort-form.tpl.js';
+import { styles as systemStatsStyles } from '../elements/components/caskf-system-stats.tpl.js';
 
 function getLitStyles(styles){
   return styles().map(s => s.cssText).join('\n');
@@ -24,6 +26,9 @@ const styles = `
   .small {
     font-size: .875rem;
   }
+  .no-wrap {
+    white-space: nowrap;
+  }
 
   ${sharedStyles}
   ${brandCssProps}
@@ -32,6 +37,8 @@ const styles = `
   ${getLitStyles(directoryListStyles)}
   ${getLitStyles(uploadFormStyles)}
   ${getLitStyles(deleteFormStyles)}
+  ${getLitStyles(sortFormStyles)}
+  ${getLitStyles(systemStatsStyles)}
 `;
 
 let sharedStyleElement = document.createElement('style');

@@ -24,10 +24,6 @@ export default (app) => {
     logger.warn(`Unable to read version from package.json: ${e.message}`);
   }
 
-  const bundle = config.webapp.isDevEnv ? 
-  `<script src='/js/dev/${config.webapp.bundleName}?v=${(new Date()).toISOString()}'></script>` : 
-  `<script src='/js/dist/${config.webapp.bundleName}?v=${bundleVersion}'></script>`; 
-
   const routes = ['directory', 'file-search', 'config', 'file'];
   const appTitle = 'CaskFs';
 
@@ -42,18 +38,27 @@ export default (app) => {
     enable404 : false,
 
     getConfig : async (req, res, next) => {
+      const basePath = req.caskBasePath === '/' ? '' : req.caskBasePath;
       next({
         routes,
-        title: appTitle
+        title: appTitle,
+        basePath
       });
     },
 
     template : (req, res, next) => {
+      console.log('cask base path:', req.caskBasePath);
+      const basepath = req.caskBasePath === '/' ? '' : req.caskBasePath;
+      const bundle = config.webapp.isDevEnv ? 
+        `<script src='${basepath}/js/dev/${config.webapp.bundleName}?v=${(new Date()).toISOString()}'></script>` : 
+        `<script src='${basepath}/js/dist/${config.webapp.bundleName}?v=${bundleVersion}'></script>`;
+      const siteIcon = `<link rel="icon" href="${basepath}/img/site-icon.png">`;
       next({
         title: appTitle,
         bundle,
         loaderHtml,
-        preloadedIcons
+        preloadedIcons,
+        siteIcon
       });
     }
   });
