@@ -61,6 +61,9 @@ class LibraryEnvironment {
       if( env.rootDir ) {
         config.rootDir = env.rootDir;
       }
+      if( env.powerwashEnabled !== undefined ) {
+        config.powerwashEnabled = env.powerwashEnabled;
+      }
     } else if( env.type === 'http' ) {
       for( let key of this.PROPERTIES['http'] ) {
         if( env[key] !== undefined ) {

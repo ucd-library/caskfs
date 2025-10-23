@@ -222,6 +222,7 @@ class Cas {
     let files = await this.dbClient.query(`
       select * from ${config.database.schema}.file_view where hash_value = $1
     `, [hash]);
+    files = files.rows;
 
 
     if (files.length > 0) {
@@ -229,7 +230,7 @@ class Cas {
       fileMetadata.value = files[0].hash_value;
       fileMetadata.metadata = files[0].hash_metadata;
       fileMetadata.files = files.map(row => ({
-        assetId: row.file_id,
+        fileId: row.file_id,
         filename: row.filename,
         directory: row.directory,
         metadata: row.metadata,
@@ -237,15 +238,7 @@ class Cas {
       }));
     }
 
-    let filepath = this._getHashFilePath(hash);
-    let fileParts = path.parse(filepath);
-
-    let metadataFile;
-    if( this.cloudStorageEnabled ) {
-      metadataFile = path.join(fileParts.dir, fileParts.base + '.json');
-    } else {
-      metadataFile = path.join(config.rootDir, fileParts.dir, fileParts.base + '.json');
-    }
+    let metadataFile = this.diskPath(hash)+'.json';
 
     await this.storage.mkdir(path.dirname(metadataFile), {recursive: true});
     await this.storage.writeFile(metadataFile, JSON.stringify(fileMetadata, null, 2));

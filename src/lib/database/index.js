@@ -148,7 +148,7 @@ class Database {
   }
 
   async insertFile(opts) {
-    let {directoryId, filePath, hash, metadata={}, digests={}, size=0, partitionKeys=[], bucket} = opts;
+    let {directoryId, filePath, hash, metadata={}, digests={}, size=0, bucket} = opts;
 
     let fileParts = path.parse(filePath);
     let resp = await this.client.query(`
@@ -159,14 +159,35 @@ class Database {
         p_metadata := $4::JSONB,
         p_digests := $5::JSONB,
         p_size := $6::BIGINT,
-        p_partition_keys := $7::VARCHAR[],
-        p_bucket := $8::VARCHAR,
-        p_last_modified_by := $9::VARCHAR
+        p_bucket := $7::VARCHAR,
+        p_last_modified_by := $8::VARCHAR
       ) AS file_id
     `, [directoryId, fileParts.base, hash, metadata, digests, 
-       size, partitionKeys, bucket, opts.user]);
+       size, bucket, opts.user]);
 
     return resp.rows[0].file_id;
+  }
+
+  /**
+   * @method addPartitionKeyToFile
+   * @description Add a partition key to a file.  This will create the partition key
+   * if it does not already exist.
+   * 
+   * @param {String} fileId 
+   * @param {String} partitionKey 
+   * @param {String} autoPathPartitionName 
+   */
+  async addPartitionKeyToFile(fileId, partitionKey, autoPathPartitionName) {
+    console.log(fileId, partitionKey, autoPathPartitionName);
+    await this.client.query(`
+      select ${this.schema}.add_partition_key($1::UUID, $2::VARCHAR, $3::VARCHAR)
+    `, [fileId, partitionKey, autoPathPartitionName]);
+  }
+
+  async clearFilePartitionKeys(fileId) {
+    await this.client.query(`
+      DELETE FROM ${this.schema}.file_partition_key WHERE file_id = $1
+    `, [fileId]);
   }
 
   /**
@@ -176,7 +197,6 @@ class Database {
    * @param {String} filePath file path to update
    * @param {Object} opts
    * @param {Object} opts.metadata metadata object to set
-   * @param {Array} opts.partitionKeys array of partition keys to set
    *
    * @returns {Promise}
    */
@@ -190,21 +210,6 @@ class Database {
         UPDATE ${this.schema}.file SET metadata = $1::JSONB WHERE directory_id = (select directory_id from directory) AND name = $3
         RETURNING *
       `, [opts.metadata, fileParts.dir, fileParts.base]);
-    }
-
-    if ( opts.partitionKeys ) {
-      if( !Array.isArray(opts.partitionKeys) ) {
-        opts.partitionKeys = [opts.partitionKeys];
-      }
-
-      await this.client.query(`
-        with directory as (
-          select directory_id from ${this.schema}.directory where fullname = $2
-        )
-          UPDATE ${this.schema}.file SET partition_keys = $1::VARCHAR[]
-        WHERE directory_id = (select directory_id from directory) AND name = $3
-        RETURNING *
-        `, [opts.partitionKeys || {}, fileParts.dir, fileParts.base]);
     }
   }
 

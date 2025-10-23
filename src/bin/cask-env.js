@@ -66,6 +66,7 @@ program.command('set <environment>')
   .option('-d, --database <database>', 'postgres database name (for direct-pg type)')
   .option('-r, --root-dir <rootDir>', 'CaskFs root directory (for direct-pg type)')
   .option('-c, --client-env <env>', 'CaskFs client environment (for developers)')
+  .option('--powerwash-enabled <true|false>', 'Enable or disable powerwash functionality')
   .action(async (envName, options) => {
     let config = {};
 
@@ -95,6 +96,10 @@ program.command('set <environment>')
 
     if( options.clientEnv ) {
       config.clientEnv = options.clientEnv;
+    }
+
+    if( options.powerwashEnabled !== undefined ) {
+      config.powerwashEnabled = options.powerwashEnabled === 'true' || options.powerwashEnabled === true;
     }
 
     environment.saveEnv(envName, config);

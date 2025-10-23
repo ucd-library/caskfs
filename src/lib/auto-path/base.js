@@ -1,4 +1,5 @@
 import path from 'path';
+import fs from 'fs/promises';
 
 class AutoPath {
 
@@ -86,16 +87,18 @@ class AutoPath {
 
   async getFromPath(filePath) {
     let fileParts = path.parse(filePath);
-    let dirParts = fileParts.dir.split('/').filter(p => p !== '');
 
     let partitions = [];
+
     (await this.getConfig()).forEach(part => {
+      let dirParts = fileParts.dir.split('/').filter(p => p !== '');
+
       if( part.index === 'string' ) {
         part.index = parseInt(part.index);
       }
 
       if( typeof part.get_value === 'string' ) {
-        part.getValue = eval(part.get_value);
+        part.getValue = new Function('name', 'pathValue', 'regexMatch', part.get_value);
       }
 
       if( part.index && dirParts.length >= part.index ) {
@@ -112,13 +115,13 @@ class AutoPath {
         let regexMatch = dirParts[0].match(part.filter_regex);
 
         if( part.getValue ) {
-          partitions.push(part.getValue(name, pathValue, regexMatch));
+          partitions.push({name, value: part.getValue(name, pathValue, regexMatch)});
           return;
         }
 
-        partitions.push(this.getValue(
+        partitions.push({name, value: this.getValue(
           name, pathValue, regexMatch
-        ));
+        )});
       }
     });
 

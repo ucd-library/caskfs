@@ -2,6 +2,7 @@ import { Client, Pool } from 'pg'
 import fs from 'fs/promises';
 import config from '../config.js';
 import path from 'path';
+import Cursor from 'pg-cursor';
 
 let __dirname = path.dirname(new URL(import.meta.url).pathname);
 
@@ -87,6 +88,21 @@ class PgClient {
   async query(text, params) {
     await this.connect();
     return this.client.query(text, params);
+  }
+
+  async *batch(text, params=[], size=100) {
+    await this.connect();
+      const cursor = this.client.query(new Cursor(text, params));
+
+    let rows;
+    do {
+      rows = await cursor.read(size);
+      if (rows.length > 0) {
+        yield rows;
+      }
+    } while (rows.length > 0);
+
+    await cursor.close();
   }
 
   async end() {

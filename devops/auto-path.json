@@ -1,0 +1,13 @@
+{
+  "partition": [
+    {
+      "name": "env",
+      "filterRegex": "(dev|prod)"
+    },
+    {
+      "name": "collection",
+      "filterRegex": "dams-(.*)-metadata",
+      "getValue" : "return 'collection-'+regexMatch[1]"
+    }
+  ]
+}
