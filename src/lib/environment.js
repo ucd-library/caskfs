@@ -9,6 +9,11 @@ class LibraryEnvironment {
     this.TYPES = ['direct-pg', 'http'];
     this.environmentFile = opts.environmentFile || path.join(os.homedir(), '.caskfs', 'environments.json');
     this.data = {};
+
+    this.PROPERTIES = {
+      http : ['host'],
+      'direct-pg' : ['host', 'port', 'user', 'password', 'database']
+    };
   }
 
   loadEnvironments() {
@@ -48,18 +53,37 @@ class LibraryEnvironment {
     }
 
     if( env.type === 'direct-pg' ) {
-      for( let key in env ) {
-        if( key === 'type' ) continue;
-        config.postgres[key] = env[key];
+      for( let key of this.PROPERTIES['direct-pg'] ) {
+        if( env[key] !== undefined ) {
+          config.postgres[key] = env[key];
+        }
+      }
+      if( env.rootDir ) {
+        config.rootDir = env.rootDir;
+      }
+      if( env.powerwashEnabled !== undefined ) {
+        config.powerwashEnabled = env.powerwashEnabled;
       }
     } else if( env.type === 'http' ) {
-      for( let key in env ) {
-        if( key === 'type' ) continue;
-        config.webapp[key] = env[key];
+      for( let key of this.PROPERTIES['http'] ) {
+        if( env[key] !== undefined ) {
+          config.webapp[key] = env[key];
+        }
       }
     }
 
     return env;
+  }
+
+  removeEnv(name) {
+    this.loadEnvironments();
+    if( this.data.environments[name] ) {
+      delete this.data.environments[name];
+      if( this.data.defaultEnvironment === name ) {
+        this.data.defaultEnvironment = null;
+      }
+      this.saveEnvironments(this.data);
+    }
   }
 
   saveEnv(name, env) {

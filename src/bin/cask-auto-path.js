@@ -1,7 +1,9 @@
 import { Command } from 'commander';
 import CaskFs from '../index.js';
+import {optsWrapper, handleGlobalOpts} from './opts-wrapper.js';
 
 const program = new Command();
+optsWrapper(program);
 
 const types = ['bucket', 'partition'];
 
@@ -9,6 +11,8 @@ program
   .command('test <type> <file-path>')
   .description(`Test auto-path extraction for a given file path. Type is either; ${types.join(', ')}`)
   .action(async (type, filePath) => {
+    handleGlobalOpts({});
+
     const cask = new CaskFs();
     if (!types.includes(type)) {
       console.error(`Invalid type "${type}". Must be one of: ${types.join(', ')}`);
@@ -16,6 +20,16 @@ program
       return;
     }
     console.log(await cask.autoPath[type].getFromPath(filePath));
+    cask.dbClient.end();
+  });
+program
+  .command('load <file-path>')
+  .description('Load auto-path rules from a JSON file')
+  .action(async (filePath) => {
+    handleGlobalOpts({});
+
+    const cask = new CaskFs();
+    await cask.loadAutoPathRulesFromFile(filePath);
     cask.dbClient.end();
   });
 
@@ -28,6 +42,7 @@ program
   .option('-v, --get-value <js>', 'JavaScript function to transform the extracted value. Function signature: (name, pathValue, regexMatch) => string')
   .description('Set an auto-partition rule for extracting partition keys from file paths')
   .action(async (type, name, options) => {
+    handleGlobalOpts(options);
 
     if( !options.position && !options.filterRegex ) {
       console.error('Either --position or --filter-regex is required');
@@ -61,6 +76,8 @@ program
   .argument('<name>', 'Name of the auto-path rule to remove')
   .description('Remove an auto-path rule')
   .action(async (type, name) => {
+    handleGlobalOpts({});
+
     const cask = new CaskFs();
     await cask.autoPath[type].remove(name);
     cask.dbClient.end();
@@ -70,6 +87,8 @@ program
   .command('list <type>')
   .description(`List all auto-path rules of a given type. Type is either; ${types.join(', ')}`)
   .action(async (type) => {
+    handleGlobalOpts({});
+
     const cask = new CaskFs();
     if (!types.includes(type)) {
       console.error(`Invalid type "${type}". Must be one of: ${types.join(', ')}`);
