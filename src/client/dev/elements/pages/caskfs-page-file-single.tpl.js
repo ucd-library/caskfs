@@ -1,5 +1,7 @@
 import { html, css } from 'lit';
 
+import appPathUtils from '../../utils/appPathUtils.js';
+
 import '../components/caskfs-file-metadata.js';
 import '../components/caskfs-fs-breadcrumbs.js';
 
@@ -29,9 +31,9 @@ return html`
               <cork-icon-button
                 icon="fas.arrow-up-right-from-square"
                 basic
-                title="View Linked Data Representation"
-                link-aria-label="View Linked Data Representation"
-                href="/ld${this.directoryPathCtl.pathname}"
+                title="View Linked Data Relationships"
+                link-aria-label="View Linked Data Relationships"
+                href=${appPathUtils.fullPath(`/rel${this.directoryPathCtl.pathname}`)}
               ></cork-icon-button>
             </div>
           </caskfs-section-header>

@@ -17,6 +17,7 @@ import './pages/caskfs-page-directory.js';
 import './pages/caskfs-page-file-search.js';
 import './pages/caskfs-page-partitions.js';
 import './pages/caskfs-page-file-single.js';
+import './pages/caskfs-page-relationships.js';
 
 // app global components
 import './components/cork-app-error.js';
@@ -26,13 +27,14 @@ import './components/cork-app-dialog-modal.js';
 import './components/cork-toggle-switch.js';
 import './components/caskfs-section-header.js';
 
-// icon elements
+// icon elements and model
 import '@ucd-lib/cork-icon';
 
 // cork models
 import '../../../api/models/AppStateModel.js';
 import '../../../api/models/DirectoryModel.js';
 import '../../../api/models/FsModel.js';
+import '../../../api/models/LdModel.js';
 import '../../../api/models/SystemModel.js';
 Registry.ready();
 
