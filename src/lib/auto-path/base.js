@@ -75,7 +75,9 @@ class AutoPath {
       throw new Error('Position is required and must be greater than 0');
     }
 
-    await this.dbClient.query(`
+    let dbClient = opts.dbClient || this.dbClient;
+
+    await dbClient.query(`
       INSERT INTO ${this.schema}.${this.table} (name, index, filter_regex, get_value)
       VALUES ($1, $2, $3, $4)
       ON CONFLICT (name) DO UPDATE SET 
@@ -86,46 +88,56 @@ class AutoPath {
   }
 
   async getFromPath(filePath) {
-    let fileParts = path.parse(filePath);
-
     let partitions = [];
 
-    (await this.getConfig()).forEach(part => {
-      let dirParts = fileParts.dir.split('/').filter(p => p !== '');
-
-      if( part.index === 'string' ) {
-        part.index = parseInt(part.index);
-      }
-
-      if( typeof part.get_value === 'string' ) {
-        part.getValue = new Function('name', 'pathValue', 'regexMatch', part.get_value);
-      }
-
-      if( part.index && dirParts.length >= part.index ) {
-        dirParts = [dirParts[part.index - 1]];
-      }
-
-      if( part.filter_regex ) {
-        dirParts = dirParts.filter(p => part.filter_regex.test(p));
-      }
-
-      if( dirParts.length > 0 ) {
-        let name = part.name;
-        let pathValue = dirParts[0];
-        let regexMatch = dirParts[0].match(part.filter_regex);
-
-        if( part.getValue ) {
-          partitions.push({name, value: part.getValue(name, pathValue, regexMatch)});
-          return;
-        }
-
-        partitions.push({name, value: this.getValue(
-          name, pathValue, regexMatch
-        )});
-      }
-    });
+    await this.getConfig();
+    for( let name in this.config ) {
+      let result = this.getRuleFromPath(filePath, name);
+      if( result ) partitions.push(result);
+    }
 
     return partitions;
+  }
+
+  getRuleFromPath(filePath, name) {
+    let fileParts = path.parse(filePath);
+    let rule = this.config.find(r => r.name === name);
+    if( !rule ) {
+      throw new Error(`Rule not found: ${name}`);
+    }
+
+    let dirParts = fileParts.dir.split('/').filter(p => p !== '');
+
+    if( rule.index === 'string' ) {
+      rule.index = parseInt(rule.index);
+    }
+
+    if( typeof rule.get_value === 'string' ) {
+      rule.getValue = new Function('name', 'pathValue', 'regexMatch', rule.get_value);
+    }
+
+    if( rule.index && dirParts.length >= rule.index ) {
+      dirParts = [dirParts[rule.index - 1]];
+    }
+
+    if( rule.filter_regex ) {
+      dirParts = dirParts.filter(p => rule.filter_regex.test(p));
+    }
+
+    if( dirParts.length > 0 ) {
+      let name = rule.name;
+      let pathValue = dirParts[0];
+      let regexMatch = dirParts[0].match(rule.filter_regex);
+
+      if( rule.getValue ) {
+        return {name, value: rule.getValue(name, pathValue, regexMatch)};
+      }
+
+      return {name, value: this.getValue(
+        name, pathValue, regexMatch
+      )};
+    }
+    return null;
   }
 
   getValue(name, pathValue, regexMatch) {
