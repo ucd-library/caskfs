@@ -42,7 +42,8 @@ return html`
       </div>
       <div class="l-sidebar-second">
         <button class="btn btn--alt3 btn--block u-space-mb" @click=${this._onDeleteRequest}>Delete File</button>
-        <a class="btn btn--alt3 btn--block" href=${this.FsModel.fileDownloadUrl(this.directoryPathCtl.pathname)} download>Download File</a>
+        <a class="btn btn--alt3 btn--block u-space-mb" href=${this.FsModel.fileDownloadUrl(this.directoryPathCtl.pathname)} download>Download File</a>
+        <button class="btn btn--alt3 btn--block" @click=${this._onCopyPathClick}>Copy File System Path</button>
       </div>
     </div>
   </div>

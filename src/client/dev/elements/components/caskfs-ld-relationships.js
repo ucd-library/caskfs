@@ -65,12 +65,18 @@ export default class CaskfsLdRelationships extends Mixin(LitElement)
       nodes.forEach(node => {
         p.nodes.push({
           uri: node,
-          lastSegment: node.split('/').pop()
+          lastSegment: node.split('/').pop(),
+          ns: node.split('/').slice(0, -1).join('/')
         });
       });
       return p;
     });
     
+  }
+
+  _onCopyFilePathClick(node) {
+    navigator.clipboard.writeText(node.uri);
+    this.AppStateModel.showToast({text: 'File path copied to clipboard', type: 'success'});
   }
 
 }

@@ -39,6 +39,11 @@ export default class CaskfsPageFileSingle extends Mixin(LitElement)
     });
   }
 
+  _onCopyPathClick() {
+    navigator.clipboard.writeText(this.directoryPathCtl.pathname);
+    this.AppStateModel.showToast({text: 'File system path copied to clipboard', type: 'success'});
+  }
+
 }
 
 customElements.define('caskfs-page-file-single', CaskfsPageFileSingle);

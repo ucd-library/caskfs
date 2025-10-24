@@ -73,5 +73,5 @@ export function render() {
         <slot name="actions"></slot>
       </div>
     </div>
-    <div class="separator"></div>
+    <div class="separator" ?hidden=${this.hideSeparator}></div>
   `;}

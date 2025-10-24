@@ -9,6 +9,7 @@ export default class CaskfsSectionHeader extends LitElement {
       icon: { type: String },
       brandColor: { type: String, attribute: 'brand-color' },
       headingStyle: { type: String, attribute: 'heading-style' },
+      hideSeparator: { type: Boolean, attribute: 'hide-separator' },
       _headingClass: { state: true }
     }
   }
@@ -41,6 +42,8 @@ export default class CaskfsSectionHeader extends LitElement {
     this.text = '';
     this.icon = '';
     this.brandColor = '';
+    this.headingStyle = '';
+    this.hideSeparator = false;
   }
 
 }
