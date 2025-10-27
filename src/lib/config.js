@@ -66,7 +66,7 @@ const config = {
   },
 
   git : {
-    metadataProperties : ['repo', 'branch', 'commit', 'tag', 'lastCommitTime']
+    metadataProperties : ['remote', 'branch', 'commit', 'tag', 'lastCommitTime']
   }
 
 }

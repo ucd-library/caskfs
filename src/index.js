@@ -193,11 +193,11 @@ class CaskFs {
           metadata.mimeType === this.turtleMimeType ||
           context.readPath?.endsWith(this.jsonldExt) ) {
         this.logger.debug('Detected RDF file based on mime type or file extension', context.logSignal);
-        metadata.resource_type = 'rdf';
+        metadata.resourceType = 'rdf';
         context.data.actions.detectedLd = true;
       } else {
         this.logger.debug('Detected generic file based on mime type or file extension', context.logSignal);
-        metadata.resource_type = 'file';
+        metadata.resourceType = 'file';
       }
 
       // parse out file parts
