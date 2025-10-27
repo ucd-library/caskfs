@@ -103,6 +103,7 @@ class CaskFs {
    * @param {String} context.contentType same as mimeType, for compatibility with other systems
    * @param {String} context.bucket GCS bucket to use if using GCS storage backend
    * @param {Array} context.partitionKeys array of partition keys to associate with the file
+   * @param {Object} context.git git metadata object with repo, branch, commit properties
    *
    * @returns {Object} result object with copied (boolean) and fileId (string)
    */
@@ -217,6 +218,9 @@ class CaskFs {
         if( config.cloudStorage.enabled ) {
           bucket = context.data.bucket || autoPathKeys.bucket?.value || config.cloudStorage.defaultBucket;
         }
+
+        // add git metadata if provided
+        this._applyGitPatch(context.data.git, metadata);
 
         await dbClient.insertFile({
           directoryId,
@@ -420,12 +424,20 @@ class CaskFs {
       let currentPartitionKeys = currentMetadata.partition_keys;
       delete currentMetadata.partition_keys;
 
+      // strip git- properties from current metadata for comparison
+      for( let key of config.git.metadataProperties ) {
+        delete currentMetadata[`git-${key}`];
+      }
+
       if( JSON.stringify(currentMetadata.metadata) === JSON.stringify(context.data.metadata) &&
           this._arrayEquals(currentPartitionKeys, keySet) ) {
         this.logger.info('No changes to metadata or partition keys, skipping update', context.logSignal);
         return {metadata: currentMetadata, updated: false};
       }
     }
+
+    // now apply any git metadata patches after checking for changes
+    this._applyGitPatch(context.data.git, context.data.metadata);
 
     this.logger.info('Updating existing file metadata', context.logSignal);
     await dbClient.updateFileMetadata(filePath, context.data);
@@ -1030,7 +1042,7 @@ class CaskFs {
     for( let type in this.autoPath ) {
       if( !data[type] ) continue;
       for( let rule of data[type] ) {
-        this.logger.info(`Setting auto-path rule for type ${type}: ${JSON.stringify(rule)}`);
+        this.logger.info(`Setting auto-path rule for type ${type}`);
         await this.autoPath[type].set(rule);
       }
     }
@@ -1255,6 +1267,36 @@ class CaskFs {
       if( !arr2.includes(val) ) return false;
     }
     return true;
+  }
+
+  /**
+   * @method _applyGitPatch
+   * @description Apply git metadata patch to existing metadata object.  Removes any existing git- properties
+   * before applying the patch.  Only git values in 'patch' object that are defined and non-null will be applied.
+   * 
+   * @param {Object} patch key/value pairs to patch for allowed git metadata properties 
+   * @param {Object} metadata main metadata object to apply the patch to
+   * 
+   * @returns {Object} updated metadata object
+   */
+  _applyGitPatch(patch={}, metadata={}) {
+    if( !patch ) patch = {};
+    if( !metadata ) metadata = {};
+
+    // always remove all git- properties first
+    for( let key in metadata ) {
+      if( key.startsWith('git-') ) {
+        delete metadata[key];
+      }
+    }
+
+    // apply the patch
+    for( let key of config.git.metadataProperties ) {
+      if( patch[key] === undefined || patch[key] === null ) continue;
+      metadata[`git-${key}`] = patch[key];
+    }
+
+    return metadata;
   }
 
 

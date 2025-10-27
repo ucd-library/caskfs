@@ -63,6 +63,10 @@ const config = {
 
   sync : {
     maxFilesPerBatch : parseInt(env.CASKFS_SYNC_MAX_FILES_PER_BATCH) || 1000
+  },
+
+  git : {
+    metadataProperties : ['repo', 'branch', 'commit', 'tag', 'lastCommitTime']
   }
 
 }

@@ -260,7 +260,7 @@ $$ LANGUAGE plpgsql;
 CREATE TABLE IF NOT EXISTS caskfs.partition_key (
     partition_key_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     value VARCHAR(256) NOT NULL UNIQUE,
-    auto_path_partition_id UUID REFERENCES caskfs.auto_path_partition(auto_path_partition_id),
+    auto_path_partition_id UUID REFERENCES caskfs.auto_path_partition(auto_path_partition_id) ON DELETE CASCADE,
     created TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_partition_key_value ON caskfs.partition_key(value);
@@ -333,6 +333,20 @@ BEGIN
         UPDATE caskfs.partition_key
         SET auto_path_partition_id = v_auto_path_partition_id
         WHERE partition_key_id = v_partition_key_id;
+    END IF;
+
+    -- remove old association if auto_path_partition_id has changed
+    IF v_auto_path_partition_id IS NOT NULL THEN
+        WITH old_keys AS (
+            SELECT fpk.file_partition_key_id
+            FROM caskfs.file_partition_key fpk
+            JOIN caskfs.partition_key pk ON fpk.partition_key_id = pk.partition_key_id
+            WHERE fpk.file_id = p_file_id
+              AND pk.auto_path_partition_id = v_auto_path_partition_id
+              AND pk.value != p_partition_key_value
+        )
+        DELETE FROM caskfs.file_partition_key
+        WHERE file_partition_key_id IN (SELECT file_partition_key_id FROM old_keys);
     END IF;
 
     INSERT INTO caskfs.file_partition_key (file_id, partition_key_id)
