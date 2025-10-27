@@ -406,11 +406,12 @@ class Cas {
       digests[algo] = hash;
     }
 
-    let stream = fs.createReadStream(filePath).on('data', (chunk) => {
-      for( let algo of config.digests ) {
-        digests[algo].update(chunk);
-      }
-    });
+    let stream = fs.createReadStream(filePath, { highWaterMark: 8 * 1024 * 1024 })
+      .on('data', (chunk) => {
+        for( let algo of digestsAlgo ) {
+          digests[algo].update(chunk);
+        }
+      });
 
     let prom = new Promise((resolve, reject) => {
       stream.on('end', () => {

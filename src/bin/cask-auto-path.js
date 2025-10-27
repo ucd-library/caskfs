@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import CaskFs from '../index.js';
 import {optsWrapper, handleGlobalOpts} from './opts-wrapper.js';
+import cliProgress from 'cli-progress';
 
 const program = new Command();
 optsWrapper(program);
@@ -56,8 +57,6 @@ program
       getValue: options.getValue
     };
 
-    console.log('Setting auto-path rule:', options);
-
     const cask = new CaskFs();
 
     if( Object.keys(cask.autoPath).indexOf(type) === -1 ) {
@@ -66,8 +65,24 @@ program
       return;
     }
 
+    let pbar; 
+    opts.cb = ({total, completed}) => {
+      if( !pbar ) {
+        pbar = new cliProgress.Bar(
+          {etaBuffer: 50}, 
+          cliProgress.Presets.shades_classic
+        );
+        pbar.start(total, completed);
+        return;
+      }
+
+      pbar.update(completed);
+    };
+
     await cask.autoPath[type].set(opts);
-    cask.dbClient.end();
+    await cask.dbClient.end();
+
+    console.log('Auto-path rule set successfully');
   });
 
 program
@@ -77,6 +92,12 @@ program
   .description('Remove an auto-path rule')
   .action(async (type, name) => {
     handleGlobalOpts({});
+
+    if (!types.includes(type)) {
+      console.error(`Invalid type "${type}". Must be one of: ${types.join(', ')}`);
+      cask.dbClient.end();
+      return;
+    }
 
     const cask = new CaskFs();
     await cask.autoPath[type].remove(name);

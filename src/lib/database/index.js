@@ -6,6 +6,7 @@ import acl from '../acl.js';
 import { getLogger } from '../logger.js';
 import { MissingResourceError } from '../errors.js';
 
+
 class Database {
 
   constructor(opts={}) {
@@ -178,7 +179,6 @@ class Database {
    * @param {String} autoPathPartitionName 
    */
   async addPartitionKeyToFile(fileId, partitionKey, autoPathPartitionName) {
-    console.log(fileId, partitionKey, autoPathPartitionName);
     await this.client.query(`
       select ${this.schema}.add_partition_key($1::UUID, $2::VARCHAR, $3::VARCHAR)
     `, [fileId, partitionKey, autoPathPartitionName]);

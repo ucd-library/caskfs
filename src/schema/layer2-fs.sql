@@ -260,7 +260,7 @@ $$ LANGUAGE plpgsql;
 CREATE TABLE IF NOT EXISTS caskfs.partition_key (
     partition_key_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     value VARCHAR(256) NOT NULL UNIQUE,
-    auto_path_partition_id UUID REFERENCES caskfs.auto_path_partition(auto_path_partition_id),
+    auto_path_partition_id UUID REFERENCES caskfs.auto_path_partition(auto_path_partition_id) ON DELETE CASCADE,
     created TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_partition_key_value ON caskfs.partition_key(value);

@@ -17,6 +17,8 @@ class AutoPath {
     if( !opts.table ) {
       throw new Error('Table name is required');
     }
+
+    this.opts = opts;
     this.table = opts.table;
   }
 
@@ -45,7 +47,7 @@ class AutoPath {
       throw new Error('Name is required');
     }
 
-    await this.dbClient.query(`
+    return this.dbClient.query(`
       DELETE FROM ${this.schema}.${this.table} WHERE name = $1
     `, [name]);
   }
@@ -62,6 +64,19 @@ class AutoPath {
     return resp.rows.length > 0;
   }
 
+  /**
+   * @method set
+   * @description Set an auto-path rule
+   *
+   * @param {Object} opts
+   * @param {String} opts.name Name of the rule
+   * @param {Number} opts.index Position in the path to extract the value from (1-based)
+   * @param {String} opts.filterRegex Regular expression to filter path segments
+   * @param {String} opts.getValue JavaScript function to transform the extracted value. 
+   *                                Function signature: (name, pathValue, regexMatch) => string
+   * 
+   * @returns {Boolean} true if the rule was set, false if no changes were made
+   */
   async set(opts={}) {
     if( !opts.name ) {
       throw new Error('Name is required');
@@ -77,6 +92,29 @@ class AutoPath {
 
     let dbClient = opts.dbClient || this.dbClient;
 
+    let currentDefinition = await dbClient.query(`
+      SELECT * FROM ${this.schema}.${this.table} WHERE name = $1
+    `, [opts.name]);
+
+    if( currentDefinition.rows.length > 0 ) {
+      currentDefinition = currentDefinition.rows[0];
+    } else {
+      currentDefinition = {};
+    }
+
+    // cleanup for comparison
+    this._undefinedToNull(currentDefinition);
+    this._undefinedToNull(opts);
+
+    // check if there are any changes, if not, return false
+    // this is important as every file path has to be processed for partition keys
+    if( currentDefinition.get_value === opts.getValue  &&
+        currentDefinition.filter_regex === opts.filterRegex &&
+        currentDefinition.index+'' === opts.index+'' ) {
+      // no changes
+      return false
+    }
+
     await dbClient.query(`
       INSERT INTO ${this.schema}.${this.table} (name, index, filter_regex, get_value)
       VALUES ($1, $2, $3, $4)
@@ -85,14 +123,15 @@ class AutoPath {
         filter_regex = EXCLUDED.filter_regex, 
         get_value = EXCLUDED.get_value
     `, [opts.name, opts.index || null, opts.filterRegex ? opts.filterRegex : null, opts.getValue ? opts.getValue : null]);
+    return true;
   }
 
   async getFromPath(filePath) {
     let partitions = [];
 
     await this.getConfig();
-    for( let name in this.config ) {
-      let result = this.getRuleFromPath(filePath, name);
+    for( let config of this.config ) {
+      let result = this.getRuleFromPath(filePath, config.name);
       if( result ) partitions.push(result);
     }
 
@@ -142,6 +181,14 @@ class AutoPath {
 
   getValue(name, pathValue, regexMatch) {
     throw new Error('Not implemented');
+  }
+
+  _undefinedToNull(obj) {
+    for( let key of Object.keys(obj) ) {
+      if( obj[key] === undefined ) {
+        obj[key] = null;
+      }
+    }
   }
 
 }

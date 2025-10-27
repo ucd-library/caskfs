@@ -9,7 +9,7 @@ import {silenceLoggers} from '../lib/logger.js';
 import path from 'path';
 import os from 'os';
 import config from '../lib/config.js';
-import environment from '../lib/environment.js';
+import git from '../lib/git.js';
 import {parse as parseYaml} from 'yaml';
 import {optsWrapper, handleGlobalOpts} from './opts-wrapper.js';
 import cliProgress from 'cli-progress';
@@ -69,6 +69,7 @@ program
       if( !path.isAbsolute(opts.readPath) ) {
         opts.readPath = path.resolve(process.cwd(), opts.readPath);
       }
+      opts.git = await git.info(opts.readPath);
     }
 
     let partitionKeys = (options.partitionKeys ? options.partitionKeys.split(',') : [])
@@ -137,7 +138,8 @@ program
         requestor: options.requestor,
         bucket: options.bucket,
         readPath: sourcePath,
-        replace: options.replace
+        replace: options.replace,
+        git: await git.info(sourcePath)
       });
       
       location = await cask.getCasLocation(context);
@@ -177,7 +179,8 @@ program
         requestor: options.requestor,
         bucket: options.bucket,
         readPath: file,
-        replace: options.replace
+        replace: options.replace,
+        git: await git.info(file)
       });
 
       location = await cask.getCasLocation(context);
