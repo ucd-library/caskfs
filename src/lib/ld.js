@@ -159,7 +159,7 @@ class Rdf {
     let data = '';
     let nquads, parserMimeType;
 
-    if( file.metadata.resource_type === 'rdf' ) {
+    if( file.metadata.resourceType === 'rdf' ) {
       data = await fsp.readFile(opts.filepath || filepath, {encoding: 'utf8'});
 
       if( file.metadata.mimeType === this.jsonLdMimeType ) {
@@ -218,7 +218,7 @@ class Rdf {
       ]
     }
 
-    if( file?.metadata?.resource_type === 'rdf' ) {
+    if( file?.metadata?.resourceType === 'rdf' ) {
       caskFileNode['@graph'][0]['@type'].push('http://library.ucdavis.edu/cask#RDFSource');
     }
     if( file.metadata.mimeType ) {
@@ -384,7 +384,7 @@ class Rdf {
     return { 
       source : {
         file: path.join(metadata.directory, metadata.filename),
-        resourceType : metadata.metadata.resource_type,
+        resourceType : metadata.metadata.resourceType,
         mimeType: metadata.metadata.mimeType,
         partitionKeys: metadata.partition_keys
       },
