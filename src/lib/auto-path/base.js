@@ -1,5 +1,5 @@
 import path from 'path';
-import fs from 'fs/promises';
+import { getLogger } from '../logger.js';
 
 class AutoPath {
 
@@ -17,6 +17,8 @@ class AutoPath {
     if( !opts.table ) {
       throw new Error('Table name is required');
     }
+
+    this.logger = getLogger(`AutoPath:${opts.table}`);
 
     this.opts = opts;
     this.table = opts.table;
@@ -90,6 +92,10 @@ class AutoPath {
       throw new Error('Position is required and must be greater than 0');
     }
 
+    if( opts.filterRegex && typeof opts.filterRegex !== 'string' ) {
+      opts.filterRegex = opts.filterRegex.toString().replace(/^\/|\/$/g, '');
+    }
+
     let dbClient = opts.dbClient || this.dbClient;
 
     let currentDefinition = await dbClient.query(`
@@ -102,16 +108,11 @@ class AutoPath {
       currentDefinition = {};
     }
 
-    // cleanup for comparison
-    this._undefinedToNull(currentDefinition);
-    this._undefinedToNull(opts);
-
     // check if there are any changes, if not, return false
     // this is important as every file path has to be processed for partition keys
-    if( currentDefinition.get_value === opts.getValue  &&
-        currentDefinition.filter_regex === opts.filterRegex &&
-        currentDefinition.index+'' === opts.index+'' ) {
+    if( this._isEqual(currentDefinition, opts) ) {
       // no changes
+      this.logger.info('No changes to auto-path rule: ' + opts.name);
       return false
     }
 
@@ -183,12 +184,41 @@ class AutoPath {
     throw new Error('Not implemented');
   }
 
-  _undefinedToNull(obj) {
+  _cleanForCompare(obj) {
     for( let key of Object.keys(obj) ) {
-      if( obj[key] === undefined ) {
-        obj[key] = null;
+      if( key === 'auto_path_partition_id' ) {
+        delete obj[key];
+        continue;
+      }
+      if( obj[key] === undefined || obj[key] === null ) {
+        delete obj[key];
+        continue;
+      }
+      if( typeof obj[key] === 'number' ) {
+        obj[key] = obj[key] + '';
+      }
+      if( key === 'filter_regex' ) {
+        obj.filterRegex = obj.filter_regex;
+        delete obj.filter_regex;
       }
     }
+    return obj;
+  }
+
+  _isEqual(obj1, obj2) {
+    obj1 = this._cleanForCompare(Object.assign({}, obj1));
+    obj2 = this._cleanForCompare(Object.assign({}, obj2));
+
+    if( Object.keys(obj1).length !== Object.keys(obj2).length ) {
+      return false;
+    }
+
+    for( let key of Object.keys(obj1) ) {
+      if( obj1[key] !== obj2[key] ) {
+        return false;
+      }
+    }
+    return true;
   }
 
 }

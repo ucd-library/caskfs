@@ -159,7 +159,7 @@ class Rdf {
     let data = '';
     let nquads, parserMimeType;
 
-    if( file.metadata.resourceType === 'rdf' ) {
+    if( file.metadata.resource_type === 'rdf' ) {
       data = await fsp.readFile(opts.filepath || filepath, {encoding: 'utf8'});
 
       if( file.metadata.mimeType === this.jsonLdMimeType ) {
@@ -218,7 +218,7 @@ class Rdf {
       ]
     }
 
-    if( file?.metadata?.resourceType === 'rdf' ) {
+    if( file?.metadata?.resource_type === 'rdf' ) {
       caskFileNode['@graph'][0]['@type'].push('http://library.ucdavis.edu/cask#RDFSource');
     }
     if( file.metadata.mimeType ) {
@@ -384,7 +384,7 @@ class Rdf {
     return { 
       source : {
         file: path.join(metadata.directory, metadata.filename),
-        resourceType : metadata.metadata.resourceType,
+        resourceType : metadata.metadata.resource_type,
         mimeType: metadata.metadata.mimeType,
         partitionKeys: metadata.partition_keys
       },
@@ -446,7 +446,7 @@ class Rdf {
       if( !Array.isArray(opts.predicate) ) {
         opts.predicate = [opts.predicate];
       }
-      where.push(`source_view.predicate @> $${args.length + 1}::VARCHAR(256)[]`);
+      where.push(`source_view.predicate = ANY($${args.length + 1}::VARCHAR(256)[])`);
       args.push(opts.predicate);
     }
 
@@ -579,7 +579,7 @@ class Rdf {
       if( !Array.isArray(opts.predicate) ) {
         opts.predicate = [opts.predicate];
       }
-      where.push(`ref_by_view.predicate @> $${args.length + 1}::VARCHAR(256)[]`);
+      where.push(`ref_by_view.predicate = ANY($${args.length + 1}::VARCHAR(256)[])`);
       args.push(opts.predicate);
     }
 
