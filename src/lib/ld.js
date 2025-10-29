@@ -246,110 +246,137 @@ class Rdf {
       quads = caskQuads;
     }
 
-    const literalQuads = quads
-      .filter(q => q.subject.termType === 'NamedNode' && q.predicate.termType === 'NamedNode' && q.object.termType !== 'NamedNode')
+    quads = quads
       .map(q => ({
         graph: this._resolveIdPath(q.graph.value),
         subject: this._resolveIdPath(q.subject.value, filepath),
         predicate: q.predicate.value,
-        object: q.object.value,
-        quad : q
+        object: q.object.termType === 'NamedNode' ? this._resolveIdPath(q.object.value, filepath) : null,
+        quad: q
       }));
 
-    const nodeData = {};
+    let typeQuads = quads.filter(q => q.predicate === this.TYPE_PREDICATE);
+    let otherQuads = quads.filter(q => q.predicate !== this.TYPE_PREDICATE);
 
-    for( let lq of literalQuads ) {
-      if( !nodeData[lq.graph || this.defaultGraph] ) {
-        nodeData[lq.graph || this.defaultGraph] = {};
-      }
-      let graphNode = nodeData[lq.graph || this.defaultGraph];
+    // const literalQuads = quads
+    //   .filter(q => q.subject.termType === 'NamedNode' && q.predicate.termType === 'NamedNode' && q.object.termType !== 'NamedNode')
+    //   .map(q => ({
+    //     graph: this._resolveIdPath(q.graph.value),
+    //     subject: this._resolveIdPath(q.subject.value, filepath),
+    //     predicate: q.predicate.value,
+    //     object: q.object.value,
+    //     quad : q
+    //   }));
 
-      if( !graphNode[lq.subject] ) {
-        graphNode[lq.subject] = {
-          data : {'@id': lq.subject},
-          context : {},
-          quads: []
-        }
-      }
-      let node = graphNode[lq.subject];
+    // const nodeData = {};
 
-      let prop = this._getContextProperty(lq.predicate);
-      node.context[prop.property] = {'@id': prop.uri};
-      if( !node.data[prop.property] ) {
-        node.data[prop.property] = lq.object;
-      } else if( Array.isArray(node.data[prop.property]) ) {
-        node.data[prop.property].push(lq.object);
-      } else {
-        node.data[prop.property] = [node.data[prop.property], lq.object];
-      }
+    // for( let lq of literalQuads ) {
+    //   if( !nodeData[lq.graph || this.defaultGraph] ) {
+    //     nodeData[lq.graph || this.defaultGraph] = {};
+    //   }
+    //   let graphNode = nodeData[lq.graph || this.defaultGraph];
 
-      node.quads.push(lq.quad);
-    }
+    //   if( !graphNode[lq.subject] ) {
+    //     graphNode[lq.subject] = {
+    //       data : {'@id': lq.subject},
+    //       context : {},
+    //       quads: []
+    //     }
+    //   }
+    //   let node = graphNode[lq.subject];
 
-    // parse the nquads into quads
-    const namedQuads = quads
-      .filter(q => q.subject.termType === 'NamedNode' && q.predicate.termType === 'NamedNode' && q.object.termType === 'NamedNode')
-      .map(q => {
-        return {
-          graph: this._resolveIdPath(q.graph.value),
-          subject: this._resolveIdPath(q.subject.value, filepath),
-          predicate: this._resolveIdPath(q.predicate.value),
-          object: this._resolveIdPath(q.object.value, filepath),
-          quad: q
-        };
-      });
+    //   let prop = this._getContextProperty(lq.predicate);
+    //   node.context[prop.property] = {'@id': prop.uri};
+    //   if( !node.data[prop.property] ) {
+    //     node.data[prop.property] = lq.object;
+    //   } else if( Array.isArray(node.data[prop.property]) ) {
+    //     node.data[prop.property].push(lq.object);
+    //   } else {
+    //     node.data[prop.property] = [node.data[prop.property], lq.object];
+    //   }
 
-    // TODO filter out RDF type triples and store in rdf_types table
-    let typeQuads = namedQuads.filter(q => q.predicate === this.TYPE_PREDICATE);
-    let otherQuads = namedQuads.filter(q => q.predicate !== this.TYPE_PREDICATE);
+    //   node.quads.push(lq.quad);
+    // }
 
-    // append types to the nodes themselves
-    if( typeQuads.length > 0 ) {
-      for( let tq of typeQuads ) {
-        if( !nodeData[tq.graph || this.defaultGraph] ) {
-          nodeData[tq.graph || this.defaultGraph] = {};
-        }
-        let graphNode = nodeData[tq.graph || this.defaultGraph];
-        if( !graphNode[tq.subject] ) {
-          graphNode[tq.subject] = {
-            data : {
-              '@id': tq.subject,
-            },
-            context : {},
-            quads: []
-          }
-        }
-        let node = graphNode[tq.subject];
-        if( !node.data['@type'] ) {
-          node.data['@type'] = [];
-        }
+    // // parse the nquads into quads
+    // const namedQuads = quads
+    //   .filter(q => q.subject.termType === 'NamedNode' && q.predicate.termType === 'NamedNode' && q.object.termType === 'NamedNode')
+    //   .map(q => {
+    //     return {
+    //       graph: this._resolveIdPath(q.graph.value),
+    //       subject: this._resolveIdPath(q.subject.value, filepath),
+    //       predicate: this._resolveIdPath(q.predicate.value),
+    //       object: this._resolveIdPath(q.object.value, filepath),
+    //       quad: q
+    //     };
+    //   });
 
-        let prop = this._getContextProperty(tq.object);
-        node.data['@type'].push(prop.property);
-        node.context[prop.property] = {'@id': prop.uri, '@type': '@id'};
-        node.quads.push(tq.quad);
-      }
-    }
+    // // TODO filter out RDF type triples and store in rdf_types table
+    // let typeQuads = namedQuads.filter(q => q.predicate === this.TYPE_PREDICATE);
+    // let otherQuads = namedQuads.filter(q => q.predicate !== this.TYPE_PREDICATE);
 
-    // create node structure for insertion
-    let nodes = [];
-    for( let g of Object.keys(nodeData) ) {
-      for( let s of Object.keys(nodeData[g]) ) {
-        let node = nodeData[g][s];
-        node.graph = g;
-        node.subject = s;
-        node.nquads = await this._objectToNQuads(node.quads);
-        nodes.push(node);
-      }
-    }
+    // // append types to the nodes themselves
+    // if( typeQuads.length > 0 ) {
+    //   for( let tq of typeQuads ) {
+    //     if( !nodeData[tq.graph || this.defaultGraph] ) {
+    //       nodeData[tq.graph || this.defaultGraph] = {};
+    //     }
+    //     let graphNode = nodeData[tq.graph || this.defaultGraph];
+    //     if( !graphNode[tq.subject] ) {
+    //       graphNode[tq.subject] = {
+    //         data : {
+    //           '@id': tq.subject,
+    //         },
+    //         context : {},
+    //         quads: []
+    //       }
+    //     }
+    //     let node = graphNode[tq.subject];
+    //     if( !node.data['@type'] ) {
+    //       node.data['@type'] = [];
+    //     }
 
-    await dbClient.query(`select caskfs.insert_rdf_link_bulk($1::UUID, $2::JSONB)`, [file.file_id, JSON.stringify(otherQuads)]);
-    await dbClient.query(`select caskfs.insert_rdf_node_bulk($1::UUID, $2::JSONB)`, [file.file_id, JSON.stringify(nodes)]);
+    //     let prop = this._getContextProperty(tq.object);
+    //     node.data['@type'].push(prop.property);
+    //     node.context[prop.property] = {'@id': prop.uri, '@type': '@id'};
+    //     node.quads.push(tq.quad);
+    //   }
+    // }
+
+    // // create node structure for insertion
+    // let nodes = [];
+    // for( let g of Object.keys(nodeData) ) {
+    //   for( let s of Object.keys(nodeData[g]) ) {
+    //     let node = nodeData[g][s];
+    //     node.graph = g;
+    //     node.subject = s;
+    //     node.nquads = await this._objectToNQuads(node.quads);
+    //     nodes.push(node);
+    //   }
+    // }
+
+    // await dbClient.query(`select caskfs.insert_rdf_link_bulk($1::UUID, $2::JSONB)`, [file.file_id, JSON.stringify(otherQuads)]);
+    // await dbClient.query(`select caskfs.insert_rdf_node_bulk($1::UUID, $2::JSONB)`, [file.file_id, JSON.stringify(nodes)]);
+
+    // filter out the quad data for insertion
+    let fileIdQuads = otherQuads.map(q => ({
+      graph : q.graph,
+      subject : q.subject,
+      predicate : q.predicate,
+      object : q.object
+    }));
+
+    await dbClient.query(
+      `select caskfs.insert_file_ld($1::UUID, $2::JSONB)`, [
+        file.file_id, 
+        JSON.stringify(fileIdQuads)
+      ]);
 
     return {
       file,
-      links: otherQuads,
-      nodes: nodeData
+      links: fileIdQuads,
+      types : typeQuads,
+      nquads: this._objectToNQuads(quads.map(q => q.quad))
     };
   }
 
@@ -671,8 +698,8 @@ class Rdf {
    * @returns {Promise}
    */
   delete(fileMetadata, opts={}) {
-    this.logger.info('Deleting RDF data for file', fileMetadata.filepath);
-    return (opts.dbClient || this.dbClient).query('select caskfs.remove_rdf_by_file($1)', [fileMetadata.file_id]);
+    // this.logger.info('Deleting RDF data for file', fileMetadata.filepath);
+    // return (opts.dbClient || this.dbClient).query('select caskfs.remove_rdf_by_file($1)', [fileMetadata.file_id]);
   }
 
   _getContextProperty(uri='') {

@@ -290,7 +290,7 @@ class CaskFs {
 
       // if metadata was updated, write the metadata file to CAS
       if( context.data.actions.updatedMetadata === true ) {
-        this.cas.writeMetadata(context.data.file.hash_value);
+        await this.cas.writeMetadata(context.data.file.hash_value);
       }
 
       // finally commit the transaction

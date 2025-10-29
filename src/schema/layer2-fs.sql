@@ -290,7 +290,8 @@ CREATE TABLE IF NOT EXISTS caskfs.file_partition_key (
     partition_key_id UUID NOT NULL REFERENCES caskfs.partition_key(partition_key_id) ON DELETE CASCADE,
     UNIQUE(file_id, partition_key_id)
 );
-
+CREATE INDEX IF NOT EXISTS idx_file_partition_key_file_id ON caskfs.file_partition_key(file_id);
+CREATE INDEX IF NOT EXISTS idx_file_partition_key_partition_key_id ON caskfs.file_partition_key(partition_key_id);
 
 CREATE OR REPLACE FUNCTION caskfs.add_partition_key(
     p_file_id UUID,

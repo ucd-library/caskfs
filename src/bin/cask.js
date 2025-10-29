@@ -349,7 +349,15 @@ program
       options.partitionKeys = options.partitionKeys.split(',').map(k => k.trim());
     }
 
-    console.log(await cask.rdf.find(options));
+    let resp = await cask.rdf.find(options);
+    if( options.debugQuery ) {
+      console.log('SQL Query:');
+      console.log(resp.query);
+      console.log(resp.args);
+      return;
+    }
+
+    console.log(resp);
     cask.dbClient.end();
   });
 

@@ -298,7 +298,7 @@ class Database {
         '(acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE)'
       ];
 
-      if( opts.userId !== null ) {
+      if( opts.userId !== null && opts.userId !== undefined ) {
         aclWhere.push(`(acl_lookup.user_id = $${args.length + 1} AND acl_lookup.can_read = TRUE)`);
         args.push(opts.userId);
       }
@@ -307,68 +307,110 @@ class Database {
       nodeWhere.push(`(${aclWhere.join(' OR ')})`);
     }
 
-    if( opts.partitionKeys ) {
-      if( !Array.isArray(opts.partitionKeys) ) {
-        opts.partitionKeys = [opts.partitionKeys];
-      }
-      linkWhere.push(`rdf.partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
-      nodeWhere.push(`rdf.partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
-      args.push(opts.partitionKeys);
-    }
+    // if( opts.partitionKeys ) {
+    //   if( !Array.isArray(opts.partitionKeys) ) {
+    //     opts.partitionKeys = [opts.partitionKeys];
+    //   }
+    //   linkWhere.push(`rdf.partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
+    //   args.push(opts.partitionKeys);
+    // }
 
-    if( opts.graph ) {
-      linkWhere.push(`rdf.graph = $${args.length + 1}`);
-      nodeWhere.push(`rdf.graph = $${args.length + 1}`);
+
+    let withClauses = [];
+    let intersectClauses = [];
+    if( opts.graph  ) {
+      withClauses.push(`graph_match AS (
+        SELECT ld_filter_id FROM ${config.database.schema}.ld_filter
+        WHERE type = 'graph' AND uri_id = caskfs.get_uri_id($${args.length + 1})
+      ),
+      graph_file_match AS (
+        SELECT DISTINCT f.file_id FROM ${config.database.schema}.file_ld_filter f
+        JOIN graph_match gm ON gm.ld_filter_id = f.ld_filter_id
+      )
+      `);
+      intersectClauses.push(`SELECT file_id FROM graph_file_match`);
       args.push(opts.graph);
     }
 
+    if( opts.subject ) {
+      withClauses.push(`subject_match AS (
+        SELECT ld_filter_id FROM ${config.database.schema}.ld_filter
+        WHERE type = 'subject' AND uri_id = caskfs.get_uri_id($${args.length + 1})
+      ),
+      subject_file_match AS (
+        SELECT DISTINCT f.file_id FROM ${config.database.schema}.file_ld_filter f
+        JOIN subject_match sm ON sm.ld_filter_id = f.ld_filter_id
+      )
+      `);
+      intersectClauses.push(`SELECT file_id FROM subject_file_match`);
+      args.push(opts.subject);
+    }
+
     if( opts.predicate ) {
-      linkWhere.push(`rdf.predicate = $${args.length + 1}`);
-      nodeWhere.push(`rdf.predicate = $${args.length + 1}`);
+      withClauses.push(`predicate_match AS (
+        SELECT ld_filter_id FROM ${config.database.schema}.ld_filter
+        WHERE type = 'predicate' AND uri_id = caskfs.get_uri_id($${args.length + 1})
+      ),
+      predicate_file_match AS (
+        SELECT DISTINCT f.file_id FROM ${config.database.schema}.file_ld_filter f
+        JOIN predicate_match pm ON pm.ld_filter_id = f.ld_filter_id
+      )
+      `);
+      intersectClauses.push(`SELECT file_id FROM predicate_file_match`);
       args.push(opts.predicate);
     }
 
-
     if( opts.object ) {
-      linkWhere.push(`rdf.object = $${args.length + 1}`);
+      withClauses.push(`object_match AS (
+        SELECT ld_filter_id FROM ${config.database.schema}.ld_filter
+        WHERE type = 'object' AND uri_id = caskfs.get_uri_id($${args.length + 1})
+      ),
+      object_file_match AS (
+        SELECT DISTINCT f.file_id FROM ${config.database.schema}.file_ld_filter f
+        JOIN object_match om ON om.ld_filter_id = f.ld_filter_id
+      )
+      `);
+      intersectClauses.push(`SELECT file_id FROM object_file_match`);
       args.push(opts.object);
     }
 
-    if( opts.subject ) {
-      linkWhere.push(`rdf.subject = $${args.length + 1}`);
-      nodeWhere.push(`rdf.subject = $${args.length + 1}`);
-      args.push(opts.subject);
+    if( opts.partitionKeys ) {
+      withClauses.push(`partition_match AS (
+        SELECT DISTINCT f.file_id FROM ${config.database.schema}.partition_key pk
+        WHERE pk.partition_key = ANY($${args.length + 1}::VARCHAR(256)[])
+      ),
+      partition_file_match AS (
+        SELECT DISTINCT f.file_id FROM ${config.database.schema}.file f
+        JOIN partition_match pm ON pm.ld_filter_id = rdf.partition_filter_id
+      )  
+      `);
+      intersectClauses.push(`SELECT file_id FROM partition_file_match`);
+      args.push(opts.partitionKeys);
+    }
+ 
+    if( intersectClauses.length > 0 ) {
+      withClauses.push(`files AS (
+        ${intersectClauses.join('\nINTERSECT\n')}
+      )`);
+    } else {
+      withClauses.push(`files AS (
+        SELECT file_id FROM ${config.database.schema}.file
+      )`);
     }
 
     // order here matter for the limit/offset parameters below
     args.push(opts.limit || 100);
     args.push(opts.offset || 0);
 
-    if( linkWhere.length === 0 ) {
-      throw new Error('At least one of subject, graph, partition, predicate or object must be specified for find');
-    }
-
-    let nodeQuery = '';
-    if( nodeWhere.length > 0 ) {
-      nodeQuery = `UNION
-      SELECT DISTINCT rdf.file_id FROM ${config.database.schema}.rdf_node_view rdf
-      ${aclJoin}
-      WHERE ${nodeWhere.join(' AND ')}`;
-    }
 
     let query = `
-      with files as (
-        SELECT DISTINCT rdf.file_id FROM ${config.database.schema}.rdf_link_view rdf
-        ${aclJoin}
-        WHERE ${linkWhere.join(' AND ')}
-        ${nodeQuery}
-        LIMIT $${args.length - 1} OFFSET $${args.length}
-      )
+      WITH ${withClauses.join(', ')}
       SELECT
         fv.*
       FROM files f
       JOIN ${config.database.schema}.file_view fv ON fv.file_id = f.file_id
       ORDER BY fv.filepath ASC
+      LIMIT $${args.length - 1} OFFSET $${args.length}
     `;
 
     if( opts.debugQuery ) {
