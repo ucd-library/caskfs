@@ -376,7 +376,7 @@ class Rdf {
       file,
       links: fileIdQuads,
       types : typeQuads,
-      nquads: this._objectToNQuads(quads.map(q => q.quad))
+      nquads: await this._objectToNQuads(quads.map(q => q.quad))
     };
   }
 
@@ -697,9 +697,17 @@ class Rdf {
    *  
    * @returns {Promise}
    */
-  delete(fileMetadata, opts={}) {
-    // this.logger.info('Deleting RDF data for file', fileMetadata.filepath);
-    // return (opts.dbClient || this.dbClient).query('select caskfs.remove_rdf_by_file($1)', [fileMetadata.file_id]);
+  async delete(fileMetadata, opts={}) {
+    this.logger.info('Deleting LD data for file', fileMetadata.filepath);
+    let dbClient = opts.dbClient || this.dbClient;
+    await dbClient.query(
+      `delete from ${config.database.schema}.file_ld_filter where file_id = $1`, 
+      [fileMetadata.file_id]
+    );
+    await dbClient.query(
+      `delete from ${config.database.schema}.file_ld_links where file_id = $1`, 
+      [fileMetadata.file_id]
+    );
   }
 
   _getContextProperty(uri='') {

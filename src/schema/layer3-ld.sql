@@ -65,6 +65,17 @@ CREATE TABLE IF NOT EXISTS caskfs.file_ld_filter (
 CREATE INDEX IF NOT EXISTS idx_file_ld_filter_file_id ON caskfs.file_ld_filter(file_id);
 CREATE INDEX IF NOT EXISTS idx_file_ld_filter_ld_filter_id ON caskfs.file_ld_filter(ld_filter_id);
 
+CREATE OR REPLACE VIEW caskfs.file_ld_filter_view AS
+SELECT
+    flf.file_ld_filter_id,
+    fv.filepath,
+    ldf.type,
+    u.uri
+FROM caskfs.file_ld_filter flf
+LEFT JOIN caskfs.file_view fv ON flf.file_id = fv.file_id
+LEFT JOIN caskfs.ld_filter ldf ON flf.ld_filter_id = ldf.ld_filter_id
+LEFT JOIN caskfs.uri u ON ldf.uri_id = u.uri_id;
+
 CREATE TABLE IF NOT EXISTS caskfs.ld_links (
     ld_links_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     predicate UUID NOT NULL,
@@ -82,6 +93,18 @@ CREATE TABLE IF NOT EXISTS caskfs.file_ld_links (
 );
 CREATE INDEX IF NOT EXISTS idx_file_ld_links_file_id ON caskfs.file_ld_links(file_id);
 CREATE INDEX IF NOT EXISTS idx_file_ld_links_ld_links_id ON caskfs.file_ld_links(ld_links_id);
+
+CREATE OR REPLACE VIEW caskfs.file_ld_links_view AS
+SELECT
+    fll.file_ld_links_id,
+    fv.filepath,
+    pu.uri AS predicate,
+    ou.uri AS object
+FROM caskfs.file_ld_links fll
+LEFT JOIN caskfs.file_view fv ON fll.file_id = fv.file_id
+LEFT JOIN caskfs.ld_links ll ON fll.ld_links_id = ll.ld_links_id
+LEFT JOIN caskfs.uri pu ON ll.predicate = pu.uri_id
+LEFT JOIN caskfs.uri ou ON ll.object = ou.uri_id;
 
 CREATE OR REPLACE FUNCTION caskfs.insert_file_ld(
     p_file_id UUID,

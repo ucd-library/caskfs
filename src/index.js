@@ -268,21 +268,22 @@ class CaskFs {
         let readFile = context.data.stagedFile.hashExists ? context.data.stagedFile.hashFile : context.data.stagedFile.tmpFile;
 
         this.logger.info('Inserting RDF triples for file', context.logSignal);
-        await this.rdf.insert(context.data.file.file_id, 
+        let insertResp = await this.rdf.insert(context.data.file.file_id, 
           {
             dbClient, 
             filepath: readFile
           });
-
+        context.data.nquads = insertResp.nquads;
         context.data.actions.parsedLinkedData = true;
       } else {
-        this.logger.info('RDF file already exists, skipping RDF processing', context.logSignal);
+        this.logger.info('File already exists, skipping RDF processing', context.logSignal);
       }
 
       // finalize the write to move the temp file to its final location
       let copied = await this.cas.finalizeWrite(
         context.data.stagedFile.tmpFile, 
-        context.data.stagedFile.hashFile, 
+        context.data.stagedFile.hashFile,
+        context.data.nquads,
         {bucket: metadata.bucket, dbClient}
       );
       context.update({copied});
