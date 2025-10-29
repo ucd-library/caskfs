@@ -110,7 +110,6 @@ class Cas {
       copied = true;
       await this.storage.mkdir(path.dirname(hashFile), {recursive: true});
       await this.storage.copyFile(tmpFile, hashFile, opts);
-        console.log('Updating nquads for hash file', path.basename(hashFile), nquads);
 
       if( nquads ) {
         await opts.dbClient.query(`

@@ -269,23 +269,15 @@ program
   });
 
 program
-  .command('ld')
+  .command('ld <file-path>')
   .description('Read linked data and output as supported RDF format to stdout')
-  .option('-f, --file <file-path>', 'Only include RDF triples for the specified file')
-  .option('-s, --subject <subject-uri>', 'Only include RDF triples with the specified subject')
-  .option('-o, --object <object-uri>', 'Only include RDF triples with the specified object')
-  .option('-g, --graph <graph-uri>', 'Only include RDF triples in the specified graph. Must be used with --subject or --file')
-  .option('-k, --partition-keys <keys>', 'Only include RDF triples with the specified partition keys (comma-separated). Must be used with --subject or --file')
-  .option('-e, --format <format>', 'RDF format to output: jsonld, compact, flattened, expanded, nquads or json. Default is jsonld', 'jsonld')
-  .action(async (options) => {
+  .option('-o, --format <format>', 'RDF format to output: jsonld, compact, flattened, expanded, nquads or json. Default is jsonld', 'jsonld')
+  .action(async (filePath, options) => {
     handleGlobalOpts(options);
 
     const cask = new CaskFs();
 
-    if( options.partition ) {
-      options.partition = options.partition.split(',').map(k => k.trim());
-    }
-
+    options.filePath = filePath;
     let resp = await cask.rdf.read(options);
 
     if( typeof resp === 'object' ) {

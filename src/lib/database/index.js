@@ -376,12 +376,12 @@ class Database {
 
     if( opts.partitionKeys ) {
       withClauses.push(`partition_match AS (
-        SELECT DISTINCT f.file_id FROM ${config.database.schema}.partition_key pk
-        WHERE pk.partition_key = ANY($${args.length + 1}::VARCHAR(256)[])
+        SELECT partition_key_id FROM ${config.database.schema}.partition_key pk
+        WHERE pk.value = ANY($${args.length + 1}::VARCHAR(256)[])
       ),
       partition_file_match AS (
-        SELECT DISTINCT f.file_id FROM ${config.database.schema}.file f
-        JOIN partition_match pm ON pm.ld_filter_id = rdf.partition_filter_id
+        SELECT DISTINCT f.file_id FROM ${config.database.schema}.file_partition_key f
+        JOIN partition_match pm ON pm.partition_key_id = f.partition_key_id
       )  
       `);
       intersectClauses.push(`SELECT file_id FROM partition_file_match`);
@@ -408,7 +408,7 @@ class Database {
       SELECT
         fv.*
       FROM files f
-      JOIN ${config.database.schema}.file_view fv ON fv.file_id = f.file_id
+      JOIN ${config.database.schema}.simple_file_view fv ON fv.file_id = f.file_id
       ORDER BY fv.filepath ASC
       LIMIT $${args.length - 1} OFFSET $${args.length}
     `;
@@ -421,141 +421,141 @@ class Database {
     return resp.rows;
   }
 
-  /**
-   * @method findRdfNodes
-   * @description Internal method to query RDF data from the database based on given options.  A subject or
-   * a file must be specified. Will return jsonld dataset of nodes and links that match the query.
-   * Will limit to 10,000 nodes AND 10,000 links.
-   *
-   * @param {Object} opts query options
-   * @param {String} opts.file file path to filter by
-   * @param {String} opts.subject subject URI to filter by
-   * @param {String} opts.graph graph URI to filter by (must be used with subject or file)
-   * @param {String|Array} opts.partition partition key or array of partition keys to filter by
-   * @param {Number} opts.limit limit number of results. Default 10000 nodes and 10000 links
-   *
-   * @returns {Promise<Object>} JSON-LD dataset of nodes and links that match the query
-   */
-  async findRdfNodes(opts={}) {
-    let where = [];
-    let args = [];
+  // /**
+  //  * @method findRdfNodes
+  //  * @description Internal method to query RDF data from the database based on given options.  A subject or
+  //  * a file must be specified. Will return jsonld dataset of nodes and links that match the query.
+  //  * Will limit to 10,000 nodes AND 10,000 links.
+  //  *
+  //  * @param {Object} opts query options
+  //  * @param {String} opts.file file path to filter by
+  //  * @param {String} opts.subject subject URI to filter by
+  //  * @param {String} opts.graph graph URI to filter by (must be used with subject or file)
+  //  * @param {String|Array} opts.partition partition key or array of partition keys to filter by
+  //  * @param {Number} opts.limit limit number of results. Default 10000 nodes and 10000 links
+  //  *
+  //  * @returns {Promise<Object>} JSON-LD dataset of nodes and links that match the query
+  //  */
+  // async findRdfNodes(opts={}) {
+  //   let where = [];
+  //   let args = [];
 
-    if( !opts.file && !opts.subject && !opts.object ) {
-      throw new Error('File, subject, or object must be specified for rdf queries');
-    }
+  //   if( !opts.file && !opts.subject && !opts.object ) {
+  //     throw new Error('File, subject, or object must be specified for rdf queries');
+  //   }
 
-    let aclOpts = {
-      requestor: opts.requestor,
-      ignoreAcl : opts.ignoreAcl,
-      dbClient : opts.dbClient || this
-    };
+  //   let aclOpts = {
+  //     requestor: opts.requestor,
+  //     ignoreAcl : opts.ignoreAcl,
+  //     dbClient : opts.dbClient || this
+  //   };
 
-    let aclJoin = '';
-    if( await acl.aclLookupRequired(aclOpts) ) {
-      aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = rdf.directory_id`;
+  //   let aclJoin = '';
+  //   if( await acl.aclLookupRequired(aclOpts) ) {
+  //     aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = rdf.directory_id`;
       
-      let aclWhere = [
-        '(acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE)'
-      ];
+  //     let aclWhere = [
+  //       '(acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE)'
+  //     ];
 
-      if( !opts.userId && opts.requestor ) {
-        opts.userId = await acl.getUserId({user: opts.requestor, dbClient: aclOpts.dbClient});
-      }
+  //     if( !opts.userId && opts.requestor ) {
+  //       opts.userId = await acl.getUserId({user: opts.requestor, dbClient: aclOpts.dbClient});
+  //     }
 
-      if( opts.userId !== null ) {
-        aclWhere.push(`(acl_lookup.user_id = $${args.length + 1} AND acl_lookup.can_read = TRUE)`);
-        args.push(opts.userId);
-      }
+  //     if( opts.userId !== null ) {
+  //       aclWhere.push(`(acl_lookup.user_id = $${args.length + 1} AND acl_lookup.can_read = TRUE)`);
+  //       args.push(opts.userId);
+  //     }
 
-      where.push(`(${aclWhere.join(' OR ')})`);
-    }
+  //     where.push(`(${aclWhere.join(' OR ')})`);
+  //   }
 
-    if( opts.partition ) {
-      if( !Array.isArray(opts.partition) ) {
-        opts.partition = [opts.partition];
-      }
-      where.push(`partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
-      args.push(opts.partition);
-    }
-    if( opts.graph ) {
-      where.push(`graph = $${args.length + 1}`);
-      args.push(opts.graph);
-    }
-    if( opts.object ) {
-      where.push(`object = $${args.length + 1}`);
-      args.push(opts.object);
-    }
-    if( opts.subject ) {
-      where.push(`subject = $${args.length + 1}`);
-      args.push(opts.subject);
-    }
-    if( opts.file ) {
-      where.push(`filepath = $${args.length + 1}`);
-      args.push(opts.file);
-    }
+  //   if( opts.partition ) {
+  //     if( !Array.isArray(opts.partition) ) {
+  //       opts.partition = [opts.partition];
+  //     }
+  //     where.push(`partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
+  //     args.push(opts.partition);
+  //   }
+  //   if( opts.graph ) {
+  //     where.push(`graph = $${args.length + 1}`);
+  //     args.push(opts.graph);
+  //   }
+  //   if( opts.object ) {
+  //     where.push(`object = $${args.length + 1}`);
+  //     args.push(opts.object);
+  //   }
+  //   if( opts.subject ) {
+  //     where.push(`subject = $${args.length + 1}`);
+  //     args.push(opts.subject);
+  //   }
+  //   if( opts.file ) {
+  //     where.push(`filepath = $${args.length + 1}`);
+  //     args.push(opts.file);
+  //   }
 
-    let limit = 'LIMIT $'+(args.length + 1);
-    args.push(opts.limit || 10000);
+  //   let limit = 'LIMIT $'+(args.length + 1);
+  //   args.push(opts.limit || 10000);
 
-    let nodes = [];
-    if( !opts.object ) {
-      nodes = await this.client.query(`
-        SELECT * FROM ${config.database.schema}.rdf_node_view rdf
-        ${aclJoin}
-        WHERE ${where.join(' AND ')} ${limit}
-      `, args);
-      nodes = nodes.rows;
-    }
+  //   let nodes = [];
+  //   if( !opts.object ) {
+  //     nodes = await this.client.query(`
+  //       SELECT * FROM ${config.database.schema}.rdf_node_view rdf
+  //       ${aclJoin}
+  //       WHERE ${where.join(' AND ')} ${limit}
+  //     `, args);
+  //     nodes = nodes.rows;
+  //   }
 
-    let links = await this.client.query(`
-      SELECT * FROM ${config.database.schema}.rdf_link_view rdf
-      ${aclJoin}
-      WHERE ${where.join(' AND ')} ${limit}
-    `, args);
-    links = links.rows;
+  //   let links = await this.client.query(`
+  //     SELECT * FROM ${config.database.schema}.rdf_link_view rdf
+  //     ${aclJoin}
+  //     WHERE ${where.join(' AND ')} ${limit}
+  //   `, args);
+  //   links = links.rows;
 
-    let dataset = {};
-    let context = {};
-    for( let n of nodes ) {
-      if( !dataset[n.graph] ) {
-        dataset[n.graph] = {
-          '@id': n.graph,
-          '@graph': {}
-        }
-      }
-      dataset[n.graph]['@graph'][n.subject] = n.data;
-      context = Object.assign(context, n.context);
-    }
+  //   let dataset = {};
+  //   let context = {};
+  //   for( let n of nodes ) {
+  //     if( !dataset[n.graph] ) {
+  //       dataset[n.graph] = {
+  //         '@id': n.graph,
+  //         '@graph': {}
+  //       }
+  //     }
+  //     dataset[n.graph]['@graph'][n.subject] = n.data;
+  //     context = Object.assign(context, n.context);
+  //   }
 
-    for( let l of links ) {
-      if( !dataset[l.graph] ) {
-        dataset[l.graph] = {
-          '@id': l.graph,
-          '@graph': {}
-        };
-      }
-      if( !dataset[l.graph]['@graph'][l.subject] ) {
-        dataset[l.graph]['@graph'][l.subject] = { '@id': l.subject };
-      }
-      dataset[l.graph]['@graph'][l.subject][l.predicate] = { '@id': l.object };
-    }
+  //   for( let l of links ) {
+  //     if( !dataset[l.graph] ) {
+  //       dataset[l.graph] = {
+  //         '@id': l.graph,
+  //         '@graph': {}
+  //       };
+  //     }
+  //     if( !dataset[l.graph]['@graph'][l.subject] ) {
+  //       dataset[l.graph]['@graph'][l.subject] = { '@id': l.subject };
+  //     }
+  //     dataset[l.graph]['@graph'][l.subject][l.predicate] = { '@id': l.object };
+  //   }
 
-    // convert graph objects to arrays
-    for( let g of Object.keys(dataset) ) {
-      dataset[g]['@graph'] = Object.values(dataset[g]['@graph']);
-    }
+  //   // convert graph objects to arrays
+  //   for( let g of Object.keys(dataset) ) {
+  //     dataset[g]['@graph'] = Object.values(dataset[g]['@graph']);
+  //   }
 
-    let data = {
-      '@context': context,
-      '@graph': []
-    };
+  //   let data = {
+  //     '@context': context,
+  //     '@graph': []
+  //   };
 
-    for( let g of Object.keys(dataset) ) {
-      data['@graph'].push(dataset[g]);
-    }
+  //   for( let g of Object.keys(dataset) ) {
+  //     data['@graph'].push(dataset[g]);
+  //   }
 
-    return data;
-  }
+  //   return data;
+  // }
 
   powerWash() {
     return this.client.query(`DROP SCHEMA IF EXISTS ${this.schema} CASCADE;`);

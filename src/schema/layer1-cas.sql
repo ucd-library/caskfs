@@ -10,4 +10,3 @@ CREATE TABLE IF NOT EXISTS caskfs.hash (
   nquads        TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_hash_value ON caskfs.hash(value);
-      

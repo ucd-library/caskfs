@@ -22,8 +22,6 @@ class AutoPathPartition extends AutoPath {
     let name = opts.name;
     let dbClient = opts.dbClient || this.dbClient;
 
-    await this.getConfig();
-
     let query = 'SELECT file_id, filepath FROM ' + this.schema + '.file_view';
     let batchDbClient = new Database({type: this.opts.dbType || config.database.client});
 

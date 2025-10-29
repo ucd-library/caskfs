@@ -1,4 +1,4 @@
-import { Parser as QuadsParser, Writer as QuadsWriter } from "n3";
+import { Parser as QuadsParser, Writer as QuadsWriter, DataFactory } from "n3";
 import jsonld from "jsonld";
 import Database from "./database/index.js";
 import config from "./config.js";
@@ -6,6 +6,7 @@ import path from "path";
 import fsp from "fs/promises";
 import { getLogger } from './logger.js';
 import acl from './acl.js';
+const { namedNode } = DataFactory;
 
 const customLoader = async (url, options) => {
   url = new URL(url);
@@ -45,22 +46,86 @@ class Rdf {
    *
    * @param {Object} opts
    * @param {String} opts.file file path to filter by
-   * @param {String} opts.subject subject URI to filter by
-   * @param {String} opts.graph graph URI to filter by (must be used with subject or file)
-   * @param {String|Array} opts.partition partition key or array of partition keys to filter by
    * @param {String} opts.format RDF format to return: jsonld (default), compact, cask, flattened, expanded, nquads, json
    * 
    * @returns {Promise<Object>} RDF data in the specified format
    */
   async read(opts={}) {
     let format = opts.format;
-    let filePath = opts.file;
+    let filePath = opts.filePath;
+    let dbClient = opts.dbClient || this.dbClient;
 
-    if( opts.subject && opts.subject.startsWith('/') ) {
-      opts.subject = config.schemaPrefix + opts.subject;
+    if( !filePath ) {
+      throw new Error('File path is required to read Linked Data');
     }
 
-    let data = await this.query(opts);
+    let parts = path.parse(filePath);
+
+    let data = await dbClient.query(
+      `SELECT file_nquads, cask_nquads FROM ${config.database.schema}.file_quads_view WHERE filename = $1 AND directory = $2`, 
+      [parts.base, parts.dir]
+    );
+    if( data.rows.length === 0 ) {
+      throw new Error(`No RDF data found for file: ${filePath}`);
+    }
+
+    let nquads = [];
+    if( data.rows[0].file_nquads ) nquads.push(data.rows[0].file_nquads);
+    if( data.rows[0].cask_nquads ) nquads.push(data.rows[0].cask_nquads);
+
+    // not get all of the quads for this subject
+    // TODO: do we only do this for all file types?? or do we just do it for binary files?
+    let subject = config.schemaPrefix+filePath;
+    console.log('Looking for linked files for subject', subject);
+
+    // TODO: add flag for limiting to same partition keys as the file
+    let linkedFiles = await this.find({ subject, dbClient });
+
+    let linkedFileQuads;
+    for( let lf of linkedFiles ) {
+      if( lf.filepath === filePath ) continue;
+
+      linkedFileQuads = await dbClient.query(
+        `SELECT file_nquads FROM ${config.database.schema}.file_quads_view WHERE filename = $1 AND directory = $2`, 
+        [lf.filename, lf.directory]
+      );
+
+      if( !linkedFileQuads.rows.length ) continue;
+      linkedFileQuads = linkedFileQuads.rows[0].file_nquads;
+      linkedFileQuads = this.quadsParser.parse(linkedFileQuads)
+        .filter(q => q.subject.value === subject);
+      nquads.push(await this._objectToNQuads(linkedFileQuads));
+    }
+
+    data = nquads.join('\n');
+
+    if( format === 'nquads' || format === 'application/n-quads' ) {
+      // return jsonld.canonize(data, {
+      //   algorithm: 'URDNA2015',
+      //   format: 'application/n-quads'
+      // });
+      return nquads;
+    }
+
+    if( format === 'json' || format === 'application/json' ) {
+      // const nquads = await jsonld.canonize(data, {
+      //   algorithm: 'URDNA2015',
+      //   format: 'application/n-quads'
+      // });
+
+      return this.quadsParser.parse(nquads)
+        .map(q => ({
+          graph: q.graph.value || null,
+          subject: q.subject.value,
+          predicate: q.predicate.value,
+          object: q.object.toJSON()
+        }));
+    }
+
+    data = await jsonld.fromRDF(data, {
+      format: 'application/n-quads',
+      documentLoader: customLoader
+    });
 
     if( !format || format === 'jsonld' || format === 'application/ld+json' ) {
       return data;
@@ -80,28 +145,6 @@ class Rdf {
 
     if( format === 'expanded' || format === 'application/ld+json; profile="http://www.w3.org/ns/json-ld#expanded"' ) {
       return jsonld.expand(data);
-    }
-
-    if( format === 'nquads' || format === 'application/n-quads' ) {
-      return jsonld.canonize(data, {
-        algorithm: 'URDNA2015',
-        format: 'application/n-quads'
-      });
-    }
-
-    if( format === 'json' || format === 'application/json' ) {
-      const nquads = await jsonld.canonize(data, {
-        algorithm: 'URDNA2015',
-        format: 'application/n-quads'
-      });
-
-      return this.quadsParser.parse(nquads)
-        .map(q => ({
-          graph: q.graph.value || null,
-          subject: q.subject.value,
-          predicate: q.predicate.value,
-          object: q.object.toJSON()
-        }));
     }
 
     throw new Error(`Unsupported RDF format: ${format}`);
@@ -131,9 +174,11 @@ class Rdf {
    *  
    * @returns {Promise<Object>} JSON-LD dataset of nodes and links that match the query
    */
-  async query(opts={}) {
-    return this.dbClient.findRdfNodes(opts);
-  }
+  // async query(opts={}) {
+  //   return this.dbClient.findRdfNodes(opts);
+  // }
+
+
 
   /**
    * @function insert
@@ -157,7 +202,7 @@ class Rdf {
     let filepath = path.join(file.directory, file.filename);
 
     let data = '';
-    let nquads, parserMimeType;
+    let fileQuads, parserMimeType;
 
     if( file.metadata.resourceType === 'rdf' ) {
       data = await fsp.readFile(opts.filepath || filepath, {encoding: 'utf8'});
@@ -168,7 +213,7 @@ class Rdf {
         // handle empty @id values by assigning blank cask:/ IDs
         this._setEmptyIds(data);
 
-        nquads = await jsonld.canonize(data, {
+        fileQuads = await jsonld.canonize(data, {
           algorithm: 'URDNA2015',
           format: this.nquadsMimeType,
           safe: true,
@@ -177,7 +222,7 @@ class Rdf {
 
         parserMimeType = this.nquadsMimeType;
       } else {
-        nquads = data;
+        fileQuads = data;
         parserMimeType = file.metadata.mimeType;
       }
     } else {
@@ -227,7 +272,6 @@ class Rdf {
       };
     }
 
-
     const caskQuads = this.quadsParser.parse(
       await jsonld.canonize(caskFileNode, {
         algorithm: 'URDNA2015',
@@ -238,15 +282,18 @@ class Rdf {
 
     // merge the cask quads with the data quads
     let parser = new QuadsParser({ format: parserMimeType });
-    let quads;
+    parser.DEFAULTGRAPH = namedNode(config.defaultGraph);
 
-    if( nquads ) {
-      quads = [...caskQuads, ...parser.parse(nquads)];
+    let allQuads = [];
+
+    if( fileQuads ) {
+      fileQuads = parser.parse(fileQuads);
+      allQuads = [...caskQuads, ...fileQuads];
     } else {
-      quads = caskQuads;
+      allQuads = caskQuads;
     }
 
-    quads = quads
+    allQuads = allQuads
       .map(q => ({
         graph: this._resolveIdPath(q.graph.value),
         subject: this._resolveIdPath(q.subject.value, filepath),
@@ -255,108 +302,8 @@ class Rdf {
         quad: q
       }));
 
-    let typeQuads = quads.filter(q => q.predicate === this.TYPE_PREDICATE);
-    let otherQuads = quads.filter(q => q.predicate !== this.TYPE_PREDICATE);
-
-    // const literalQuads = quads
-    //   .filter(q => q.subject.termType === 'NamedNode' && q.predicate.termType === 'NamedNode' && q.object.termType !== 'NamedNode')
-    //   .map(q => ({
-    //     graph: this._resolveIdPath(q.graph.value),
-    //     subject: this._resolveIdPath(q.subject.value, filepath),
-    //     predicate: q.predicate.value,
-    //     object: q.object.value,
-    //     quad : q
-    //   }));
-
-    // const nodeData = {};
-
-    // for( let lq of literalQuads ) {
-    //   if( !nodeData[lq.graph || this.defaultGraph] ) {
-    //     nodeData[lq.graph || this.defaultGraph] = {};
-    //   }
-    //   let graphNode = nodeData[lq.graph || this.defaultGraph];
-
-    //   if( !graphNode[lq.subject] ) {
-    //     graphNode[lq.subject] = {
-    //       data : {'@id': lq.subject},
-    //       context : {},
-    //       quads: []
-    //     }
-    //   }
-    //   let node = graphNode[lq.subject];
-
-    //   let prop = this._getContextProperty(lq.predicate);
-    //   node.context[prop.property] = {'@id': prop.uri};
-    //   if( !node.data[prop.property] ) {
-    //     node.data[prop.property] = lq.object;
-    //   } else if( Array.isArray(node.data[prop.property]) ) {
-    //     node.data[prop.property].push(lq.object);
-    //   } else {
-    //     node.data[prop.property] = [node.data[prop.property], lq.object];
-    //   }
-
-    //   node.quads.push(lq.quad);
-    // }
-
-    // // parse the nquads into quads
-    // const namedQuads = quads
-    //   .filter(q => q.subject.termType === 'NamedNode' && q.predicate.termType === 'NamedNode' && q.object.termType === 'NamedNode')
-    //   .map(q => {
-    //     return {
-    //       graph: this._resolveIdPath(q.graph.value),
-    //       subject: this._resolveIdPath(q.subject.value, filepath),
-    //       predicate: this._resolveIdPath(q.predicate.value),
-    //       object: this._resolveIdPath(q.object.value, filepath),
-    //       quad: q
-    //     };
-    //   });
-
-    // // TODO filter out RDF type triples and store in rdf_types table
-    // let typeQuads = namedQuads.filter(q => q.predicate === this.TYPE_PREDICATE);
-    // let otherQuads = namedQuads.filter(q => q.predicate !== this.TYPE_PREDICATE);
-
-    // // append types to the nodes themselves
-    // if( typeQuads.length > 0 ) {
-    //   for( let tq of typeQuads ) {
-    //     if( !nodeData[tq.graph || this.defaultGraph] ) {
-    //       nodeData[tq.graph || this.defaultGraph] = {};
-    //     }
-    //     let graphNode = nodeData[tq.graph || this.defaultGraph];
-    //     if( !graphNode[tq.subject] ) {
-    //       graphNode[tq.subject] = {
-    //         data : {
-    //           '@id': tq.subject,
-    //         },
-    //         context : {},
-    //         quads: []
-    //       }
-    //     }
-    //     let node = graphNode[tq.subject];
-    //     if( !node.data['@type'] ) {
-    //       node.data['@type'] = [];
-    //     }
-
-    //     let prop = this._getContextProperty(tq.object);
-    //     node.data['@type'].push(prop.property);
-    //     node.context[prop.property] = {'@id': prop.uri, '@type': '@id'};
-    //     node.quads.push(tq.quad);
-    //   }
-    // }
-
-    // // create node structure for insertion
-    // let nodes = [];
-    // for( let g of Object.keys(nodeData) ) {
-    //   for( let s of Object.keys(nodeData[g]) ) {
-    //     let node = nodeData[g][s];
-    //     node.graph = g;
-    //     node.subject = s;
-    //     node.nquads = await this._objectToNQuads(node.quads);
-    //     nodes.push(node);
-    //   }
-    // }
-
-    // await dbClient.query(`select caskfs.insert_rdf_link_bulk($1::UUID, $2::JSONB)`, [file.file_id, JSON.stringify(otherQuads)]);
-    // await dbClient.query(`select caskfs.insert_rdf_node_bulk($1::UUID, $2::JSONB)`, [file.file_id, JSON.stringify(nodes)]);
+    let typeQuads = allQuads.filter(q => q.predicate === this.TYPE_PREDICATE);
+    let otherQuads = allQuads.filter(q => q.predicate !== this.TYPE_PREDICATE);
 
     // filter out the quad data for insertion
     let fileIdQuads = otherQuads.map(q => ({
@@ -372,11 +319,20 @@ class Rdf {
         JSON.stringify(fileIdQuads)
       ]);
 
+    if( fileQuads ) {
+      // ensure proper path resolution for subject IDs
+      fileQuads.forEach(q => {
+        q._subject = namedNode(this._resolveIdPath(q.subject.value, filepath));
+      });
+      fileQuads = await this._objectToNQuads(fileQuads);
+    }
+
     return {
       file,
       links: fileIdQuads,
       types : typeQuads,
-      nquads: await this._objectToNQuads(quads.map(q => q.quad))
+      fileQuads: fileQuads,
+      caskQuads: await this._objectToNQuads(caskQuads)
     };
   }
 
@@ -507,34 +463,24 @@ class Rdf {
 
 
     if( opts.stats ) {
-      let res = await this.dbClient.query(`WITH combined AS (
-          SELECT 
-              source_view.predicate,
-              count(*) as count
-          FROM caskfs.rdf_link_view source_view
-          -- Find other files where this object URI appears as a subject
-          JOIN caskfs.rdf_link_view referencing_view ON source_view.object = referencing_view.subject
-          ${aclJoin}
-          WHERE ${where.join(' AND ')}
-          GROUP BY source_view.predicate
-
-          UNION ALL
-
-          SELECT 
-              source_view.predicate,
-              count(*) as count
-          FROM caskfs.rdf_link_view source_view
-          JOIN caskfs.rdf_node_view referencing_view ON source_view.object = referencing_view.subject
-          ${aclJoin}
-          WHERE ${where.join(' AND ')}
-          GROUP BY source_view.predicate
-      )
-      SELECT
-        c.predicate,
-        SUM(c.count) as count
-      FROM combined c
-      GROUP BY c.predicate
-      ORDER BY count DESC`, args);
+      let res = await this.dbClient.query(`
+        WITH files AS (
+          SELECT file_id from caskfs.file 
+        ),
+        source_view AS (
+          SELECT * FROM caskfs.file_ld_links WHERE file_id != $1
+          JOIN files f ON f.file_id = file_ld_links.file_id
+        ),
+        target_view AS (
+          SELECT * FROM caskfs.file_ld_filter 
+          JOIN files f ON f.file_id = file_ld_filter.file_id
+          WHERE file_id = $1 AND type = 'subject'
+        )
+        SELECT
+          *
+        FROM target_view tv
+        JOIN source_view sv ON tv.value = sv.object
+          `, args);
 
       return res.rows;
 

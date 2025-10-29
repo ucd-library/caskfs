@@ -40,13 +40,8 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION caskfs.get_uri_id(p_uri VARCHAR(1028)) RETURNS UUID AS $$
-DECLARE
-    v_uri_id UUID;
-BEGIN
-    SELECT uri_id INTO v_uri_id FROM caskfs.uri WHERE uri = p_uri;
-    RETURN v_uri_id;
-END;
-$$ LANGUAGE plpgsql;
+    SELECT uri_id FROM caskfs.uri WHERE uri = p_uri;
+$$ LANGUAGE sql STABLE PARALLEL SAFE;
 
 CREATE TABLE IF NOT EXISTS caskfs.ld_filter (
   ld_filter_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -124,6 +124,9 @@ class AutoPath {
         filter_regex = EXCLUDED.filter_regex, 
         get_value = EXCLUDED.get_value
     `, [opts.name, opts.index || null, opts.filterRegex ? opts.filterRegex : null, opts.getValue ? opts.getValue : null]);
+    
+    await this.getConfig(true);
+      
     return true;
   }
 

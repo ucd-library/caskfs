@@ -273,8 +273,16 @@ class CaskFs {
             dbClient, 
             filepath: readFile
           });
-        context.data.nquads = insertResp.nquads;
+        context.data.fileQuads = insertResp.fileQuads;
+        context.data.caskQuads = insertResp.caskQuads;
         context.data.actions.parsedLinkedData = true;
+
+        // update the nquads column in the file table with the file-specific cask quads
+        dbClient.query(
+          `UPDATE ${this.schema}.file SET nquads = $1 WHERE file_id = $2`, 
+          [context.data.caskQuads, context.data.file.file_id]
+        );
+
       } else {
         this.logger.info('File already exists, skipping RDF processing', context.logSignal);
       }
@@ -283,7 +291,7 @@ class CaskFs {
       let copied = await this.cas.finalizeWrite(
         context.data.stagedFile.tmpFile, 
         context.data.stagedFile.hashFile,
-        context.data.nquads,
+        context.data.fileQuads,
         {bucket: metadata.bucket, dbClient}
       );
       context.update({copied});
