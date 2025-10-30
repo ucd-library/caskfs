@@ -537,6 +537,10 @@ class CaskFs {
     let data = res.rows[0];
     data.fullPath = this.cas.diskPath(data.hash_value);
 
+    if( !data.partition_keys ) {
+      data.partition_keys = [];
+    }
+
     if( context.stats ) {
       res = await dbClient.query(`
         SELECT COUNT(*) AS count FROM ${this.schema}.rdf_link WHERE file_id = $1

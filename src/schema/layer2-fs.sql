@@ -396,9 +396,6 @@ LEFT JOIN caskfs.file_partition_keys fpk ON f.file_id = fpk.file_id;
 CREATE OR REPLACE VIEW caskfs.simple_file_view AS
 SELECT
     f.file_id,
-    d.directory_id,
-    d.fullname AS directory,
-    f.name as filename,
     CASE
       WHEN d.fullname = '/' THEN '/' || f.name
       ELSE d.fullname || '/' || f.name

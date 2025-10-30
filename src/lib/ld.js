@@ -82,19 +82,21 @@ class Rdf {
     let linkedFiles = await this.find({ subject, dbClient });
 
     let linkedFileQuads;
-    for( let lf of linkedFiles ) {
-      if( lf.filepath === filePath ) continue;
+    if( linkedFiles.totalCount > 0 ) {
+      for( let lf of linkedFiles.results ) {
+        if( lf.filepath === filePath ) continue;
 
-      linkedFileQuads = await dbClient.query(
-        `SELECT file_nquads FROM ${config.database.schema}.file_quads_view WHERE filename = $1 AND directory = $2`, 
-        [lf.filename, lf.directory]
-      );
+        linkedFileQuads = await dbClient.query(
+          `SELECT file_nquads FROM ${config.database.schema}.file_quads_view WHERE filename = $1 AND directory = $2`, 
+          [lf.filename, lf.directory]
+        );
 
-      if( !linkedFileQuads.rows.length ) continue;
-      linkedFileQuads = linkedFileQuads.rows[0].file_nquads;
-      linkedFileQuads = this.quadsParser.parse(linkedFileQuads)
-        .filter(q => q.subject.value === subject);
-      nquads.push(await this._objectToNQuads(linkedFileQuads));
+        if( !linkedFileQuads.rows.length ) continue;
+        linkedFileQuads = linkedFileQuads.rows[0].file_nquads;
+        linkedFileQuads = this.quadsParser.parse(linkedFileQuads)
+          .filter(q => q.subject.value === subject);
+        nquads.push(await this._objectToNQuads(linkedFileQuads));
+      }
     }
 
     data = nquads.join('\n');
@@ -302,7 +304,13 @@ class Rdf {
         quad: q
       }));
 
-    let typeQuads = allQuads.filter(q => q.predicate === this.TYPE_PREDICATE);
+    let types = null;
+
+    if( fileQuads ) {
+      types = new Set(fileQuads.filter(q => q.predicate.value === this.TYPE_PREDICATE)
+        .map(q => q.object.value));
+      types = Array.from(types);
+    }
     let otherQuads = allQuads.filter(q => q.predicate !== this.TYPE_PREDICATE);
 
     // filter out the quad data for insertion
@@ -314,9 +322,10 @@ class Rdf {
     }));
 
     await dbClient.query(
-      `select caskfs.insert_file_ld($1::UUID, $2::JSONB)`, [
+      `select caskfs.insert_file_ld($1::UUID, $2::JSONB, $3::JSONB)`, [
         file.file_id, 
-        JSON.stringify(fileIdQuads)
+        JSON.stringify(fileIdQuads),
+        types ? JSON.stringify(types) : null
       ]);
 
     if( fileQuads ) {
@@ -330,7 +339,7 @@ class Rdf {
     return {
       file,
       links: fileIdQuads,
-      types : typeQuads,
+      types,
       fileQuads: fileQuads,
       caskQuads: await this._objectToNQuads(caskQuads)
     };
@@ -355,10 +364,11 @@ class Rdf {
     // so we don't need to do that here.  Just need make sure all external
     // references are filtered out.
 
-    let [outbound, inbound] = await Promise.all([
-      this.getReferencing(metadata.file_id, opts),
-      this.getReferencedBy(metadata.file_id, opts)
+    let [inbound, outbound] = await Promise.all([
+      this.getInboundLinks(metadata.file_id, opts),
+      this.getOutboundLinks(metadata.file_id, opts)
     ]);
+
 
     if( opts.debugQuery ) {
       return { outbound, inbound };
@@ -388,7 +398,7 @@ class Rdf {
     let data = {};
     for( let r of rows ) {
       if( !data[r.predicate] ) data[r.predicate] = new Set();
-      data[r.predicate].add(r.file);
+      data[r.predicate].add(r.filepath);
     }
     for( let p of Object.keys(data) ) {
       data[p] = Array.from(data[p]);
@@ -397,8 +407,7 @@ class Rdf {
     return data;
   }
 
-  async getReferencing(fileId, opts={}) {
-    let where = ['source_view.file_id = $1', 'referencing_view.file_id != $1'];
+  async getInboundLinks(fileId, opts={}) {
     let args = [fileId];
 
     let aclOpts = {
@@ -409,109 +418,86 @@ class Rdf {
 
     // handle acl filtering if enabled
     let aclJoin = '';
-    if( await acl.aclLookupRequired(aclOpts) ) {
-      aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = referencing_view.directory_id`;
+    // if( await acl.aclLookupRequired(aclOpts) ) {
+    //   aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = referencing_view.directory_id`;
       
-      let aclWhere = [
-        '(acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE)'
-      ];
+    //   let aclWhere = [
+    //     '(acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE)'
+    //   ];
 
-      if( opts.userId !== null ) {
-        aclWhere.push(`(acl_lookup.user_id = $${args.length + 1} AND acl_lookup.can_read = TRUE)`);
-        args.push(opts.userId);
-      }
+    //   if( opts.userId !== null ) {
+    //     aclWhere.push(`(acl_lookup.user_id = $${args.length + 1} AND acl_lookup.can_read = TRUE)`);
+    //     args.push(opts.userId);
+    //   }
 
-      where.push(`(${aclWhere.join(' OR ')})`);
-    }
+    //   where.push(`(${aclWhere.join(' OR ')})`);
+    // }
 
-    // additional filters
+    let predicate = '';
     if( opts.predicate ) {
-      if( !Array.isArray(opts.predicate) ) {
-        opts.predicate = [opts.predicate];
-      }
-      where.push(`source_view.predicate = ANY($${args.length + 1}::VARCHAR(256)[])`);
-      args.push(opts.predicate);
+      predicate = opts.predicate;
+      delete opts.predicate;
     }
 
-    if( opts.ignorePredicate ) {
-      if( !Array.isArray(opts.ignorePredicate) ) {
-        opts.ignorePredicate = [opts.ignorePredicate];
-      }
-      where.push(`source_view.predicate <> ALL ($${args.length + 1}::VARCHAR(256)[])`);
-      args.push(opts.ignorePredicate);
+    let predicateFilter = '';
+    if( predicate ) {
+      predicateFilter = ` AND predicate_uri_id = caskfs.get_uri_id($${args.length + 1}) `;
+      args.push(predicate);
     }
 
-    if( opts.partitionKeys ) {
-      if( !Array.isArray(opts.partitionKeys) ) {
-        opts.partitionKeys = [opts.partitionKeys];
-      }
-      where.push(`referencing_view.partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
-      where.push(`source_view.partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
-      args.push(opts.partitionKeys);
-    }
+    opts.withClauses = [];
+    opts.intersectClauses = [];
 
-    if( opts.graph ) {
-      where.push(`referencing_view.graph = $${args.length + 1}`);
-      where.push(`source_view.graph = $${args.length + 1}`);
-      args.push(opts.graph);
-    }
-
-    if( opts.subject ) {
-      where.push(`source_view.subject = $${args.length + 1}`);
-      args.push(opts.subject);
-    }
-
-
-    if( opts.stats ) {
-      let res = await this.dbClient.query(`
-        WITH files AS (
-          SELECT file_id from caskfs.file 
-        ),
-        source_view AS (
-          SELECT * FROM caskfs.file_ld_links WHERE file_id != $1
-          JOIN files f ON f.file_id = file_ld_links.file_id
-        ),
-        target_view AS (
-          SELECT * FROM caskfs.file_ld_filter 
-          JOIN files f ON f.file_id = file_ld_filter.file_id
-          WHERE file_id = $1 AND type = 'subject'
-        )
-        SELECT
-          *
-        FROM target_view tv
-        JOIN source_view sv ON tv.value = sv.object
-          `, args);
-
-      return res.rows;
-
-    }
-
-    let limit = 'LIMIT $'+(args.length + 1);
-    args.push(opts.limit || 100);
-
-    let query = `WITH links AS (
+    opts.withClauses.push(`
+      target_subjects AS (
         SELECT 
-            referencing_view.filepath AS file,
-            source_view.predicate AS predicate
-        FROM caskfs.rdf_link_view source_view
-        -- Find other files where this object URI appears as a subject
-        JOIN caskfs.rdf_link_view referencing_view ON source_view.object = referencing_view.subject
-        ${aclJoin}
-        WHERE ${where.join(' AND ')}
-    ),
-    nodes AS (
-        SELECT
-            referencing_view.filepath AS file,
-            source_view.predicate AS predicate
-        FROM caskfs.rdf_link_view source_view
-        JOIN caskfs.rdf_node_view referencing_view ON source_view.object = referencing_view.subject
-        ${aclJoin}
-        WHERE ${where.join(' AND ')}
-    )
-    SELECT * FROM links
-    UNION
-    SELECT * FROM nodes
-    ${limit}`;
+          ld.uri_id AS subject_uris
+        FROM ${config.database.schema}.file_ld_filter fld
+        INNER JOIN ${config.database.schema}.ld_filter ld ON ld.ld_filter_id = fld.ld_filter_id
+        WHERE fld.file_id = $1 AND ld.type = 'subject'
+      ),
+      target_subject_match AS (
+        SELECT ld_link_id FROM ${config.database.schema}.ld_link
+        WHERE object IN (SELECT subject_uris FROM target_subjects)
+              ${predicateFilter}
+      ),
+      target_subject_file_match AS (
+        SELECT DISTINCT f.file_id FROM ${config.database.schema}.file_ld_link f
+        INNER JOIN target_subject_match tsm ON tsm.ld_link_id = f.ld_link_id
+        WHERE f.file_id != $1
+      )  
+    `);
+    opts.intersectClauses.push(`SELECT file_id FROM target_subject_file_match`);
+    
+    let withFilters = this.dbClient.generateFileWithFilter(opts, args);
+
+    let limit = '', pselect = '', groupBy = '';
+    if( opts.stats ) {
+      pselect = 'count(*) as count';
+      groupBy = 'GROUP BY puri.uri';
+    } else {
+      pselect = 'f.filepath as filepath';
+      limit = 'LIMIT $'+(args.length + 1);
+      args.push(opts.limit || 1000);
+    }
+
+    let query = `
+      WITH
+      ${withFilters},
+      links AS (
+        SELECT * from ${config.database.schema}.file_ld_link fll
+        WHERE fll.file_id IN (SELECT file_id FROM files)
+        AND fll.ld_link_id IN (SELECT ld_link_id FROM target_subject_match)
+      )
+      SELECT 
+        puri.uri as predicate,
+        ${pselect}
+      FROM links l
+      LEFT JOIN ${config.database.schema}.ld_link ll ON ll.ld_link_id = l.ld_link_id
+      LEFT JOIN ${config.database.schema}.uri puri ON puri.uri_id = ll.predicate
+      LEFT JOIN ${config.database.schema}.simple_file_view f ON l.file_id = f.file_id
+      ${groupBy}
+      ${limit}`;
 
     if( opts.debugQuery ) {
       return { query, args  };
@@ -521,9 +507,7 @@ class Rdf {
     return res.rows;
   }
 
-  async getReferencedBy(fileId, opts={}) {    
-    let where = ['ref_by_view.file_id != $1'];
-    let distinctWhere = ['v.file_id = $1'];
+  async getOutboundLinks(fileId, opts={}) {    
     let args = [fileId];  
 
     let aclOpts = {
@@ -532,98 +516,92 @@ class Rdf {
       dbClient : opts.dbClient || this.dbClient
     };
 
-    let aclJoin = '';
-    if( await acl.aclLookupRequired(aclOpts) ) {
-      aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = ref_by_view.directory_id`;
+    // let aclJoin = '';
+    // if( await acl.aclLookupRequired(aclOpts) ) {
+    //   aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = ref_by_view.directory_id`;
       
-      let aclWhere = [
-        '(acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE)'
-      ];
+    //   let aclWhere = [
+    //     '(acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE)'
+    //   ];
 
-      if( opts.userId !== null ) {
-        aclWhere.push(`(acl_lookup.user_id = $${args.length + 1} AND acl_lookup.can_read = TRUE)`);
-        args.push(opts.userId);
-      }
+    //   if( opts.userId !== null ) {
+    //     aclWhere.push(`(acl_lookup.user_id = $${args.length + 1} AND acl_lookup.can_read = TRUE)`);
+    //     args.push(opts.userId);
+    //   }
 
-      where.push(`(${aclWhere.join(' OR ')})`);
-    }
+    //   where.push(`(${aclWhere.join(' OR ')})`);
+    // }
 
+    let predicate = '';
     if( opts.predicate ) {
-      if( !Array.isArray(opts.predicate) ) {
-        opts.predicate = [opts.predicate];
-      }
-      where.push(`ref_by_view.predicate = ANY($${args.length + 1}::VARCHAR(256)[])`);
-      args.push(opts.predicate);
+      predicate = opts.predicate;
+      delete opts.predicate;
     }
 
-    if( opts.ignorePredicate ) {
-      if( !Array.isArray(opts.ignorePredicate) ) {
-        opts.ignorePredicate = [opts.ignorePredicate];
-      }
-      where.push(`ref_by_view.predicate <> ALL ($${args.length + 1}::VARCHAR(256)[])`);
-      args.push(opts.ignorePredicate);
+    let predicateFilter = '';
+    if( predicate ) {
+      predicateFilter = ` AND predicate = caskfs.get_uri_id($${args.length + 1}) `;
+      args.push(predicate);
     }
 
-    if( opts.partitionKeys ) {
-      if( !Array.isArray(opts.partitionKeys) ) {
-        opts.partitionKeys = [opts.partitionKeys];
-      }
-      where.push(`ref_by_view.partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
-      distinctWhere.push(`v.partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
-      args.push(opts.partitionKeys);
-    }
+    opts.withClauses = [];
+    opts.intersectClauses = [];
 
-    if( opts.graph ) {
-      where.push(`ref_by_view.graph = $${args.length + 1}`);
-      distinctWhere.push(`v.graph = $${args.length + 1}`);
-      args.push(opts.graph);
-    }
+    opts.withClauses.push(`
+      target_objects AS (
+        SELECT 
+          ll.object AS object_uri,
+          ll.predicate AS predicate_uri
+        FROM ${config.database.schema}.file_ld_link fll
+        INNER JOIN ${config.database.schema}.ld_link ll ON ll.ld_link_id = fll.ld_link_id
+        WHERE fll.file_id = $1 ${predicateFilter}
+      ),
+      target_object_match AS (
+        SELECT ld_filter_id FROM ${config.database.schema}.ld_filter
+        WHERE uri_id IN (SELECT object_uri FROM target_objects) AND
+              type = 'subject'
+      ),
+      target_object_file_match AS (
+        SELECT DISTINCT f.file_id FROM ${config.database.schema}.file_ld_filter f
+        INNER JOIN target_object_match tom ON tom.ld_filter_id = f.ld_filter_id
+        WHERE f.file_id != $1
+      )
+    `);
+    opts.intersectClauses.push(`SELECT file_id FROM target_object_file_match`);
 
-    if( opts.subject ) {
-      where.push(`v.subject = $${args.length + 1}`);
-      args.push(opts.subject);
-    }
+    let withFilters = this.dbClient.generateFileWithFilter(opts, args);
 
-    let select, limit;
+    let limit = '', pselect = '', groupBy = '';
     if( opts.stats ) {
-      select = `SELECT
-          count(*) as count,
-          ref_by_view.predicate as predicate
-          FROM distinct_subjects source_view
-          -- Find other files where this object URI appears as a subject
-          INNER JOIN links ref_by_view ON ref_by_view.object = source_view.subject
-          GROUP BY ref_by_view.predicate
-          ORDER BY count DESC`;
+      pselect = 'count(*) as count';
+      groupBy = 'GROUP BY puri.uri';
     } else {
+      pselect = 'f.filepath as filepath';
       limit = 'LIMIT $'+(args.length + 1);
-      args.push(opts.limit || 100);
-
-      select = `SELECT 
-          ref_by_view.filepath AS file,
-          ref_by_view.predicate
-          FROM distinct_subjects source_view
-          -- Find other files where this object URI appears as a subject
-          INNER JOIN links ref_by_view ON ref_by_view.object = source_view.subject
-          ${limit}`;
+      args.push(opts.limit || 1000);
     }
 
     let query = `
-      WITH distinct_subjects AS (
-        SELECT DISTINCT v.subject
-        FROM caskfs.rdf_link_view v
-        WHERE ${distinctWhere.join(' AND ')}
-        UNION
-        SELECT DISTINCT v.subject
-        FROM caskfs.rdf_node_view v
-        WHERE ${distinctWhere.join(' AND ')}
-      ), 
+      WITH
+      ${withFilters},
       links AS (
-          SELECT * FROM caskfs.rdf_link_view ref_by_view
-          ${aclJoin}
-          WHERE ${where.join(' AND ')}
+        SELECT 
+          flf.*,
+          lf.uri_id
+        FROM ${config.database.schema}.file_ld_filter flf
+        LEFT JOIN ${config.database.schema}.ld_filter lf ON lf.ld_filter_id = flf.ld_filter_id
+        WHERE flf.file_id IN (SELECT file_id FROM files)
+        AND flf.ld_filter_id IN (SELECT ld_filter_id FROM target_object_match)
       )
-      ${select}
-      `;
+      SELECT 
+        puri.uri as predicate,
+        ${pselect}
+      FROM target_objects tos
+      INNER JOIN links l ON l.uri_id = tos.object_uri
+      LEFT JOIN ${config.database.schema}.simple_file_view f ON l.file_id = f.file_id
+      LEFT JOIN ${config.database.schema}.uri puri ON puri.uri_id = tos.predicate_uri
+      ${groupBy}
+      ${limit}`;
 
     if( opts.debugQuery ) {
       return { query, args  };
@@ -651,7 +629,7 @@ class Rdf {
       [fileMetadata.file_id]
     );
     await dbClient.query(
-      `delete from ${config.database.schema}.file_ld_links where file_id = $1`, 
+      `delete from ${config.database.schema}.file_ld_link where file_id = $1`, 
       [fileMetadata.file_id]
     );
   }
