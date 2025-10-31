@@ -278,7 +278,7 @@ class CaskFs {
         context.data.actions.parsedLinkedData = true;
 
         // update the nquads column in the file table with the file-specific cask quads
-        dbClient.query(
+        await dbClient.query(
           `UPDATE ${this.schema}.file SET nquads = $1 WHERE file_id = $2`, 
           [context.data.caskQuads, context.data.file.file_id]
         );
