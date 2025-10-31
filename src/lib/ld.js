@@ -76,7 +76,7 @@ class Rdf {
     // not get all of the quads for this subject
     // TODO: do we only do this for all file types?? or do we just do it for binary files?
     let subject = config.schemaPrefix+filePath;
-    console.log('Looking for linked files for subject', subject);
+    this.logger.info('Looking for linked files for subject', subject);
 
     // TODO: add flag for limiting to same partition keys as the file
     let linkedFiles = await this.find({ subject, dbClient });
