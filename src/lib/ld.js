@@ -409,29 +409,7 @@ class Rdf {
 
   async getInboundLinks(fileId, opts={}) {
     let args = [fileId];
-
-    let aclOpts = {
-      user: opts.user,
-      ignoreAcl : opts.ignoreAcl,
-      dbClient : opts.dbClient || this.dbClient
-    };
-
-    // handle acl filtering if enabled
-    let aclJoin = '';
-    // if( await acl.aclLookupRequired(aclOpts) ) {
-    //   aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = referencing_view.directory_id`;
-      
-    //   let aclWhere = [
-    //     '(acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE)'
-    //   ];
-
-    //   if( opts.userId !== null ) {
-    //     aclWhere.push(`(acl_lookup.user_id = $${args.length + 1} AND acl_lookup.can_read = TRUE)`);
-    //     args.push(opts.userId);
-    //   }
-
-    //   where.push(`(${aclWhere.join(' OR ')})`);
-    // }
+    let dbClient = opts.dbClient || this.dbClient;
 
     let predicate = '';
     if( opts.predicate ) {
@@ -469,7 +447,11 @@ class Rdf {
     `);
     opts.intersectClauses.push(`SELECT file_id FROM target_subject_file_match`);
     
-    let withFilters = this.dbClient.generateFileWithFilter(opts, args);
+    let withFilters = dbClient.generateFileWithFilter(opts, args);
+
+    let {table, aclQuery} = await dbClient.generateAclWithFilter(opts, args);
+    if( aclQuery ) withFilters = withFilters + ', ' + aclQuery;
+
 
     let limit = '', pselect = '', groupBy = '';
     if( opts.stats ) {
@@ -486,7 +468,7 @@ class Rdf {
       ${withFilters},
       links AS (
         SELECT * from ${config.database.schema}.file_ld_link fll
-        WHERE fll.file_id IN (SELECT file_id FROM files)
+        WHERE fll.file_id IN (SELECT file_id FROM ${table})
         AND fll.ld_link_id IN (SELECT ld_link_id FROM target_subject_match)
       )
       SELECT 
@@ -503,18 +485,14 @@ class Rdf {
       return { query, args  };
     }
 
-    let res = await this.dbClient.query(query, args);
+    let res = await dbClient.query(query, args);
     return res.rows;
   }
 
   async getOutboundLinks(fileId, opts={}) {    
     let args = [fileId];  
 
-    let aclOpts = {
-      user: opts.user,
-      ignoreAcl : opts.ignoreAcl,
-      dbClient : opts.dbClient || this.dbClient
-    };
+    let dbClient = opts.dbClient || this.dbClient;
 
     // let aclJoin = '';
     // if( await acl.aclLookupRequired(aclOpts) ) {
@@ -569,7 +547,9 @@ class Rdf {
     `);
     opts.intersectClauses.push(`SELECT file_id FROM target_object_file_match`);
 
-    let withFilters = this.dbClient.generateFileWithFilter(opts, args);
+    let withFilters = dbClient.generateFileWithFilter(opts, args);
+    let {table, aclQuery} = await dbClient.generateAclWithFilter(opts, args);
+    if( aclQuery ) withFilters = withFilters + ', ' + aclQuery;
 
     let limit = '', pselect = '', groupBy = '';
     if( opts.stats ) {
@@ -590,7 +570,7 @@ class Rdf {
           lf.uri_id
         FROM ${config.database.schema}.file_ld_filter flf
         LEFT JOIN ${config.database.schema}.ld_filter lf ON lf.ld_filter_id = flf.ld_filter_id
-        WHERE flf.file_id IN (SELECT file_id FROM files)
+        WHERE flf.file_id IN (SELECT file_id FROM ${table})
         AND flf.ld_filter_id IN (SELECT ld_filter_id FROM target_object_match)
       )
       SELECT 
@@ -607,7 +587,7 @@ class Rdf {
       return { query, args  };
     }
 
-    let resp = await this.dbClient.query(query, args);
+    let resp = await dbClient.query(query, args);
     return resp.rows;
   }
 

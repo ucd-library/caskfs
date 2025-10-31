@@ -278,36 +278,12 @@ class Database {
    * @returns {Promise<Array>} array of matching file URIs
    */
   async findFiles(opts={}) {
-    let linkWhere = [];
-    let nodeWhere = [];
     let args = [];
 
-    let aclOpts = {
-      user: opts.user,
-      ignoreAcl : opts.ignoreAcl,
-      dbClient : opts.dbClient || this
-    };
-    
-    let aclJoin = '';
-    if( await acl.aclLookupRequired(aclOpts) ) {
-      aclJoin = `
-      LEFT JOIN ${config.database.schema}.file f ON f.file_id = rdf.file_id
-      LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = f.directory_id`;
-      
-      let aclWhere = [
-        '(acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE)'
-      ];
-
-      if( opts.userId !== null && opts.userId !== undefined ) {
-        aclWhere.push(`(acl_lookup.user_id = $${args.length + 1} AND acl_lookup.can_read = TRUE)`);
-        args.push(opts.userId);
-      }
-
-      linkWhere.push(`(${aclWhere.join(' OR ')})`);
-      nodeWhere.push(`(${aclWhere.join(' OR ')})`);
-    }
-
     let withClauses = this.generateFileWithFilter(opts, args);
+
+    let {table, aclQuery} = await this.generateAclWithFilter(opts, args);
+    if( aclQuery ) withClauses = withClauses + ', ' + aclQuery;
 
     // order here matter for the limit/offset parameters below
     if( !opts.limit ) opts.limit = 100;
@@ -319,7 +295,7 @@ class Database {
       WITH ${withClauses},
       total AS (
         SELECT COUNT(*) AS total_count
-        FROM files
+        FROM ${table}
       )
       SELECT
         fv.filepath,
@@ -328,7 +304,7 @@ class Database {
         fv.modified,
         fv.last_modified_by,
         total.total_count
-      FROM total, files f
+      FROM total, ${table} f
       JOIN ${config.database.schema}.simple_file_view fv ON fv.file_id = f.file_id
       ORDER BY fv.filepath ASC
       LIMIT $${args.length - 1} OFFSET $${args.length}
@@ -343,6 +319,53 @@ class Database {
     resp.rows = resp.rows.map(r => { delete r.total_count; return r; });
 
     return { totalCount, results: resp.rows, offset: opts.offset, limit: opts.limit};
+  }
+
+  /**
+   * @method generateAclWithFilter
+   * @description Generate SQL WITH clauses to filter files based on ACLs.  Assumes you
+   * have a files table and will return an acl_files table if ACL filtering is required.
+   * If no ACL filtering is required, it will return the original files table.
+   * 
+   * @param {*} opts 
+   * @param {*} args 
+   * @returns 
+   */
+  async generateAclWithFilter(opts={}, args) {
+    let aclOpts = {
+      requestor: opts.requestor,
+      ignoreAcl : opts.ignoreAcl,
+      dbClient : opts.dbClient || this
+    };
+
+    let table = 'files';
+    let aclQuery = '';
+    if( await acl.aclLookupRequired(aclOpts) ) {
+      let aclWhere = [
+        '(acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE)'
+      ];
+
+      if( opts.requestor && !opts.userId ) {
+        opts.userId = await acl.getUserId({ user: opts.requestor, dbClient: aclOpts.dbClient });
+      }
+
+      if( opts.userId !== null && opts.userId !== undefined ) {
+        aclWhere.push(`(acl_lookup.user_id = $${args.length + 1} AND acl_lookup.can_read = TRUE)`);
+        args.push(opts.userId);
+      }
+
+      aclQuery = `
+      acl_files AS (
+        SELECT DISTINCT f.file_id
+        FROM files fs
+        LEFT JOIN ${config.database.schema}.file f ON f.file_id = fs.file_id
+        LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = f.directory_id
+        WHERE ${aclWhere.join(' OR ')}
+      )`;
+      table = 'acl_files';
+    }
+
+    return { aclQuery, table };
   }
 
   /**

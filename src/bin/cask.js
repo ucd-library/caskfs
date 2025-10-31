@@ -342,6 +342,8 @@ program
     }
 
     let resp = await cask.rdf.find(options);
+    cask.dbClient.end();
+    
     if( options.debugQuery ) {
       console.log('SQL Query:');
       console.log(resp.query);
