@@ -269,23 +269,15 @@ program
   });
 
 program
-  .command('ld')
+  .command('ld <file-path>')
   .description('Read linked data and output as supported RDF format to stdout')
-  .option('-f, --file <file-path>', 'Only include RDF triples for the specified file')
-  .option('-s, --subject <subject-uri>', 'Only include RDF triples with the specified subject')
-  .option('-o, --object <object-uri>', 'Only include RDF triples with the specified object')
-  .option('-g, --graph <graph-uri>', 'Only include RDF triples in the specified graph. Must be used with --subject or --file')
-  .option('-k, --partition-keys <keys>', 'Only include RDF triples with the specified partition keys (comma-separated). Must be used with --subject or --file')
-  .option('-e, --format <format>', 'RDF format to output: jsonld, compact, flattened, expanded, nquads or json. Default is jsonld', 'jsonld')
-  .action(async (options) => {
+  .option('-o, --format <format>', 'RDF format to output: jsonld, compact, flattened, expanded, nquads or json. Default is jsonld', 'jsonld')
+  .action(async (filePath, options) => {
     handleGlobalOpts(options);
 
     const cask = new CaskFs();
 
-    if( options.partition ) {
-      options.partition = options.partition.split(',').map(k => k.trim());
-    }
-
+    options.filePath = filePath;
     let resp = await cask.rdf.read(options);
 
     if( typeof resp === 'object' ) {
@@ -301,7 +293,6 @@ program
   .alias('relationships')
   .description('Get relationships for a file in the CASK FS')
   .option('-p, --predicate <predicate>', 'Only include relationships with the specified predicate, comma-separated')
-  .option('-i, --ignore-predicate <predicate>', 'Only include relationships that do NOT have the specified predicate(s), comma-separated')
   .option('-k, --partition-keys <keys>', 'Only include relationships with the specified partition keys (comma-separated)')
   .option('-g, --graph <graph-uri>', 'Only include relationships in the specified graph')
   .option('-s, --subject <subject-uri>', 'Only include relationships with the specified subject URI')
@@ -337,6 +328,7 @@ program
   .option('-g, --graph <graph-uri>', 'Only include files in the specified graph')
   .option('-s, --subject <subject-uri>', 'Only include files with the specified subject URI')
   .option('-o, --object <object-uri>', 'Only include files with the specified object URI')
+  .option('-t, --type <type-uri>', 'Only include files with the specified RDF type URI')
   .option('-l, --limit <number>', 'Limit the number of results returned', parseInt)
   .option('-f, --offset <number>', 'Offset the results returned by the specified number', parseInt)
   .option('-d, --debug-query', 'Output the SQL query used to find the files', false)
@@ -349,7 +341,17 @@ program
       options.partitionKeys = options.partitionKeys.split(',').map(k => k.trim());
     }
 
-    console.log(await cask.rdf.find(options));
+    let resp = await cask.rdf.find(options);
+    cask.dbClient.end();
+    
+    if( options.debugQuery ) {
+      console.log('SQL Query:');
+      console.log(resp.query);
+      console.log(resp.args);
+      return;
+    }
+
+    console.log(resp);
     cask.dbClient.end();
   });
 

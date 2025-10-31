@@ -268,21 +268,30 @@ class CaskFs {
         let readFile = context.data.stagedFile.hashExists ? context.data.stagedFile.hashFile : context.data.stagedFile.tmpFile;
 
         this.logger.info('Inserting RDF triples for file', context.logSignal);
-        await this.rdf.insert(context.data.file.file_id, 
+        let insertResp = await this.rdf.insert(context.data.file.file_id, 
           {
             dbClient, 
             filepath: readFile
           });
-
+        context.data.fileQuads = insertResp.fileQuads;
+        context.data.caskQuads = insertResp.caskQuads;
         context.data.actions.parsedLinkedData = true;
+
+        // update the nquads column in the file table with the file-specific cask quads
+        await dbClient.query(
+          `UPDATE ${this.schema}.file SET nquads = $1 WHERE file_id = $2`, 
+          [context.data.caskQuads, context.data.file.file_id]
+        );
+
       } else {
-        this.logger.info('RDF file already exists, skipping RDF processing', context.logSignal);
+        this.logger.info('File already exists, skipping RDF processing', context.logSignal);
       }
 
       // finalize the write to move the temp file to its final location
       let copied = await this.cas.finalizeWrite(
         context.data.stagedFile.tmpFile, 
-        context.data.stagedFile.hashFile, 
+        context.data.stagedFile.hashFile,
+        context.data.fileQuads,
         {bucket: metadata.bucket, dbClient}
       );
       context.update({copied});
@@ -290,7 +299,7 @@ class CaskFs {
 
       // if metadata was updated, write the metadata file to CAS
       if( context.data.actions.updatedMetadata === true ) {
-        this.cas.writeMetadata(context.data.file.hash_value);
+        await this.cas.writeMetadata(context.data.file.hash_value);
       }
 
       // finally commit the transaction
@@ -527,6 +536,10 @@ class CaskFs {
 
     let data = res.rows[0];
     data.fullPath = this.cas.diskPath(data.hash_value);
+
+    if( !data.partition_keys ) {
+      data.partition_keys = [];
+    }
 
     if( context.stats ) {
       res = await dbClient.query(`

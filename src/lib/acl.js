@@ -357,7 +357,10 @@ class Acl {
     if( !user || !dbClient ) {
       throw new Error('User and dbClient are required');
     }
-    let res = await dbClient.query(`INSERT INTO ${config.database.schema}.acl_user (name) VALUES ($1) ON CONFLICT (name) DO NOTHING RETURNING user_id`, [user]);
+    let res = await dbClient.query(
+      `INSERT INTO ${config.database.schema}.acl_user (name) VALUES ($1) ON CONFLICT (name) DO NOTHING RETURNING user_id`, 
+      [user]
+    );
     if( res.rows.length === 0 ) {
       res = await dbClient.query(`SELECT user_id FROM ${config.database.schema}.acl_user WHERE name = $1`, [user]);
     }

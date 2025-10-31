@@ -278,97 +278,36 @@ class Database {
    * @returns {Promise<Array>} array of matching file URIs
    */
   async findFiles(opts={}) {
-    let linkWhere = [];
-    let nodeWhere = [];
     let args = [];
 
-    let aclOpts = {
-      user: opts.user,
-      ignoreAcl : opts.ignoreAcl,
-      dbClient : opts.dbClient || this
-    };
-    
-    let aclJoin = '';
-    if( await acl.aclLookupRequired(aclOpts) ) {
-      aclJoin = `
-      LEFT JOIN ${config.database.schema}.file f ON f.file_id = rdf.file_id
-      LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = f.directory_id`;
-      
-      let aclWhere = [
-        '(acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE)'
-      ];
+    let withClauses = this.generateFileWithFilter(opts, args);
 
-      if( opts.userId !== null ) {
-        aclWhere.push(`(acl_lookup.user_id = $${args.length + 1} AND acl_lookup.can_read = TRUE)`);
-        args.push(opts.userId);
-      }
-
-      linkWhere.push(`(${aclWhere.join(' OR ')})`);
-      nodeWhere.push(`(${aclWhere.join(' OR ')})`);
-    }
-
-    if( opts.partitionKeys ) {
-      if( !Array.isArray(opts.partitionKeys) ) {
-        opts.partitionKeys = [opts.partitionKeys];
-      }
-      linkWhere.push(`rdf.partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
-      nodeWhere.push(`rdf.partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
-      args.push(opts.partitionKeys);
-    }
-
-    if( opts.graph ) {
-      linkWhere.push(`rdf.graph = $${args.length + 1}`);
-      nodeWhere.push(`rdf.graph = $${args.length + 1}`);
-      args.push(opts.graph);
-    }
-
-    if( opts.predicate ) {
-      linkWhere.push(`rdf.predicate = $${args.length + 1}`);
-      nodeWhere.push(`rdf.predicate = $${args.length + 1}`);
-      args.push(opts.predicate);
-    }
-
-
-    if( opts.object ) {
-      linkWhere.push(`rdf.object = $${args.length + 1}`);
-      args.push(opts.object);
-    }
-
-    if( opts.subject ) {
-      linkWhere.push(`rdf.subject = $${args.length + 1}`);
-      nodeWhere.push(`rdf.subject = $${args.length + 1}`);
-      args.push(opts.subject);
-    }
+    let {table, aclQuery} = await this.generateAclWithFilter(opts, args);
+    if( aclQuery ) withClauses = withClauses + ', ' + aclQuery;
 
     // order here matter for the limit/offset parameters below
-    args.push(opts.limit || 100);
-    args.push(opts.offset || 0);
-
-    if( linkWhere.length === 0 ) {
-      throw new Error('At least one of subject, graph, partition, predicate or object must be specified for find');
-    }
-
-    let nodeQuery = '';
-    if( nodeWhere.length > 0 ) {
-      nodeQuery = `UNION
-      SELECT DISTINCT rdf.file_id FROM ${config.database.schema}.rdf_node_view rdf
-      ${aclJoin}
-      WHERE ${nodeWhere.join(' AND ')}`;
-    }
+    if( !opts.limit ) opts.limit = 100;
+    if( !opts.offset ) opts.offset = 0;
+    args.push(opts.limit);
+    args.push(opts.offset);
 
     let query = `
-      with files as (
-        SELECT DISTINCT rdf.file_id FROM ${config.database.schema}.rdf_link_view rdf
-        ${aclJoin}
-        WHERE ${linkWhere.join(' AND ')}
-        ${nodeQuery}
-        LIMIT $${args.length - 1} OFFSET $${args.length}
+      WITH ${withClauses},
+      total AS (
+        SELECT COUNT(*) AS total_count
+        FROM ${table}
       )
       SELECT
-        fv.*
-      FROM files f
-      JOIN ${config.database.schema}.file_view fv ON fv.file_id = f.file_id
+        fv.filepath,
+        fv.metadata,
+        fv.created,
+        fv.modified,
+        fv.last_modified_by,
+        total.total_count
+      FROM total, ${table} f
+      JOIN ${config.database.schema}.simple_file_view fv ON fv.file_id = f.file_id
       ORDER BY fv.filepath ASC
+      LIMIT $${args.length - 1} OFFSET $${args.length}
     `;
 
     if( opts.debugQuery ) {
@@ -376,143 +315,152 @@ class Database {
     }
 
     let resp = await this.client.query(query, args);
-    return resp.rows;
+    let totalCount = resp.rows.length > 0 ? parseInt(resp.rows[0].total_count) : 0;
+    resp.rows = resp.rows.map(r => { delete r.total_count; return r; });
+
+    return { totalCount, results: resp.rows, offset: opts.offset, limit: opts.limit};
   }
 
   /**
-   * @method findRdfNodes
-   * @description Internal method to query RDF data from the database based on given options.  A subject or
-   * a file must be specified. Will return jsonld dataset of nodes and links that match the query.
-   * Will limit to 10,000 nodes AND 10,000 links.
-   *
-   * @param {Object} opts query options
-   * @param {String} opts.file file path to filter by
-   * @param {String} opts.subject subject URI to filter by
-   * @param {String} opts.graph graph URI to filter by (must be used with subject or file)
-   * @param {String|Array} opts.partition partition key or array of partition keys to filter by
-   * @param {Number} opts.limit limit number of results. Default 10000 nodes and 10000 links
-   *
-   * @returns {Promise<Object>} JSON-LD dataset of nodes and links that match the query
+   * @method generateAclWithFilter
+   * @description Generate SQL WITH clauses to filter files based on ACLs.  Assumes you
+   * have a files table and will return an acl_files table if ACL filtering is required.
+   * If no ACL filtering is required, it will return the original files table.
+   * 
+   * @param {*} opts 
+   * @param {*} args 
+   * @returns 
    */
-  async findRdfNodes(opts={}) {
-    let where = [];
-    let args = [];
-
-    if( !opts.file && !opts.subject && !opts.object ) {
-      throw new Error('File, subject, or object must be specified for rdf queries');
-    }
-
+  async generateAclWithFilter(opts={}, args) {
     let aclOpts = {
       requestor: opts.requestor,
       ignoreAcl : opts.ignoreAcl,
       dbClient : opts.dbClient || this
     };
 
-    let aclJoin = '';
+    let table = 'files';
+    let aclQuery = '';
     if( await acl.aclLookupRequired(aclOpts) ) {
-      aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = rdf.directory_id`;
-      
       let aclWhere = [
         '(acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE)'
       ];
 
-      if( !opts.userId && opts.requestor ) {
-        opts.userId = await acl.getUserId({user: opts.requestor, dbClient: aclOpts.dbClient});
+      if( opts.requestor && !opts.userId ) {
+        opts.userId = await acl.getUserId({ user: opts.requestor, dbClient: aclOpts.dbClient });
       }
 
-      if( opts.userId !== null ) {
+      if( opts.userId !== null && opts.userId !== undefined ) {
         aclWhere.push(`(acl_lookup.user_id = $${args.length + 1} AND acl_lookup.can_read = TRUE)`);
         args.push(opts.userId);
       }
 
-      where.push(`(${aclWhere.join(' OR ')})`);
+      aclQuery = `
+      acl_files AS (
+        SELECT DISTINCT f.file_id
+        FROM files fs
+        LEFT JOIN ${config.database.schema}.file f ON f.file_id = fs.file_id
+        LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = f.directory_id
+        WHERE ${aclWhere.join(' OR ')}
+      )`;
+      table = 'acl_files';
     }
 
-    if( opts.partition ) {
-      if( !Array.isArray(opts.partition) ) {
-        opts.partition = [opts.partition];
+    return { aclQuery, table };
+  }
+
+  /**
+   * @method generateFileWithFilter
+   * @description Generate SQL WITH clauses to filter files based on linked data filters. Options
+   * include object, subject, predicate, graph, type, and partitionKeys.  All specified filters
+   * will be ANDed together.  You will have a final WITH clause named "files" that contains the filtered file IDs.
+   *
+   * @param {Object} opts
+   * @param {String} opts.object object URI to filter by
+   * @param {String} opts.subject subject URI to filter by
+   * @param {String} opts.predicate predicate URI to filter by
+   * @param {String} opts.graph graph URI to filter by
+   * @param {String} opts.type type URI to filter by
+   * @param {Array} opts.partitionKeys array of partition keys to filter by
+   * @returns {String} SQL WITH clauses for filtering files
+   */
+  generateFileWithFilter(opts={}, args) {
+    let withClauses = opts.withClauses || [];
+    let intersectClauses = opts.intersectClauses || [];
+    let basic = ['object', 'subject', 'predicate', 'graph', 'type'];
+
+    for( let type of basic ) {
+      if( !opts[type] ) continue;
+
+      withClauses.push(`${type}_match AS (
+        SELECT ld_filter_id FROM ${config.database.schema}.ld_filter
+        WHERE type = '${type}' AND uri_id = caskfs.get_uri_id($${args.length + 1})
+      ),
+      ${type}_file_match AS (
+        SELECT DISTINCT f.file_id FROM ${config.database.schema}.file_ld_filter f
+        JOIN ${type}_match tm ON tm.ld_filter_id = f.ld_filter_id
+      )
+      `);
+      intersectClauses.push(`SELECT file_id FROM ${type}_file_match`);
+      args.push(opts[type]);
+    }
+
+    // we want all the ld_link that have an object equal to the subject 
+    if( opts.target && opts.target.fileId ) {
+      let predicateFilter = '';
+      if( opts.target.predicate ) {
+        predicateFilter = ` AND predicate_uri_id = ANY(SELECT subject_uris FROM target_subjects)`;
+        args.push(opts.target.predicate);
       }
-      where.push(`partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
-      args.push(opts.partition);
-    }
-    if( opts.graph ) {
-      where.push(`graph = $${args.length + 1}`);
-      args.push(opts.graph);
-    }
-    if( opts.object ) {
-      where.push(`object = $${args.length + 1}`);
-      args.push(opts.object);
-    }
-    if( opts.subject ) {
-      where.push(`subject = $${args.length + 1}`);
-      args.push(opts.subject);
-    }
-    if( opts.file ) {
-      where.push(`filepath = $${args.length + 1}`);
-      args.push(opts.file);
+
+      withClauses.push(`
+      target_subjects AS (
+        SELECT 
+          ARRAY_AGG(uri_id) AS subject_uris
+        FROM ${config.database.schema}.file_ld_filter
+        WHERE file_id = $${args.length + 1} AND type = 'subject'
+        GROUP BY file_id
+      ),
+      target_subject_match AS (
+        SELECT ld_link_id FROM ${config.database.schema}.ld_link
+        WHERE object = caskfs.get_uri_id($${args.length + 1}) 
+              ${predicateFilter}
+      ),
+      target_subject_file_match AS (
+        SELECT DISTINCT f.file_id FROM ${config.database.schema}.file_ld_link f
+        JOIN target_subject_match tsm ON tsm.ld_link_id = f.ld_link_id
+        WHERE f.file_id != $${args.length + 2}
+      )  
+      `);
+      intersectClauses.push(`SELECT file_id FROM target_subject_file_match`);
+      args.push(opts.target.subject);
+      args.push(opts.target.fileId);
     }
 
-    let limit = 'LIMIT $'+(args.length + 1);
-    args.push(opts.limit || 10000);
-
-    let nodes = [];
-    if( !opts.object ) {
-      nodes = await this.client.query(`
-        SELECT * FROM ${config.database.schema}.rdf_node_view rdf
-        ${aclJoin}
-        WHERE ${where.join(' AND ')} ${limit}
-      `, args);
-      nodes = nodes.rows;
+    if( opts.partitionKeys ) {
+      withClauses.push(`partition_match AS (
+        SELECT partition_key_id FROM ${config.database.schema}.partition_key pk
+        WHERE pk.value = ANY($${args.length + 1}::VARCHAR(256)[])
+      ),
+      partition_file_match AS (
+        SELECT DISTINCT f.file_id FROM ${config.database.schema}.file_partition_key f
+        JOIN partition_match pm ON pm.partition_key_id = f.partition_key_id
+      )  
+      `);
+      intersectClauses.push(`SELECT file_id FROM partition_file_match`);
+      args.push(opts.partitionKeys);
+    }
+ 
+    if( intersectClauses.length > 0 ) {
+      withClauses.push(`files AS (
+        ${intersectClauses.join('\nINTERSECT\n')}
+      )`);
+    } else {
+      withClauses.push(`files AS (
+        SELECT file_id FROM ${config.database.schema}.file
+      )`);
     }
 
-    let links = await this.client.query(`
-      SELECT * FROM ${config.database.schema}.rdf_link_view rdf
-      ${aclJoin}
-      WHERE ${where.join(' AND ')} ${limit}
-    `, args);
-    links = links.rows;
-
-    let dataset = {};
-    let context = {};
-    for( let n of nodes ) {
-      if( !dataset[n.graph] ) {
-        dataset[n.graph] = {
-          '@id': n.graph,
-          '@graph': {}
-        }
-      }
-      dataset[n.graph]['@graph'][n.subject] = n.data;
-      context = Object.assign(context, n.context);
-    }
-
-    for( let l of links ) {
-      if( !dataset[l.graph] ) {
-        dataset[l.graph] = {
-          '@id': l.graph,
-          '@graph': {}
-        };
-      }
-      if( !dataset[l.graph]['@graph'][l.subject] ) {
-        dataset[l.graph]['@graph'][l.subject] = { '@id': l.subject };
-      }
-      dataset[l.graph]['@graph'][l.subject][l.predicate] = { '@id': l.object };
-    }
-
-    // convert graph objects to arrays
-    for( let g of Object.keys(dataset) ) {
-      dataset[g]['@graph'] = Object.values(dataset[g]['@graph']);
-    }
-
-    let data = {
-      '@context': context,
-      '@graph': []
-    };
-
-    for( let g of Object.keys(dataset) ) {
-      data['@graph'].push(dataset[g]);
-    }
-
-    return data;
+    return withClauses.join(', ');
   }
 
   powerWash() {

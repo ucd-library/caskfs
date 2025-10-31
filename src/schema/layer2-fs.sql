@@ -277,6 +277,7 @@ CREATE TABLE IF NOT EXISTS caskfs.file (
     last_modified_by TEXT NOT NULL,
     created         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     modified        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    nquads          TEXT NOT NULL DEFAULT '',
     UNIQUE(directory_id, name)
 );
 CREATE INDEX IF NOT EXISTS idx_file_hash_id ON caskfs.file(hash_id);
@@ -290,7 +291,16 @@ CREATE TABLE IF NOT EXISTS caskfs.file_partition_key (
     partition_key_id UUID NOT NULL REFERENCES caskfs.partition_key(partition_key_id) ON DELETE CASCADE,
     UNIQUE(file_id, partition_key_id)
 );
+CREATE INDEX IF NOT EXISTS idx_file_partition_key_file_id ON caskfs.file_partition_key(file_id);
+CREATE INDEX IF NOT EXISTS idx_file_partition_key_partition_key_id ON caskfs.file_partition_key(partition_key_id);
 
+CREATE OR REPLACE VIEW caskfs.file_partition_keys AS
+SELECT
+    fpk.file_id,
+    ARRAY_AGG(pk.value) AS partition_keys
+FROM caskfs.file_partition_key fpk
+LEFT JOIN caskfs.partition_key pk ON fpk.partition_key_id = pk.partition_key_id
+GROUP BY fpk.file_id;
 
 CREATE OR REPLACE FUNCTION caskfs.add_partition_key(
     p_file_id UUID,
@@ -372,7 +382,7 @@ SELECT
     h.value AS hash_value,
     h.digests AS digests,
     f.metadata,
-    ARRAY_REMOVE(ARRAY_AGG(pk.value), NULL) AS partition_keys,
+    fpk.partition_keys AS partition_keys,
     f.created,
     f.modified,
     f.last_modified_by,
@@ -381,9 +391,38 @@ SELECT
 FROM caskfs.file f
 JOIN caskfs.hash h ON f.hash_id = h.hash_id
 LEFT JOIN caskfs.directory d ON f.directory_id = d.directory_id
-LEFT JOIN caskfs.file_partition_key fpk ON f.file_id = fpk.file_id
-LEFT JOIN caskfs.partition_key pk ON fpk.partition_key_id = pk.partition_key_id
-GROUP BY f.file_id, d.directory_id, d.fullname, f.name, h.value, h.digests, f.metadata, f.created, f.modified, f.last_modified_by, h.size, h.bucket;
+LEFT JOIN caskfs.file_partition_keys fpk ON f.file_id = fpk.file_id;
+
+CREATE OR REPLACE VIEW caskfs.simple_file_view AS
+SELECT
+    f.file_id,
+    CASE
+      WHEN d.fullname = '/' THEN '/' || f.name
+      ELSE d.fullname || '/' || f.name
+    END AS filepath,
+    f.metadata,
+    f.created,
+    f.modified,
+    f.last_modified_by
+FROM caskfs.file f
+LEFT JOIN caskfs.directory d ON f.directory_id = d.directory_id;
+
+
+CREATE OR REPLACE VIEW caskfs.file_quads_view AS
+SELECT
+    d.fullname AS directory,
+    f.name as filename,
+    CASE
+      WHEN d.fullname = '/' THEN '/' || f.name
+      ELSE d.fullname || '/' || f.name
+    END AS filepath,
+    f.metadata,
+    h.value AS hash_value,
+    h.nquads AS file_nquads,
+    f.nquads AS cask_nquads
+FROM caskfs.file f
+LEFT JOIN caskfs.directory d ON f.directory_id = d.directory_id
+LEFT JOIN caskfs.hash h ON f.hash_id = h.hash_id;
 
 -- Function to insert file with automatic hash management
 CREATE OR REPLACE FUNCTION caskfs.insert_file(

@@ -102,7 +102,7 @@ class Cas {
    * 
    * @returns {Promise<Boolean>} resolves with true if the file was copied, false if it already existed
    */
-  async finalizeWrite(tmpFile, hashFile, opts={}) {
+  async finalizeWrite(tmpFile, hashFile, nquads, opts={}) {
     let copied = false;
     await this.init();
 
@@ -110,6 +110,12 @@ class Cas {
       copied = true;
       await this.storage.mkdir(path.dirname(hashFile), {recursive: true});
       await this.storage.copyFile(tmpFile, hashFile, opts);
+
+      if( nquads ) {
+        await opts.dbClient.query(`
+          UPDATE ${config.database.schema}.hash SET nquads = $1 WHERE value = $2
+        `, [nquads, path.basename(hashFile)]);
+      }
     }
 
     if( fs.existsSync(tmpFile) ) {

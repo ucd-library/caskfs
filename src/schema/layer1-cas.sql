@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS caskfs.hash (
   digests       JSONB NOT NULL DEFAULT '{}'::jsonb,
   bucket        VARCHAR(256),
   size          BIGINT,
-  created       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  nquads        TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_hash_value ON caskfs.hash(value);
