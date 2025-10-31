@@ -213,37 +213,3 @@ BEGIN
     END LOOP;
 END;
 $$ LANGUAGE plpgsql;
-
-EXPLAIN ANALYZE
-WITH subject_match AS (
-        SELECT ld_filter_id FROM caskfs.ld_filter
-        WHERE type = 'subject' AND uri_id = caskfs.get_uri_id('cask://dams-wbs-metadata/collection/wbs')
-      ),
-      subject_file_match AS (
-        SELECT DISTINCT f.file_id FROM caskfs.file_ld_filter f
-        JOIN subject_match tm ON tm.ld_filter_id = f.ld_filter_id
-      )
-      , files AS (
-        SELECT file_id FROM subject_file_match
-      ), 
-      acl_files AS (
-        SELECT DISTINCT f.file_id
-        FROM files fs
-        LEFT JOIN caskfs.file f ON f.file_id = fs.file_id
-        LEFT JOIN caskfs.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = f.directory_id
-        WHERE (acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE) OR (acl_lookup.user_id = '5dd7af0a-9cb0-4e5f-8f9d-195988ebc739' AND acl_lookup.can_read = TRUE)
-      ),
-      total AS (
-        SELECT COUNT(*) AS total_count
-        FROM acl_files
-      )
-      SELECT
-        fv.filepath,
-        fv.metadata,
-        fv.created,
-        fv.modified,
-        fv.last_modified_by,
-        total.total_count
-      FROM total, acl_files f
-      JOIN caskfs.simple_file_view fv ON fv.file_id = f.file_id
-      ORDER BY fv.filepath ASC
