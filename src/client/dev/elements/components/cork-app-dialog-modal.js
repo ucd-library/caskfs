@@ -21,6 +21,7 @@ export default class CorkAppDialogModal extends Mixin(LitElement)
       data: {type: Object},
       actionCallback: {state: true},
       contentMaxHeight: {type: String},
+      fullWidth: { type: Boolean },
       loading: {type: Boolean},
       _isOpen: {type: Boolean}
     }
@@ -40,6 +41,7 @@ export default class CorkAppDialogModal extends Mixin(LitElement)
     this.data = {};
     this.actionCallback = null;
     this.contentMaxHeight = '';
+    this.fullWidth = false;
     this.loading = false;
     this._isOpen = false;
     this.wait = new WaitController(this);
@@ -98,6 +100,7 @@ export default class CorkAppDialogModal extends Mixin(LitElement)
       this.actions = e.actions || [];
       this.data = e.data || {};
       this.actionCallback = e.actionCallback;
+      this.fullWidth = e.fullWidth || false;
     }
     this._loading = false;
 

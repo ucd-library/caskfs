@@ -71,6 +71,32 @@ class FsService extends BaseService {
     return store.get(id);
   }
 
+  async getFileContents(path) {
+    let ido = { path };
+    let id = payload.getKey(ido);
+    const store = this.store.data.fileContents;
+
+    const appStateOptions = {
+      errorSettings: {message: 'Unable to get file contents'}
+    };
+
+    await this.checkRequesting(
+      id, store,
+      () => this.request({
+        url : `${this.baseUrl}${path}`,
+        checkCached : () => store.get(id),
+        onUpdate : resp => this.store.set(
+          payload.generate(ido, resp),
+          store,
+          null,
+          appStateOptions
+        )
+      })
+    );
+
+    return store.get(id);
+  }
+
 }
 
 const service = new FsService();

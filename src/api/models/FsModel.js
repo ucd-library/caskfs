@@ -28,6 +28,10 @@ class FsModel extends BaseModel {
     return this.service.getMetadata(path);
   }
 
+  getFileContents(path) {
+    return this.service.getFileContents(path);
+  }
+
   fileDownloadUrl(path) {
     return `${this.service.baseUrl}${path}`;
   }

@@ -14,7 +14,6 @@ export default class CaskfsFileMetadata extends Mixin(LitElement)
 
   static get properties() {
     return {
-      pathStartIndex: { type: Number },
       data: { type: Object },
       highlightedData: { state: true },
       fsUtils: { state: true },
@@ -30,7 +29,6 @@ export default class CaskfsFileMetadata extends Mixin(LitElement)
     super();
     this.render = render.bind(this);
 
-    this.pathStartIndex = 0;
     this.data = {};
     this.highlightedData = '';
     this.showRaw = false;
