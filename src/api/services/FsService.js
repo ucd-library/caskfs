@@ -77,7 +77,8 @@ class FsService extends BaseService {
     const store = this.store.data.fileContents;
 
     const appStateOptions = {
-      errorSettings: {message: 'Unable to get file contents'}
+      errorSettings: {message: 'Unable to get file contents'},
+      loaderSettings: {suppressLoader: true}
     };
 
     await this.checkRequesting(

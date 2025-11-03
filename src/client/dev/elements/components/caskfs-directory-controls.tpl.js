@@ -55,6 +55,12 @@ return html`
       link-aria-label='Sort Items'>
     </cork-icon-button>
     <cork-icon-button
+      icon='fas.copy'
+      title='Copy Directory Path'
+      @click=${this._onCopyPathClick}
+      link-aria-label='Copy Directory Path'>
+    </cork-icon-button>
+    <cork-icon-button
       icon='fas.trash'
       color='medium'
       title='Delete Selected Items'

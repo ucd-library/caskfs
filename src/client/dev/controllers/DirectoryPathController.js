@@ -52,11 +52,15 @@ export default class DirectoryPathController {
   }
 
   /**
-   * @description Go to app state location with rel prefix
+   * @description Get the file location in the app
    * @param {String|Array} path - optional path to set. If not provided, will use current path
-   * @param {String} prefixKey - prefix key to use from this.pathPrefix
+   * @returns {String} - the file location
    */
-  _setLocation(path, prefixKey){
+  fileLocation(path){
+    return this._getLocation(path, 'file');
+  }
+
+  _getLocation(path, prefixKey){
     if ( typeof path === 'string' ) {
       path = path.split('/').filter(Boolean);
     }
@@ -64,6 +68,16 @@ export default class DirectoryPathController {
       path = this.path.slice(1);
     }
     const newPath = '/' + [ ...this.pathPrefix[prefixKey], ...path ].join('/');
+    return newPath;
+  }
+
+  /**
+   * @description Go to app state location with rel prefix
+   * @param {String|Array} path - optional path to set. If not provided, will use current path
+   * @param {String} prefixKey - prefix key to use from this.pathPrefix
+   */
+  _setLocation(path, prefixKey){
+    const newPath = this._getLocation(path, prefixKey);
     this.AppStateModel.setLocation(newPath);
   }
 

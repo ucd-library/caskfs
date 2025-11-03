@@ -1,13 +1,19 @@
-import { LitElement } from 'lit';
+import { LitElement, html } from 'lit';
 import {render, styles} from "./caskfs-page-relationships.tpl.js";
 import { LitCorkUtils, Mixin } from '@ucd-lib/cork-app-utils';
 import { MainDomElement } from "@ucd-lib/theme-elements/utils/mixins/main-dom-element.js";
+
+import DirectoryPathController from '../../controllers/DirectoryPathController.js';
+import AppComponentController from '../../controllers/AppComponentController.js';
+
+import '../components/caskfs-file-preview.js';
 
 export default class CaskfsPageRelationships extends Mixin(LitElement)
   .with(LitCorkUtils, MainDomElement) {
 
   static get properties() {
     return {
+      metadata: { type: Object }
     }
   }
 
@@ -18,7 +24,43 @@ export default class CaskfsPageRelationships extends Mixin(LitElement)
   constructor() {
     super();
     this.render = render.bind(this);
+    this.metadata = {};
 
+    this.ctl = {
+      appComponent: new AppComponentController(this),
+      directoryPath: new DirectoryPathController(this)
+    };
+
+    this._injectModel('AppStateModel', 'FsModel');
+  }
+
+  async _onAppStateUpdate(e) {
+    if ( !this.ctl.appComponent.isOnActivePage ) return;
+    this.getMetadata();
+  }
+
+  async getMetadata() {
+    this.metadata = {};
+    const res = await this.FsModel.getMetadata(this.ctl.directoryPath.pathname);
+    if ( res.state === 'loaded' ) {
+      this.metadata = res.payload;
+    }
+  }
+
+  _onDisplayFileClick(){
+    this.AppStateModel.showDialogModal({
+      title: this.metadata.filename,
+      fullWidth: true,
+      content: () => html`
+        <caskfs-file-preview
+          filepath=${this.metadata.filepath}
+        ></caskfs-file-preview>`
+    });
+  }
+
+  _onCopyPathClick() {
+    navigator.clipboard.writeText(this.ctl.directoryPath.pathname);
+    this.AppStateModel.showToast({text: 'File system path copied to clipboard', type: 'success'});
   }
 
 }
