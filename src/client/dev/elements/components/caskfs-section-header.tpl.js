@@ -1,4 +1,5 @@
 import { html, css } from 'lit';
+import panelStyles from '@ucd-lib/theme-sass/4_component/_panel.css.js';
 
 export function styles() {
   const elementStyles = css`
@@ -44,6 +45,9 @@ export function styles() {
       align-items: center;
       gap: .5rem;
     }
+    .panel__title {
+      margin: 0;
+    }
     .separator {
       width: 100%;
       border-bottom: 4px dotted var(--caskfs-section-header-brand-color);
@@ -51,7 +55,10 @@ export function styles() {
     }
   `;
 
-  return [elementStyles];
+  return [
+    panelStyles,
+    elementStyles
+  ];
 }
 
 export function render() { 
@@ -60,11 +67,11 @@ export function render() {
     <div class="container">
       <div class="container__main">
         <cork-icon icon="${this.icon}" ?hidden="${!this.icon}"></cork-icon>
-        <h2 class="h2">${this.text}</h2>
+        <h2 class=${this._headingClass}>${this.text}</h2>
       </div>
       <div class="container__actions">
         <slot name="actions"></slot>
       </div>
     </div>
-    <div class="separator"></div>
+    <div class="separator" ?hidden=${this.hideSeparator}></div>
   `;}

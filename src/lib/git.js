@@ -9,8 +9,13 @@ class Git {
 
   async info(filePath) {
     // get root dir for the file
-    let resp = await exec(`git -C ${path.dirname(filePath)} rev-parse --show-toplevel`);
-    let dir = resp.stdout.trim();
+    let dir;
+    try {
+      let resp = await exec(`git -C ${path.dirname(filePath)} rev-parse --show-toplevel`);
+      dir = resp.stdout.trim();
+    } catch(e) {
+      return null;
+    }
 
     // check if file is not in git ignore
     let relPath = path.relative(dir, filePath);

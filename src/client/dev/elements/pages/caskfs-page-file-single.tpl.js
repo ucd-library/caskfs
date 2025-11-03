@@ -1,5 +1,8 @@
 import { html, css } from 'lit';
 
+import appPathUtils from '../../utils/appPathUtils.js';
+import mimeTypeUtils from '../../utils/mimeTypeUtils.js';
+
 import '../components/caskfs-file-metadata.js';
 import '../components/caskfs-fs-breadcrumbs.js';
 
@@ -29,9 +32,9 @@ return html`
               <cork-icon-button
                 icon="fas.arrow-up-right-from-square"
                 basic
-                title="View Linked Data Representation"
-                link-aria-label="View Linked Data Representation"
-                href="/ld${this.directoryPathCtl.pathname}"
+                title="View Linked Data Relationships"
+                link-aria-label="View Linked Data Relationships"
+                href=${appPathUtils.fullPath(`/rel${this.ctl.directoryPath.pathname}`)}
               ></cork-icon-button>
             </div>
           </caskfs-section-header>
@@ -40,7 +43,9 @@ return html`
       </div>
       <div class="l-sidebar-second">
         <button class="btn btn--alt3 btn--block u-space-mb" @click=${this._onDeleteRequest}>Delete File</button>
-        <a class="btn btn--alt3 btn--block" href=${this.FsModel.fileDownloadUrl(this.directoryPathCtl.pathname)} download>Download File</a>
+        <a class="btn btn--alt3 btn--block u-space-mb" href=${this.FsModel.fileDownloadUrl(this.ctl.directoryPath.pathname)} download>Download File</a>
+        <button class="btn btn--alt3 btn--block u-space-mb" @click=${this._onDisplayFileClick} ?hidden=${!mimeTypeUtils.previewType(this.data?.metadata?.mimeType)}>Display File</button>
+        <button class="btn btn--alt3 btn--block" @click=${this._onCopyPathClick}>Copy File System Path</button>
       </div>
     </div>
   </div>

@@ -28,10 +28,16 @@ export function styles() {
       cork-app-dialog-modal dialog {
         width: 75%;
       }
+      cork-app-dialog-modal dialog.full-width {
+        width: 95%;
+      }
     }
     @media (min-width: 992px) {
       cork-app-dialog-modal dialog {
         width: auto;
+      }
+      cork-app-dialog-modal dialog.full-width {
+        width: 95%;
       }
     }
     cork-app-dialog-modal dialog[open] {
@@ -116,7 +122,7 @@ export function styles() {
 
 export function render() {
 return html`
-  <dialog ${ref(this.dialogRef)}>
+  <dialog ${ref(this.dialogRef)} class=${this.fullWidth ? 'full-width' : ''}>
     <div ?hidden=${!this.modalTitle} class='heading-wrapper'>
       <div class='heading'>
         <div class='h4'>${this.modalTitle}</div>

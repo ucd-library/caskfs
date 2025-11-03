@@ -50,7 +50,7 @@ router.get(/(.*)/, async (req, res) => {
 
     res.setHeader('Content-Disposition', `attachment; filename="${metadata.filename}"`);
 
-    const readStream = await caskFs.read(filePath, { stream: true, encoding: null });
+    const readStream = await caskFs.read({filePath}, { stream: true, encoding: null });
 
     // Clean up if the client bails out mid-transfer
     req.on('aborted', () => {

@@ -1,20 +1,19 @@
 import { LitElement, html } from 'lit';
-import {render, styles} from "./caskfs-page-file-single.tpl.js";
+import {render, styles} from "./caskfs-page-relationships.tpl.js";
 import { LitCorkUtils, Mixin } from '@ucd-lib/cork-app-utils';
 import { MainDomElement } from "@ucd-lib/theme-elements/utils/mixins/main-dom-element.js";
 
 import DirectoryPathController from '../../controllers/DirectoryPathController.js';
 import AppComponentController from '../../controllers/AppComponentController.js';
 
-import '../components/caskfs-delete-form.js';
 import '../components/caskfs-file-preview.js';
 
-export default class CaskfsPageFileSingle extends Mixin(LitElement)
+export default class CaskfsPageRelationships extends Mixin(LitElement)
   .with(LitCorkUtils, MainDomElement) {
 
   static get properties() {
     return {
-      data: { type: Object }
+      metadata: { type: Object }
     }
   }
 
@@ -25,8 +24,7 @@ export default class CaskfsPageFileSingle extends Mixin(LitElement)
   constructor() {
     super();
     this.render = render.bind(this);
-
-    this.data = {};
+    this.metadata = {};
 
     this.ctl = {
       appComponent: new AppComponentController(this),
@@ -42,30 +40,20 @@ export default class CaskfsPageFileSingle extends Mixin(LitElement)
   }
 
   async getMetadata() {
-    this.data = {};
+    this.metadata = {};
     const res = await this.FsModel.getMetadata(this.ctl.directoryPath.pathname);
     if ( res.state === 'loaded' ) {
-      this.data = res.payload;
+      this.metadata = res.payload;
     }
-  }
-
-  _onDeleteRequest() {
-    this.AppStateModel.showDialogModal({
-      content: () => html`
-        <caskfs-delete-form 
-          .items=${{filepath: this.ctl.directoryPath.pathname}} 
-          .successLocation=${this.ctl.directoryPath.breadcrumbParent?.url}>
-        </caskfs-delete-form>`
-    });
   }
 
   _onDisplayFileClick(){
     this.AppStateModel.showDialogModal({
-      title: this.data.filename,
+      title: this.metadata.filename,
       fullWidth: true,
       content: () => html`
         <caskfs-file-preview
-          filepath=${this.ctl.directoryPath.pathname}
+          filepath=${this.metadata.filepath}
         ></caskfs-file-preview>`
     });
   }
@@ -77,4 +65,4 @@ export default class CaskfsPageFileSingle extends Mixin(LitElement)
 
 }
 
-customElements.define('caskfs-page-file-single', CaskfsPageFileSingle);
+customElements.define('caskfs-page-relationships', CaskfsPageRelationships);

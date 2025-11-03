@@ -9,6 +9,7 @@ class FsStore extends BaseStore {
     this.data = {
       delete: new LruStore({name: 'fs.delete'}),
       metadata: new LruStore({name: 'fs.metadata'}),
+      fileContents: new LruStore({name: 'fs.fileContents', maxSize: 10})
     };
     this.events = {};
   }

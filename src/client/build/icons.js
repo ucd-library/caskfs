@@ -15,10 +15,11 @@ export function buildIconsets(){
       preload: [
         'caret-down', 'caret-up', 'check', 'file-circle-plus', 
         'folder-plus', 'plug-circle-exclamation', 
-        'sort', 'turn-up', 'xmark', 'folder', 'file', 'trash',
+        'sort', 'turn-up', 'xmark', 'folder', 'file', 'file-import', 'trash',
         'spinner', 'circle-exclamation', 'upload', 'circle-info',
         'diagram-project', 'arrow-up-right-from-square', 'layer-group',
-        'fingerprint'
+        'fingerprint', 'right-from-bracket', 'right-to-bracket',
+        'arrows-to-circle', 'copy', 'eye'
       ]
     }, 
     { name: 'ucdlib-core', 

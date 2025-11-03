@@ -68,6 +68,11 @@ export default class CaskfsDirectoryControls extends Mixin(LitElement)
     });
   }
 
+  _onCopyPathClick() {
+    navigator.clipboard.writeText(this.directoryPathCtl.pathname);
+    this.AppStateModel.showToast({text: 'Directory path copied to clipboard', type: 'success'});
+  }
+
 }
 
 customElements.define('caskfs-directory-controls', CaskfsDirectoryControls);
