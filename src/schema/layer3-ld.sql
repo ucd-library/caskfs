@@ -102,6 +102,45 @@ LEFT JOIN caskfs.ld_link ll ON fll.ld_link_id = ll.ld_link_id
 LEFT JOIN caskfs.uri pu ON ll.predicate = pu.uri_id
 LEFT JOIN caskfs.uri ou ON ll.object = ou.uri_id;
 
+CREATE TABLE IF NOT EXISTS caskfs.ld_literal (
+    ld_literal_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    graph UUID,
+    subject UUID NOT NULL,
+    predicate UUID NOT NULL,
+    value TEXT NOT NULL,
+    language VARCHAR(32),
+    datatype VARCHAR(256),
+    UNIQUE(graph, subject, predicate, value, language, datatype)
+);
+CREATE INDEX IF NOT EXISTS idx_ld_literal_subject ON caskfs.ld_literal(subject);
+
+CREATE TABLE IF NOT EXISTS caskfs.file_ld_literal (
+    file_ld_literal_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    file_id UUID NOT NULL REFERENCES caskfs.file(file_id) ON DELETE CASCADE,
+    ld_literal_id UUID NOT NULL REFERENCES caskfs.ld_literal(ld_literal_id),
+    UNIQUE(file_id, ld_literal_id)
+);
+CREATE INDEX IF NOT EXISTS idx_file_ld_literal_file_id ON caskfs.file_ld_literal(file_id);
+CREATE INDEX IF NOT EXISTS idx_file_ld_literal_ld_literal_id ON caskfs.file_ld_literal(ld_literal_id);
+
+CREATE OR REPLACE VIEW caskfs.file_ld_literal_view AS
+SELECT
+    fll.file_ld_literal_id,
+    fv.file_id,
+    fv.filepath,
+    gu.uri AS graph,
+    su.uri AS subject,
+    pu.uri AS predicate,
+    ll.value AS object,
+    ll.language AS language,
+    ll.datatype AS datatype
+FROM caskfs.file_ld_literal fll
+LEFT JOIN caskfs.file_view fv ON fll.file_id = fv.file_id
+LEFT JOIN caskfs.ld_literal ll ON fll.ld_literal_id = ll.ld_literal_id
+LEFT JOIN caskfs.uri pu ON ll.predicate = pu.uri_id
+LEFT JOIN caskfs.uri su ON ll.subject = su.uri_id
+LEFT JOIN caskfs.uri gu ON ll.graph = gu.uri_id;
+
 CREATE OR REPLACE FUNCTION caskfs.insert_file_ld(
     p_file_id UUID,
     p_nquads JSONB,
@@ -141,7 +180,8 @@ BEGIN
             (triple->>'graph') AS graph,
             (triple->>'subject') AS subject,
             (triple->>'predicate') AS predicate,
-            (triple->>'object') AS object
+            (triple->'object') AS object,
+            (triple->>'is_literal')::BOOLEAN AS is_literal
         FROM jsonb_array_elements(p_nquads) AS triple
     LOOP
         IF record.graph IS NOT NULL THEN
@@ -186,7 +226,38 @@ BEGIN
 
         -- Check if named node for object, if so add to filter and predicate/object links
         IF record.object IS NOT NULL THEN
-            v_object_uri_id := caskfs.upsert_uri(record.object);
+
+            IF record.is_literal THEN
+                -- Insert into literals table
+                INSERT INTO caskfs.ld_literal (graph, subject, predicate, value, language, datatype)
+                VALUES (
+                    v_graph_uri_id,
+                    v_subject_uri_id,
+                    v_predicate_uri_id,
+                    record.object->>'value',
+                    record.object->>'language',
+                    record.object->>'datatype'
+                )
+                ON CONFLICT (graph, subject, predicate, value, language, datatype) DO NOTHING;
+
+                INSERT INTO caskfs.file_ld_literal (file_id, ld_literal_id)
+                VALUES (
+                    p_file_id,
+                    (SELECT ld_literal_id FROM caskfs.ld_literal 
+                    WHERE 
+                        graph = v_graph_uri_id AND 
+                        subject = v_subject_uri_id AND 
+                        predicate = v_predicate_uri_id AND 
+                        value = record.object->>'value' AND
+                        language IS NOT DISTINCT FROM record.object->>'language' AND
+                        datatype IS NOT DISTINCT FROM record.object->>'datatype')
+                )
+                ON CONFLICT (file_id, ld_literal_id) DO NOTHING;
+
+                CONTINUE;
+            END IF;
+
+            v_object_uri_id := caskfs.upsert_uri(record.object::TEXT);
             INSERT INTO caskfs.ld_filter (type, uri_id)
             VALUES ('object', v_object_uri_id)
             ON CONFLICT (type, uri_id) DO NOTHING;

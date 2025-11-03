@@ -47,6 +47,7 @@ class CaskFs {
     this.jsonldExt = '.jsonld.json';
     this.jsonLdMimeType = 'application/ld+json';
     this.nquadsMimeType = 'application/n-quads';
+    this.nTriplesMimeType = 'application/n-triples';
     this.n3MimeType = 'text/n3';
     this.turtleMimeType = 'text/turtle';
 
@@ -190,6 +191,7 @@ class CaskFs {
       if( metadata.mimeType === this.nquadsMimeType ||
           metadata.mimeType === this.jsonLdMimeType ||
           metadata.mimeType === this.n3MimeType ||
+          metadata.mimeType === this.nTriplesMimeType ||
           metadata.mimeType === this.turtleMimeType ||
           context.readPath?.endsWith(this.jsonldExt) ) {
         this.logger.debug('Detected RDF file based on mime type or file extension', context.logSignal);

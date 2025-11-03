@@ -69,7 +69,9 @@ program
       if( !path.isAbsolute(opts.readPath) ) {
         opts.readPath = path.resolve(process.cwd(), opts.readPath);
       }
-      opts.git = await git.info(opts.readPath);
+      try {
+        opts.git = await git.info(opts.readPath);
+      } catch(e) {}
     }
 
     let partitionKeys = (options.partitionKeys ? options.partitionKeys.split(',') : [])
@@ -130,8 +132,13 @@ program
 
     // is the source path a file or directory?
     let stat = await fs.stat(sourcePath);
+    let git;
     if( !stat.isDirectory() ) {
       destPath = path.resolve(destPath, path.basename(sourcePath));
+
+      try {
+        git = await git.info(sourcePath);
+      } catch(e) {}
       
       let context = createContext({
         filePath: destPath,
@@ -139,7 +146,7 @@ program
         bucket: options.bucket,
         readPath: sourcePath,
         replace: options.replace,
-        git: await git.info(sourcePath)
+        git
       });
       
       location = await cask.getCasLocation(context);
@@ -174,13 +181,17 @@ program
 
       let destFile = path.join(destPath, path.relative(sourcePath, file))
 
+      try {
+        git = await git.info(file);
+      } catch(e) {}
+
       context = createContext({
         filePath: destFile,
         requestor: options.requestor,
         bucket: options.bucket,
         readPath: file,
         replace: options.replace,
-        git: await git.info(file)
+        git
       });
 
       location = await cask.getCasLocation(context);
@@ -279,6 +290,26 @@ program
 
     options.filePath = filePath;
     let resp = await cask.rdf.read(options);
+
+    if( typeof resp === 'object' ) {
+      console.log(JSON.stringify(resp, null, 2));
+    } else {
+      process.stdout.write(resp);
+    }
+    cask.dbClient.end();
+  });
+
+program
+  .command('literal <subject>')
+  .description('Read literal labels for a subject URI and output as supported RDF format to stdout')
+  .option('-o, --format <format>', 'RDF format to output: jsonld, compact, flattened, expanded, nquads or json. Default is jsonld', 'jsonld')
+  .action(async (subject, options) => {
+    handleGlobalOpts(options);
+
+    const cask = new CaskFs();
+
+    options.subject = subject;
+    let resp = await cask.rdf.literal(options);
 
     if( typeof resp === 'object' ) {
       console.log(JSON.stringify(resp, null, 2));

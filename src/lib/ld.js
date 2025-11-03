@@ -6,7 +6,7 @@ import path from "path";
 import fsp from "fs/promises";
 import { getLogger } from './logger.js';
 import acl from './acl.js';
-const { namedNode } = DataFactory;
+const { namedNode, quad, literal } = DataFactory;
 
 const customLoader = async (url, options) => {
   url = new URL(url);
@@ -35,6 +35,9 @@ class Rdf {
     this.nquadsMimeType = 'application/n-quads';
     this.n3MimeType = 'text/n3';
     this.turtleMimeType = 'text/turtle';
+
+    this.literalPredicates = new Set(config.literalPredicates);
+    this.stringDataTypes = new Set(config.stringDataTypes);
 
     this.TYPE_PREDICATE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
   }
@@ -100,22 +103,19 @@ class Rdf {
     }
 
     data = nquads.join('\n');
+    return this.format(data, format, filePath);
+  }
+
+  async format(data, format, filePath=null) {
+
+    // let data = nquads.join('\n');
 
     if( format === 'nquads' || format === 'application/n-quads' ) {
-      // return jsonld.canonize(data, {
-      //   algorithm: 'URDNA2015',
-      //   format: 'application/n-quads'
-      // });
-      return nquads;
+      return data;
     }
 
     if( format === 'json' || format === 'application/json' ) {
-      // const nquads = await jsonld.canonize(data, {
-      //   algorithm: 'URDNA2015',
-      //   format: 'application/n-quads'
-      // });
-
-      return this.quadsParser.parse(nquads)
+      return this.quadsParser.parse(data)
         .map(q => ({
           graph: q.graph.value || null,
           subject: q.subject.value,
@@ -150,6 +150,19 @@ class Rdf {
     }
 
     throw new Error(`Unsupported RDF format: ${format}`);
+  }
+
+  async literal(opts={}) {
+    let data = await this.dbClient.getLiteralValues(opts);
+    data = data.map(q => quad(
+      namedNode(q.subject),
+      namedNode(q.predicate),
+      literal(q.object, q.language || namedNode(q.datatype)),
+      namedNode(q.graph)
+    ));
+ 
+    data = await this._objectToNQuads(data);
+    return this.format(data, opts.format);
   }
 
   /**
@@ -296,13 +309,32 @@ class Rdf {
     }
 
     allQuads = allQuads
-      .map(q => ({
-        graph: this._resolveIdPath(q.graph.value),
-        subject: this._resolveIdPath(q.subject.value, filepath),
-        predicate: q.predicate.value,
-        object: q.object.termType === 'NamedNode' ? this._resolveIdPath(q.object.value, filepath) : null,
-        quad: q
-      }));
+      .map(q => {
+        let object = null, isLiteral = false;
+        if( q.object.termType === 'Literal' && this.literalPredicates.has(q.predicate.value) ) {
+          object = {
+            value: q.object.value,
+            language: q.object.language || null,
+            datatype: q.object?.datatype?.id || null
+          };
+          // default is string, so remove it
+          if( this.stringDataTypes.has(object.datatype) ) {
+            delete object.datatype;
+          }
+          isLiteral = true;
+        } else if( q.object.termType === 'NamedNode' ) {
+          object = this._resolveIdPath(q.object.value, filepath);
+        }
+
+        return {
+          graph: this._resolveIdPath(q.graph.value),
+          subject: this._resolveIdPath(q.subject.value, filepath),
+          predicate: q.predicate.value,
+          object: object,
+          isLiteral: isLiteral,
+          quad: q
+        };
+      });
 
     let types = null;
 
@@ -318,7 +350,8 @@ class Rdf {
       graph : q.graph,
       subject : q.subject,
       predicate : q.predicate,
-      object : q.object
+      object : q.object,
+      is_literal : q.isLiteral
     }));
 
     await dbClient.query(
@@ -696,7 +729,13 @@ class Rdf {
         this._caskCompactMergeProperty(node, q.predicate.value, q.object, filePath);
       });
 
-    return Object.values(nodes);
+    nodes = Object.values(nodes);
+    nodes.forEach(n => {
+      if( n['@type'].length === 0 ) {
+        delete n['@type'];
+      }
+    });
+    return nodes;
   }
 
   _caskCompactMergeProperty(node, property, object, filePath='') {
