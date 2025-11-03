@@ -20,7 +20,7 @@ const config = {
 
   TYPE_PREDICATE: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
 
-  powerWashEnabled: (env.CASKFS_ENABLE_POWERWASH === 'true'),
+  powerwashEnabled: (env.CASKFS_ENABLE_POWERWASH === 'true'),
 
   database : {
     client : env.CASKFS_DB_CLIENT || 'pg',
@@ -63,6 +63,10 @@ const config = {
 
   sync : {
     maxFilesPerBatch : parseInt(env.CASKFS_SYNC_MAX_FILES_PER_BATCH) || 1000
+  },
+
+  git : {
+    metadataProperties : ['remote', 'branch', 'commit', 'tag', 'lastCommitTime']
   }
 
 }

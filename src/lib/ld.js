@@ -1,4 +1,4 @@
-import { Parser as QuadsParser, Writer as QuadsWriter } from "n3";
+import { Parser as QuadsParser, Writer as QuadsWriter, DataFactory } from "n3";
 import jsonld from "jsonld";
 import Database from "./database/index.js";
 import config from "./config.js";
@@ -6,6 +6,7 @@ import path from "path";
 import fsp from "fs/promises";
 import { getLogger } from './logger.js';
 import acl from './acl.js';
+const { namedNode } = DataFactory;
 
 const customLoader = async (url, options) => {
   url = new URL(url);
@@ -45,22 +46,88 @@ class Rdf {
    *
    * @param {Object} opts
    * @param {String} opts.file file path to filter by
-   * @param {String} opts.subject subject URI to filter by
-   * @param {String} opts.graph graph URI to filter by (must be used with subject or file)
-   * @param {String|Array} opts.partition partition key or array of partition keys to filter by
    * @param {String} opts.format RDF format to return: jsonld (default), compact, cask, flattened, expanded, nquads, json
    * 
    * @returns {Promise<Object>} RDF data in the specified format
    */
   async read(opts={}) {
     let format = opts.format;
-    let filePath = opts.file;
+    let filePath = opts.filePath;
+    let dbClient = opts.dbClient || this.dbClient;
 
-    if( opts.subject && opts.subject.startsWith('/') ) {
-      opts.subject = config.schemaPrefix + opts.subject;
+    if( !filePath ) {
+      throw new Error('File path is required to read Linked Data');
     }
 
-    let data = await this.query(opts);
+    let parts = path.parse(filePath);
+
+    let data = await dbClient.query(
+      `SELECT file_nquads, cask_nquads FROM ${config.database.schema}.file_quads_view WHERE filename = $1 AND directory = $2`, 
+      [parts.base, parts.dir]
+    );
+    if( data.rows.length === 0 ) {
+      throw new Error(`No RDF data found for file: ${filePath}`);
+    }
+
+    let nquads = [];
+    if( data.rows[0].file_nquads ) nquads.push(data.rows[0].file_nquads);
+    if( data.rows[0].cask_nquads ) nquads.push(data.rows[0].cask_nquads);
+
+    // not get all of the quads for this subject
+    // TODO: do we only do this for all file types?? or do we just do it for binary files?
+    let subject = config.schemaPrefix+filePath;
+    this.logger.info('Looking for linked files for subject', subject);
+
+    // TODO: add flag for limiting to same partition keys as the file
+    let linkedFiles = await this.find({ subject, dbClient });
+
+    let linkedFileQuads;
+    if( linkedFiles.totalCount > 0 ) {
+      for( let lf of linkedFiles.results ) {
+        if( lf.filepath === filePath ) continue;
+
+        linkedFileQuads = await dbClient.query(
+          `SELECT file_nquads FROM ${config.database.schema}.file_quads_view WHERE filename = $1 AND directory = $2`, 
+          [lf.filename, lf.directory]
+        );
+
+        if( !linkedFileQuads.rows.length ) continue;
+        linkedFileQuads = linkedFileQuads.rows[0].file_nquads;
+        linkedFileQuads = this.quadsParser.parse(linkedFileQuads)
+          .filter(q => q.subject.value === subject);
+        nquads.push(await this._objectToNQuads(linkedFileQuads));
+      }
+    }
+
+    data = nquads.join('\n');
+
+    if( format === 'nquads' || format === 'application/n-quads' ) {
+      // return jsonld.canonize(data, {
+      //   algorithm: 'URDNA2015',
+      //   format: 'application/n-quads'
+      // });
+      return nquads;
+    }
+
+    if( format === 'json' || format === 'application/json' ) {
+      // const nquads = await jsonld.canonize(data, {
+      //   algorithm: 'URDNA2015',
+      //   format: 'application/n-quads'
+      // });
+
+      return this.quadsParser.parse(nquads)
+        .map(q => ({
+          graph: q.graph.value || null,
+          subject: q.subject.value,
+          predicate: q.predicate.value,
+          object: q.object.toJSON()
+        }));
+    }
+
+    data = await jsonld.fromRDF(data, {
+      format: 'application/n-quads',
+      documentLoader: customLoader
+    });
 
     if( !format || format === 'jsonld' || format === 'application/ld+json' ) {
       return data;
@@ -80,28 +147,6 @@ class Rdf {
 
     if( format === 'expanded' || format === 'application/ld+json; profile="http://www.w3.org/ns/json-ld#expanded"' ) {
       return jsonld.expand(data);
-    }
-
-    if( format === 'nquads' || format === 'application/n-quads' ) {
-      return jsonld.canonize(data, {
-        algorithm: 'URDNA2015',
-        format: 'application/n-quads'
-      });
-    }
-
-    if( format === 'json' || format === 'application/json' ) {
-      const nquads = await jsonld.canonize(data, {
-        algorithm: 'URDNA2015',
-        format: 'application/n-quads'
-      });
-
-      return this.quadsParser.parse(nquads)
-        .map(q => ({
-          graph: q.graph.value || null,
-          subject: q.subject.value,
-          predicate: q.predicate.value,
-          object: q.object.toJSON()
-        }));
     }
 
     throw new Error(`Unsupported RDF format: ${format}`);
@@ -131,9 +176,11 @@ class Rdf {
    *  
    * @returns {Promise<Object>} JSON-LD dataset of nodes and links that match the query
    */
-  async query(opts={}) {
-    return this.dbClient.findRdfNodes(opts);
-  }
+  // async query(opts={}) {
+  //   return this.dbClient.findRdfNodes(opts);
+  // }
+
+
 
   /**
    * @function insert
@@ -157,9 +204,9 @@ class Rdf {
     let filepath = path.join(file.directory, file.filename);
 
     let data = '';
-    let nquads, parserMimeType;
+    let fileQuads, parserMimeType;
 
-    if( file.metadata.resource_type === 'rdf' ) {
+    if( file.metadata.resourceType === 'rdf' ) {
       data = await fsp.readFile(opts.filepath || filepath, {encoding: 'utf8'});
 
       if( file.metadata.mimeType === this.jsonLdMimeType ) {
@@ -168,7 +215,7 @@ class Rdf {
         // handle empty @id values by assigning blank cask:/ IDs
         this._setEmptyIds(data);
 
-        nquads = await jsonld.canonize(data, {
+        fileQuads = await jsonld.canonize(data, {
           algorithm: 'URDNA2015',
           format: this.nquadsMimeType,
           safe: true,
@@ -177,7 +224,7 @@ class Rdf {
 
         parserMimeType = this.nquadsMimeType;
       } else {
-        nquads = data;
+        fileQuads = data;
         parserMimeType = file.metadata.mimeType;
       }
     } else {
@@ -218,7 +265,7 @@ class Rdf {
       ]
     }
 
-    if( file?.metadata?.resource_type === 'rdf' ) {
+    if( file?.metadata?.resourceType === 'rdf' ) {
       caskFileNode['@graph'][0]['@type'].push('http://library.ucdavis.edu/cask#RDFSource');
     }
     if( file.metadata.mimeType ) {
@@ -226,7 +273,6 @@ class Rdf {
         '@value': file.metadata.mimeType
       };
     }
-
 
     const caskQuads = this.quadsParser.parse(
       await jsonld.canonize(caskFileNode, {
@@ -238,118 +284,64 @@ class Rdf {
 
     // merge the cask quads with the data quads
     let parser = new QuadsParser({ format: parserMimeType });
-    let quads;
+    parser.DEFAULTGRAPH = namedNode(config.defaultGraph);
 
-    if( nquads ) {
-      quads = [...caskQuads, ...parser.parse(nquads)];
+    let allQuads = [];
+
+    if( fileQuads ) {
+      fileQuads = parser.parse(fileQuads);
+      allQuads = [...caskQuads, ...fileQuads];
     } else {
-      quads = caskQuads;
+      allQuads = caskQuads;
     }
 
-    const literalQuads = quads
-      .filter(q => q.subject.termType === 'NamedNode' && q.predicate.termType === 'NamedNode' && q.object.termType !== 'NamedNode')
+    allQuads = allQuads
       .map(q => ({
         graph: this._resolveIdPath(q.graph.value),
         subject: this._resolveIdPath(q.subject.value, filepath),
         predicate: q.predicate.value,
-        object: q.object.value,
-        quad : q
+        object: q.object.termType === 'NamedNode' ? this._resolveIdPath(q.object.value, filepath) : null,
+        quad: q
       }));
 
-    const nodeData = {};
+    let types = null;
 
-    for( let lq of literalQuads ) {
-      if( !nodeData[lq.graph || this.defaultGraph] ) {
-        nodeData[lq.graph || this.defaultGraph] = {};
-      }
-      let graphNode = nodeData[lq.graph || this.defaultGraph];
-
-      if( !graphNode[lq.subject] ) {
-        graphNode[lq.subject] = {
-          data : {'@id': lq.subject},
-          context : {},
-          quads: []
-        }
-      }
-      let node = graphNode[lq.subject];
-
-      let prop = this._getContextProperty(lq.predicate);
-      node.context[prop.property] = {'@id': prop.uri};
-      if( !node.data[prop.property] ) {
-        node.data[prop.property] = lq.object;
-      } else if( Array.isArray(node.data[prop.property]) ) {
-        node.data[prop.property].push(lq.object);
-      } else {
-        node.data[prop.property] = [node.data[prop.property], lq.object];
-      }
-
-      node.quads.push(lq.quad);
+    if( fileQuads ) {
+      types = new Set(fileQuads.filter(q => q.predicate.value === this.TYPE_PREDICATE)
+        .map(q => q.object.value));
+      types = Array.from(types);
     }
+    let otherQuads = allQuads.filter(q => q.predicate !== this.TYPE_PREDICATE);
 
-    // parse the nquads into quads
-    const namedQuads = quads
-      .filter(q => q.subject.termType === 'NamedNode' && q.predicate.termType === 'NamedNode' && q.object.termType === 'NamedNode')
-      .map(q => {
-        return {
-          graph: this._resolveIdPath(q.graph.value),
-          subject: this._resolveIdPath(q.subject.value, filepath),
-          predicate: this._resolveIdPath(q.predicate.value),
-          object: this._resolveIdPath(q.object.value, filepath),
-          quad: q
-        };
+    // filter out the quad data for insertion
+    let fileIdQuads = otherQuads.map(q => ({
+      graph : q.graph,
+      subject : q.subject,
+      predicate : q.predicate,
+      object : q.object
+    }));
+
+    await dbClient.query(
+      `select caskfs.insert_file_ld($1::UUID, $2::JSONB, $3::JSONB)`, [
+        file.file_id, 
+        JSON.stringify(fileIdQuads),
+        types ? JSON.stringify(types) : null
+      ]);
+
+    if( fileQuads ) {
+      // ensure proper path resolution for subject IDs
+      fileQuads.forEach(q => {
+        q._subject = namedNode(this._resolveIdPath(q.subject.value, filepath));
       });
-
-    // TODO filter out RDF type triples and store in rdf_types table
-    let typeQuads = namedQuads.filter(q => q.predicate === this.TYPE_PREDICATE);
-    let otherQuads = namedQuads.filter(q => q.predicate !== this.TYPE_PREDICATE);
-
-    // append types to the nodes themselves
-    if( typeQuads.length > 0 ) {
-      for( let tq of typeQuads ) {
-        if( !nodeData[tq.graph || this.defaultGraph] ) {
-          nodeData[tq.graph || this.defaultGraph] = {};
-        }
-        let graphNode = nodeData[tq.graph || this.defaultGraph];
-        if( !graphNode[tq.subject] ) {
-          graphNode[tq.subject] = {
-            data : {
-              '@id': tq.subject,
-            },
-            context : {},
-            quads: []
-          }
-        }
-        let node = graphNode[tq.subject];
-        if( !node.data['@type'] ) {
-          node.data['@type'] = [];
-        }
-
-        let prop = this._getContextProperty(tq.object);
-        node.data['@type'].push(prop.property);
-        node.context[prop.property] = {'@id': prop.uri, '@type': '@id'};
-        node.quads.push(tq.quad);
-      }
+      fileQuads = await this._objectToNQuads(fileQuads);
     }
-
-    // create node structure for insertion
-    let nodes = [];
-    for( let g of Object.keys(nodeData) ) {
-      for( let s of Object.keys(nodeData[g]) ) {
-        let node = nodeData[g][s];
-        node.graph = g;
-        node.subject = s;
-        node.nquads = await this._objectToNQuads(node.quads);
-        nodes.push(node);
-      }
-    }
-
-    await dbClient.query(`select caskfs.insert_rdf_link_bulk($1::UUID, $2::JSONB)`, [file.file_id, JSON.stringify(otherQuads)]);
-    await dbClient.query(`select caskfs.insert_rdf_node_bulk($1::UUID, $2::JSONB)`, [file.file_id, JSON.stringify(nodes)]);
 
     return {
       file,
-      links: otherQuads,
-      nodes: nodeData
+      links: fileIdQuads,
+      types,
+      fileQuads: fileQuads,
+      caskQuads: await this._objectToNQuads(caskQuads)
     };
   }
 
@@ -372,10 +364,11 @@ class Rdf {
     // so we don't need to do that here.  Just need make sure all external
     // references are filtered out.
 
-    let [outbound, inbound] = await Promise.all([
-      this.getReferencing(metadata.file_id, opts),
-      this.getReferencedBy(metadata.file_id, opts)
+    let [inbound, outbound] = await Promise.all([
+      this.getInboundLinks(metadata.file_id, opts),
+      this.getOutboundLinks(metadata.file_id, opts)
     ]);
+
 
     if( opts.debugQuery ) {
       return { outbound, inbound };
@@ -384,7 +377,7 @@ class Rdf {
     return { 
       source : {
         file: path.join(metadata.directory, metadata.filename),
-        resourceType : metadata.metadata.resource_type,
+        resourceType : metadata.metadata.resourceType,
         mimeType: metadata.metadata.mimeType,
         partitionKeys: metadata.partition_keys
       },
@@ -405,7 +398,7 @@ class Rdf {
     let data = {};
     for( let r of rows ) {
       if( !data[r.predicate] ) data[r.predicate] = new Set();
-      data[r.predicate].add(r.file);
+      data[r.predicate].add(r.filepath);
     }
     for( let p of Object.keys(data) ) {
       data[p] = Array.from(data[p]);
@@ -414,249 +407,187 @@ class Rdf {
     return data;
   }
 
-  async getReferencing(fileId, opts={}) {
-    let where = ['source_view.file_id = $1', 'referencing_view.file_id != $1'];
+  async getInboundLinks(fileId, opts={}) {
     let args = [fileId];
+    let dbClient = opts.dbClient || this.dbClient;
 
-    let aclOpts = {
-      user: opts.user,
-      ignoreAcl : opts.ignoreAcl,
-      dbClient : opts.dbClient || this.dbClient
-    };
-
-    // handle acl filtering if enabled
-    let aclJoin = '';
-    if( await acl.aclLookupRequired(aclOpts) ) {
-      aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = referencing_view.directory_id`;
-      
-      let aclWhere = [
-        '(acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE)'
-      ];
-
-      if( opts.userId !== null ) {
-        aclWhere.push(`(acl_lookup.user_id = $${args.length + 1} AND acl_lookup.can_read = TRUE)`);
-        args.push(opts.userId);
-      }
-
-      where.push(`(${aclWhere.join(' OR ')})`);
-    }
-
-    // additional filters
+    let predicate = '';
     if( opts.predicate ) {
-      if( !Array.isArray(opts.predicate) ) {
-        opts.predicate = [opts.predicate];
-      }
-      where.push(`source_view.predicate @> $${args.length + 1}::VARCHAR(256)[]`);
-      args.push(opts.predicate);
+      predicate = opts.predicate;
+      delete opts.predicate;
     }
 
-    if( opts.ignorePredicate ) {
-      if( !Array.isArray(opts.ignorePredicate) ) {
-        opts.ignorePredicate = [opts.ignorePredicate];
-      }
-      where.push(`source_view.predicate <> ALL ($${args.length + 1}::VARCHAR(256)[])`);
-      args.push(opts.ignorePredicate);
+    let predicateFilter = '';
+    if( predicate ) {
+      predicateFilter = ` AND predicate_uri_id = caskfs.get_uri_id($${args.length + 1}) `;
+      args.push(predicate);
     }
 
-    if( opts.partitionKeys ) {
-      if( !Array.isArray(opts.partitionKeys) ) {
-        opts.partitionKeys = [opts.partitionKeys];
-      }
-      where.push(`referencing_view.partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
-      where.push(`source_view.partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
-      args.push(opts.partitionKeys);
-    }
+    opts.withClauses = [];
+    opts.intersectClauses = [];
 
-    if( opts.graph ) {
-      where.push(`referencing_view.graph = $${args.length + 1}`);
-      where.push(`source_view.graph = $${args.length + 1}`);
-      args.push(opts.graph);
-    }
-
-    if( opts.subject ) {
-      where.push(`source_view.subject = $${args.length + 1}`);
-      args.push(opts.subject);
-    }
-
-
-    if( opts.stats ) {
-      let res = await this.dbClient.query(`WITH combined AS (
-          SELECT 
-              source_view.predicate,
-              count(*) as count
-          FROM caskfs.rdf_link_view source_view
-          -- Find other files where this object URI appears as a subject
-          JOIN caskfs.rdf_link_view referencing_view ON source_view.object = referencing_view.subject
-          ${aclJoin}
-          WHERE ${where.join(' AND ')}
-          GROUP BY source_view.predicate
-
-          UNION ALL
-
-          SELECT 
-              source_view.predicate,
-              count(*) as count
-          FROM caskfs.rdf_link_view source_view
-          JOIN caskfs.rdf_node_view referencing_view ON source_view.object = referencing_view.subject
-          ${aclJoin}
-          WHERE ${where.join(' AND ')}
-          GROUP BY source_view.predicate
-      )
-      SELECT
-        c.predicate,
-        SUM(c.count) as count
-      FROM combined c
-      GROUP BY c.predicate
-      ORDER BY count DESC`, args);
-
-      return res.rows;
-
-    }
-
-    let limit = 'LIMIT $'+(args.length + 1);
-    args.push(opts.limit || 100);
-
-    let query = `WITH links AS (
+    opts.withClauses.push(`
+      target_subjects AS (
         SELECT 
-            referencing_view.filepath AS file,
-            source_view.predicate AS predicate
-        FROM caskfs.rdf_link_view source_view
-        -- Find other files where this object URI appears as a subject
-        JOIN caskfs.rdf_link_view referencing_view ON source_view.object = referencing_view.subject
-        ${aclJoin}
-        WHERE ${where.join(' AND ')}
-    ),
-    nodes AS (
-        SELECT
-            referencing_view.filepath AS file,
-            source_view.predicate AS predicate
-        FROM caskfs.rdf_link_view source_view
-        JOIN caskfs.rdf_node_view referencing_view ON source_view.object = referencing_view.subject
-        ${aclJoin}
-        WHERE ${where.join(' AND ')}
-    )
-    SELECT * FROM links
-    UNION
-    SELECT * FROM nodes
-    ${limit}`;
+          ld.uri_id AS subject_uris
+        FROM ${config.database.schema}.file_ld_filter fld
+        INNER JOIN ${config.database.schema}.ld_filter ld ON ld.ld_filter_id = fld.ld_filter_id
+        WHERE fld.file_id = $1 AND ld.type = 'subject'
+      ),
+      target_subject_match AS (
+        SELECT ld_link_id FROM ${config.database.schema}.ld_link
+        WHERE object IN (SELECT subject_uris FROM target_subjects)
+              ${predicateFilter}
+      ),
+      target_subject_file_match AS (
+        SELECT DISTINCT f.file_id FROM ${config.database.schema}.file_ld_link f
+        INNER JOIN target_subject_match tsm ON tsm.ld_link_id = f.ld_link_id
+        WHERE f.file_id != $1
+      )  
+    `);
+    opts.intersectClauses.push(`SELECT file_id FROM target_subject_file_match`);
+    
+    let withFilters = dbClient.generateFileWithFilter(opts, args);
 
-    if( opts.debugQuery ) {
-      return { query, args  };
-    }
+    let {table, aclQuery} = await dbClient.generateAclWithFilter(opts, args);
+    if( aclQuery ) withFilters = withFilters + ', ' + aclQuery;
 
-    let res = await this.dbClient.query(query, args);
-    return res.rows;
-  }
 
-  async getReferencedBy(fileId, opts={}) {    
-    let where = ['ref_by_view.file_id != $1'];
-    let distinctWhere = ['v.file_id = $1'];
-    let args = [fileId];  
-
-    let aclOpts = {
-      user: opts.user,
-      ignoreAcl : opts.ignoreAcl,
-      dbClient : opts.dbClient || this.dbClient
-    };
-
-    let aclJoin = '';
-    if( await acl.aclLookupRequired(aclOpts) ) {
-      aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = ref_by_view.directory_id`;
-      
-      let aclWhere = [
-        '(acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE)'
-      ];
-
-      if( opts.userId !== null ) {
-        aclWhere.push(`(acl_lookup.user_id = $${args.length + 1} AND acl_lookup.can_read = TRUE)`);
-        args.push(opts.userId);
-      }
-
-      where.push(`(${aclWhere.join(' OR ')})`);
-    }
-
-    if( opts.predicate ) {
-      if( !Array.isArray(opts.predicate) ) {
-        opts.predicate = [opts.predicate];
-      }
-      where.push(`ref_by_view.predicate @> $${args.length + 1}::VARCHAR(256)[]`);
-      args.push(opts.predicate);
-    }
-
-    if( opts.ignorePredicate ) {
-      if( !Array.isArray(opts.ignorePredicate) ) {
-        opts.ignorePredicate = [opts.ignorePredicate];
-      }
-      where.push(`ref_by_view.predicate <> ALL ($${args.length + 1}::VARCHAR(256)[])`);
-      args.push(opts.ignorePredicate);
-    }
-
-    if( opts.partitionKeys ) {
-      if( !Array.isArray(opts.partitionKeys) ) {
-        opts.partitionKeys = [opts.partitionKeys];
-      }
-      where.push(`ref_by_view.partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
-      distinctWhere.push(`v.partition_keys @> $${args.length + 1}::VARCHAR(256)[]`);
-      args.push(opts.partitionKeys);
-    }
-
-    if( opts.graph ) {
-      where.push(`ref_by_view.graph = $${args.length + 1}`);
-      distinctWhere.push(`v.graph = $${args.length + 1}`);
-      args.push(opts.graph);
-    }
-
-    if( opts.subject ) {
-      where.push(`v.subject = $${args.length + 1}`);
-      args.push(opts.subject);
-    }
-
-    let select, limit;
+    let limit = '', pselect = '', groupBy = '';
     if( opts.stats ) {
-      select = `SELECT
-          count(*) as count,
-          ref_by_view.predicate as predicate
-          FROM distinct_subjects source_view
-          -- Find other files where this object URI appears as a subject
-          INNER JOIN links ref_by_view ON ref_by_view.object = source_view.subject
-          GROUP BY ref_by_view.predicate
-          ORDER BY count DESC`;
+      pselect = 'count(*) as count';
+      groupBy = 'GROUP BY puri.uri';
     } else {
+      pselect = 'f.filepath as filepath';
       limit = 'LIMIT $'+(args.length + 1);
-      args.push(opts.limit || 100);
-
-      select = `SELECT 
-          ref_by_view.filepath AS file,
-          ref_by_view.predicate
-          FROM distinct_subjects source_view
-          -- Find other files where this object URI appears as a subject
-          INNER JOIN links ref_by_view ON ref_by_view.object = source_view.subject
-          ${limit}`;
+      args.push(opts.limit || 1000);
     }
 
     let query = `
-      WITH distinct_subjects AS (
-        SELECT DISTINCT v.subject
-        FROM caskfs.rdf_link_view v
-        WHERE ${distinctWhere.join(' AND ')}
-        UNION
-        SELECT DISTINCT v.subject
-        FROM caskfs.rdf_node_view v
-        WHERE ${distinctWhere.join(' AND ')}
-      ), 
+      WITH
+      ${withFilters},
       links AS (
-          SELECT * FROM caskfs.rdf_link_view ref_by_view
-          ${aclJoin}
-          WHERE ${where.join(' AND ')}
+        SELECT * from ${config.database.schema}.file_ld_link fll
+        WHERE fll.file_id IN (SELECT file_id FROM ${table})
+        AND fll.ld_link_id IN (SELECT ld_link_id FROM target_subject_match)
       )
-      ${select}
-      `;
+      SELECT 
+        puri.uri as predicate,
+        ${pselect}
+      FROM links l
+      LEFT JOIN ${config.database.schema}.ld_link ll ON ll.ld_link_id = l.ld_link_id
+      LEFT JOIN ${config.database.schema}.uri puri ON puri.uri_id = ll.predicate
+      LEFT JOIN ${config.database.schema}.simple_file_view f ON l.file_id = f.file_id
+      ${groupBy}
+      ${limit}`;
 
     if( opts.debugQuery ) {
       return { query, args  };
     }
 
-    let resp = await this.dbClient.query(query, args);
+    let res = await dbClient.query(query, args);
+    return res.rows;
+  }
+
+  async getOutboundLinks(fileId, opts={}) {    
+    let args = [fileId];  
+
+    let dbClient = opts.dbClient || this.dbClient;
+
+    // let aclJoin = '';
+    // if( await acl.aclLookupRequired(aclOpts) ) {
+    //   aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = ref_by_view.directory_id`;
+      
+    //   let aclWhere = [
+    //     '(acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE)'
+    //   ];
+
+    //   if( opts.userId !== null ) {
+    //     aclWhere.push(`(acl_lookup.user_id = $${args.length + 1} AND acl_lookup.can_read = TRUE)`);
+    //     args.push(opts.userId);
+    //   }
+
+    //   where.push(`(${aclWhere.join(' OR ')})`);
+    // }
+
+    let predicate = '';
+    if( opts.predicate ) {
+      predicate = opts.predicate;
+      delete opts.predicate;
+    }
+
+    let predicateFilter = '';
+    if( predicate ) {
+      predicateFilter = ` AND predicate = caskfs.get_uri_id($${args.length + 1}) `;
+      args.push(predicate);
+    }
+
+    opts.withClauses = [];
+    opts.intersectClauses = [];
+
+    opts.withClauses.push(`
+      target_objects AS (
+        SELECT 
+          ll.object AS object_uri,
+          ll.predicate AS predicate_uri
+        FROM ${config.database.schema}.file_ld_link fll
+        INNER JOIN ${config.database.schema}.ld_link ll ON ll.ld_link_id = fll.ld_link_id
+        WHERE fll.file_id = $1 ${predicateFilter}
+      ),
+      target_object_match AS (
+        SELECT ld_filter_id FROM ${config.database.schema}.ld_filter
+        WHERE uri_id IN (SELECT object_uri FROM target_objects) AND
+              type = 'subject'
+      ),
+      target_object_file_match AS (
+        SELECT DISTINCT f.file_id FROM ${config.database.schema}.file_ld_filter f
+        INNER JOIN target_object_match tom ON tom.ld_filter_id = f.ld_filter_id
+        WHERE f.file_id != $1
+      )
+    `);
+    opts.intersectClauses.push(`SELECT file_id FROM target_object_file_match`);
+
+    let withFilters = dbClient.generateFileWithFilter(opts, args);
+    let {table, aclQuery} = await dbClient.generateAclWithFilter(opts, args);
+    if( aclQuery ) withFilters = withFilters + ', ' + aclQuery;
+
+    let limit = '', pselect = '', groupBy = '';
+    if( opts.stats ) {
+      pselect = 'count(*) as count';
+      groupBy = 'GROUP BY puri.uri';
+    } else {
+      pselect = 'f.filepath as filepath';
+      limit = 'LIMIT $'+(args.length + 1);
+      args.push(opts.limit || 1000);
+    }
+
+    let query = `
+      WITH
+      ${withFilters},
+      links AS (
+        SELECT 
+          flf.*,
+          lf.uri_id
+        FROM ${config.database.schema}.file_ld_filter flf
+        LEFT JOIN ${config.database.schema}.ld_filter lf ON lf.ld_filter_id = flf.ld_filter_id
+        WHERE flf.file_id IN (SELECT file_id FROM ${table})
+        AND flf.ld_filter_id IN (SELECT ld_filter_id FROM target_object_match)
+      )
+      SELECT 
+        puri.uri as predicate,
+        ${pselect}
+      FROM target_objects tos
+      INNER JOIN links l ON l.uri_id = tos.object_uri
+      LEFT JOIN ${config.database.schema}.simple_file_view f ON l.file_id = f.file_id
+      LEFT JOIN ${config.database.schema}.uri puri ON puri.uri_id = tos.predicate_uri
+      ${groupBy}
+      ${limit}`;
+
+    if( opts.debugQuery ) {
+      return { query, args  };
+    }
+
+    let resp = await dbClient.query(query, args);
     return resp.rows;
   }
 
@@ -670,9 +601,17 @@ class Rdf {
    *  
    * @returns {Promise}
    */
-  delete(fileMetadata, opts={}) {
-    this.logger.info('Deleting RDF data for file', fileMetadata.filepath);
-    return (opts.dbClient || this.dbClient).query('select caskfs.remove_rdf_by_file($1)', [fileMetadata.file_id]);
+  async delete(fileMetadata, opts={}) {
+    this.logger.info('Deleting LD data for file', fileMetadata.filepath);
+    let dbClient = opts.dbClient || this.dbClient;
+    await dbClient.query(
+      `delete from ${config.database.schema}.file_ld_filter where file_id = $1`, 
+      [fileMetadata.file_id]
+    );
+    await dbClient.query(
+      `delete from ${config.database.schema}.file_ld_link where file_id = $1`, 
+      [fileMetadata.file_id]
+    );
   }
 
   _getContextProperty(uri='') {

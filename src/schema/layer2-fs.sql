@@ -254,6 +254,16 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+----------------
+-- partition_key
+----------------
+CREATE TABLE IF NOT EXISTS caskfs.partition_key (
+    partition_key_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    value VARCHAR(256) NOT NULL UNIQUE,
+    auto_path_partition_id UUID REFERENCES caskfs.auto_path_partition(auto_path_partition_id) ON DELETE CASCADE,
+    created TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_partition_key_value ON caskfs.partition_key(value);
 
 ----------------
 -- file
@@ -263,18 +273,98 @@ CREATE TABLE IF NOT EXISTS caskfs.file (
     name            VARCHAR(256) NOT NULL,
     directory_id    UUID NOT NULL REFERENCES caskfs.directory(directory_id),
     hash_id         UUID NOT NULL REFERENCES caskfs.hash(hash_id),
-    partition_keys  VARCHAR(256)[],
     metadata        JSONB NOT NULL DEFAULT '{}',
     last_modified_by TEXT NOT NULL,
     created         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     modified        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    nquads          TEXT NOT NULL DEFAULT '',
     UNIQUE(directory_id, name)
 );
 CREATE INDEX IF NOT EXISTS idx_file_hash_id ON caskfs.file(hash_id);
 CREATE INDEX IF NOT EXISTS idx_file_directory ON caskfs.file(directory_id);
 CREATE INDEX IF NOT EXISTS idx_file_name ON caskfs.file(name);
-CREATE INDEX IF NOT EXISTS idx_file_partition_keys ON caskfs.file USING GIN(partition_keys);
 CREATE INDEX IF NOT EXISTS idx_file_directory_name ON caskfs.file(directory_id, name);
+
+CREATE TABLE IF NOT EXISTS caskfs.file_partition_key (
+    file_partition_key_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    file_id UUID NOT NULL REFERENCES caskfs.file(file_id) ON DELETE CASCADE,
+    partition_key_id UUID NOT NULL REFERENCES caskfs.partition_key(partition_key_id) ON DELETE CASCADE,
+    UNIQUE(file_id, partition_key_id)
+);
+CREATE INDEX IF NOT EXISTS idx_file_partition_key_file_id ON caskfs.file_partition_key(file_id);
+CREATE INDEX IF NOT EXISTS idx_file_partition_key_partition_key_id ON caskfs.file_partition_key(partition_key_id);
+
+CREATE OR REPLACE VIEW caskfs.file_partition_keys AS
+SELECT
+    fpk.file_id,
+    ARRAY_AGG(pk.value) AS partition_keys
+FROM caskfs.file_partition_key fpk
+LEFT JOIN caskfs.partition_key pk ON fpk.partition_key_id = pk.partition_key_id
+GROUP BY fpk.file_id;
+
+CREATE OR REPLACE FUNCTION caskfs.add_partition_key(
+    p_file_id UUID,
+    p_partition_key_value VARCHAR(256),
+    p_auto_path_partition_name VARCHAR(256) DEFAULT NULL
+) RETURNS VOID AS $$
+DECLARE
+    v_partition_key_id UUID;
+    v_auto_path_partition_name VARCHAR(256);
+    v_auto_path_partition_id UUID;
+BEGIN
+    SELECT 
+        pk.partition_key_id,
+        app.name,
+        app.auto_path_partition_id
+    INTO 
+        v_partition_key_id, 
+        v_auto_path_partition_name, 
+        v_auto_path_partition_id
+    FROM caskfs.partition_key pk
+    LEFT JOIN caskfs.auto_path_partition app ON pk.auto_path_partition_id = app.auto_path_partition_id
+    WHERE pk.value = p_partition_key_value;
+
+    IF v_auto_path_partition_id IS NULL AND p_auto_path_partition_name IS NOT NULL THEN
+        SELECT app.auto_path_partition_id
+        INTO v_auto_path_partition_id
+        FROM caskfs.auto_path_partition app
+        WHERE app.name = p_auto_path_partition_name;
+
+        IF v_auto_path_partition_id IS NULL THEN
+            RAISE EXCEPTION 'Auto path partition with name % does not exist', p_auto_path_partition_name;
+        END IF;
+    END IF;
+
+    IF v_partition_key_id IS NULL THEN
+        INSERT INTO caskfs.partition_key (value, auto_path_partition_id)
+        VALUES (p_partition_key_value, v_auto_path_partition_id)
+        RETURNING partition_key_id INTO v_partition_key_id;
+    ELSIF p_auto_path_partition_name != v_auto_path_partition_name THEN
+        UPDATE caskfs.partition_key
+        SET auto_path_partition_id = v_auto_path_partition_id
+        WHERE partition_key_id = v_partition_key_id;
+    END IF;
+
+    -- remove old association if auto_path_partition_id has changed
+    IF v_auto_path_partition_id IS NOT NULL THEN
+        WITH old_keys AS (
+            SELECT fpk.file_partition_key_id
+            FROM caskfs.file_partition_key fpk
+            JOIN caskfs.partition_key pk ON fpk.partition_key_id = pk.partition_key_id
+            WHERE fpk.file_id = p_file_id
+              AND pk.auto_path_partition_id = v_auto_path_partition_id
+              AND pk.value != p_partition_key_value
+        )
+        DELETE FROM caskfs.file_partition_key
+        WHERE file_partition_key_id IN (SELECT file_partition_key_id FROM old_keys);
+    END IF;
+
+    INSERT INTO caskfs.file_partition_key (file_id, partition_key_id)
+    VALUES (p_file_id, v_partition_key_id)
+    ON CONFLICT (file_id, partition_key_id) DO NOTHING;
+
+END;
+$$ LANGUAGE plpgsql;
 
 ----------------
 -- file_view
@@ -292,7 +382,7 @@ SELECT
     h.value AS hash_value,
     h.digests AS digests,
     f.metadata,
-    f.partition_keys,
+    fpk.partition_keys AS partition_keys,
     f.created,
     f.modified,
     f.last_modified_by,
@@ -300,14 +390,45 @@ SELECT
     h.bucket AS bucket
 FROM caskfs.file f
 JOIN caskfs.hash h ON f.hash_id = h.hash_id
+LEFT JOIN caskfs.directory d ON f.directory_id = d.directory_id
+LEFT JOIN caskfs.file_partition_keys fpk ON f.file_id = fpk.file_id;
+
+CREATE OR REPLACE VIEW caskfs.simple_file_view AS
+SELECT
+    f.file_id,
+    CASE
+      WHEN d.fullname = '/' THEN '/' || f.name
+      ELSE d.fullname || '/' || f.name
+    END AS filepath,
+    f.metadata,
+    f.created,
+    f.modified,
+    f.last_modified_by
+FROM caskfs.file f
 LEFT JOIN caskfs.directory d ON f.directory_id = d.directory_id;
+
+
+CREATE OR REPLACE VIEW caskfs.file_quads_view AS
+SELECT
+    d.fullname AS directory,
+    f.name as filename,
+    CASE
+      WHEN d.fullname = '/' THEN '/' || f.name
+      ELSE d.fullname || '/' || f.name
+    END AS filepath,
+    f.metadata,
+    h.value AS hash_value,
+    h.nquads AS file_nquads,
+    f.nquads AS cask_nquads
+FROM caskfs.file f
+LEFT JOIN caskfs.directory d ON f.directory_id = d.directory_id
+LEFT JOIN caskfs.hash h ON f.hash_id = h.hash_id;
 
 -- Function to insert file with automatic hash management
 CREATE OR REPLACE FUNCTION caskfs.insert_file(
     p_directory_id UUID,
     p_hash_value VARCHAR(256),
     p_filename VARCHAR(256),
-    p_partition_keys VARCHAR(256)[],
     p_last_modified_by TEXT,
     p_digests JSONB DEFAULT '{}'::jsonb,
     p_size BIGINT DEFAULT 0,
@@ -326,8 +447,8 @@ BEGIN
             size = EXCLUDED.size
         RETURNING hash_id
     )
-    INSERT INTO caskfs.file (directory_id, name, hash_id, metadata, partition_keys, last_modified_by)
-    SELECT p_directory_id, p_filename, hash_id, p_metadata, p_partition_keys, p_last_modified_by
+    INSERT INTO caskfs.file (directory_id, name, hash_id, metadata, last_modified_by)
+    SELECT p_directory_id, p_filename, hash_id, p_metadata, p_last_modified_by
     FROM hash_upsert
     RETURNING file_id INTO v_file_id;
 
@@ -377,8 +498,8 @@ SELECT
     (SELECT COUNT(*) FROM caskfs.hash) AS total_hashes,
     (SELECT COUNT(*) FROM caskfs.unused_hashes) AS unused_hashes,
     (SELECT COUNT(*) FROM caskfs.file) AS total_files,
-    (SELECT COUNT(DISTINCT unnest_value) FROM (
-            SELECT UNNEST(partition_keys) AS unnest_value FROM caskfs.file
-        ) subq
-    ) AS total_partition_keys;
+    (SELECT COUNT(*) FROM caskfs.directory) AS total_directories,
+    (SELECT COUNT(*) FROM caskfs.file_partition_key) AS total_file_partition_keys,
+    (SELECT COUNT(*) FROM caskfs.acl_user) AS total_acl_users,
+    (SELECT COUNT(*) FROM caskfs.acl_role) AS total_acl_roles;
 

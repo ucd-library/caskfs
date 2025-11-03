@@ -1,5 +1,6 @@
 import Database from "./lib/database/index.js";
 import path from "path";
+import fs from "fs/promises";
 import config from "./lib/config.js";
 import mime from "mime";
 import Cas from "./lib/cas.js";
@@ -102,6 +103,7 @@ class CaskFs {
    * @param {String} context.contentType same as mimeType, for compatibility with other systems
    * @param {String} context.bucket GCS bucket to use if using GCS storage backend
    * @param {Array} context.partitionKeys array of partition keys to associate with the file
+   * @param {Object} context.git git metadata object with repo, branch, commit properties
    *
    * @returns {Object} result object with copied (boolean) and fileId (string)
    */
@@ -191,11 +193,11 @@ class CaskFs {
           metadata.mimeType === this.turtleMimeType ||
           context.readPath?.endsWith(this.jsonldExt) ) {
         this.logger.debug('Detected RDF file based on mime type or file extension', context.logSignal);
-        metadata.resource_type = 'rdf';
+        metadata.resourceType = 'rdf';
         context.data.actions.detectedLd = true;
       } else {
         this.logger.debug('Detected generic file based on mime type or file extension', context.logSignal);
-        metadata.resource_type = 'file';
+        metadata.resourceType = 'file';
       }
 
       // parse out file parts
@@ -205,35 +207,43 @@ class CaskFs {
       // and get the directory ID of the target directory
       let directoryId = await this.directory.mkdir(fileParts.dir, {dbClient});
 
-      // build partition keys and bucket from both path and opts
-      let autoPathKeys = await this.getAutoPathValues(context);
-      context.update({partitionKeys: autoPathKeys.partitionKeys || null});
-
-      if( this.cas.cloudStorageEnabled ) {
-        let bucket = autoPathKeys.bucket;
-        if( !bucket ) {
-          bucket = config.cloudStorage.defaultBucket;
-        }
-        context.update({bucket});
-      }
-
       // write the file record
       if( !context.data.fileExists ) {
         this.logger.info('Inserting new file record into CASKFS', context.logSignal);
+        
+        // build partition keys and bucket from both path and opts
+        let autoPathKeys = await this.getAutoPathValues(context);
+
+        let bucket = null;
+        if( config.cloudStorage.enabled ) {
+          bucket = context.data.bucket || autoPathKeys.bucket?.value || config.cloudStorage.defaultBucket;
+        }
+
+        // add git metadata if provided
+        this._applyGitPatch(context.data.git, metadata);
+
         await dbClient.insertFile({
           directoryId,
           filePath, 
           hash: context.data.stagedFile.digests[context.data.primaryDigest], 
           metadata, 
-          bucket: context.data.bucket,
+          bucket,
           digests: context.data.stagedFile.digests,
           size: context.data.stagedFile.size,
-          partitionKeys: context.data.partitionKeys,
           user: context.data.requestor
         });
+
         context.update({
           file: await this.metadata(context)
         });
+
+        context.data.file.partitionKeys = await this._setPartitionKeys({
+          fileId: context.data.file.file_id,
+          autoPathKeys: autoPathKeys.partition,
+          manualKeys: context.data.partitionKeys,
+          dbClient
+        });
+
         context.data.actions.fileInsert = true;
         context.data.actions.updatedMetadata = true;
       } else {
@@ -258,29 +268,44 @@ class CaskFs {
         let readFile = context.data.stagedFile.hashExists ? context.data.stagedFile.hashFile : context.data.stagedFile.tmpFile;
 
         this.logger.info('Inserting RDF triples for file', context.logSignal);
-        await this.rdf.insert(context.data.file.file_id, 
+        let insertResp = await this.rdf.insert(context.data.file.file_id, 
           {
             dbClient, 
             filepath: readFile
           });
-
+        context.data.fileQuads = insertResp.fileQuads;
+        context.data.caskQuads = insertResp.caskQuads;
         context.data.actions.parsedLinkedData = true;
+
+        // update the nquads column in the file table with the file-specific cask quads
+        await dbClient.query(
+          `UPDATE ${this.schema}.file SET nquads = $1 WHERE file_id = $2`, 
+          [context.data.caskQuads, context.data.file.file_id]
+        );
+
       } else {
-        this.logger.info('RDF file already exists, skipping RDF processing', context.logSignal);
+        this.logger.info('File already exists, skipping RDF processing', context.logSignal);
       }
 
       // finalize the write to move the temp file to its final location
       let copied = await this.cas.finalizeWrite(
         context.data.stagedFile.tmpFile, 
-        context.data.stagedFile.hashFile, 
+        context.data.stagedFile.hashFile,
+        context.data.fileQuads,
         {bucket: metadata.bucket, dbClient}
       );
       context.update({copied});
       context.data.actions.fileCopiedToCas = copied;
 
+      // if metadata was updated, write the metadata file to CAS
+      if( context.data.actions.updatedMetadata === true ) {
+        await this.cas.writeMetadata(context.data.file.hash_value);
+      }
+
       // finally commit the transaction
       await dbClient.query('COMMIT');
     } catch (err) {
+      console.error(err)
       context.update({error: err});
       this.logger.error('Error writing file, rolling back transaction',
         {error: err.message, stack: err.stack, ...context.logSignal}
@@ -398,22 +423,88 @@ class CaskFs {
 
     await this.canWriteFile(context);
 
+    let autoPathKeys = await this.getAutoPathValues(context);
+    let keySet = [...autoPathKeys.partition.map(pk => pk.value), ...(context.data.partitionKeys || [])]
+      .filter(v => v !== undefined && v !== null);
+
+    let currentMetadata = await this.metadata(context);
+
     if( opts.onlyOnChange ) {
-      let currentMetadata = await this.metadata(context);
+      let currentPartitionKeys = currentMetadata.partition_keys;
+      delete currentMetadata.partition_keys;
+
+      // strip git- properties from current metadata for comparison
+      for( let key of config.git.metadataProperties ) {
+        delete currentMetadata[`git-${key}`];
+      }
+
       if( JSON.stringify(currentMetadata.metadata) === JSON.stringify(context.data.metadata) &&
-          JSON.stringify(currentMetadata.partition_keys) === JSON.stringify(context.data.partitionKeys) ) {
+          this._arrayEquals(currentPartitionKeys, keySet) ) {
         this.logger.info('No changes to metadata or partition keys, skipping update', context.logSignal);
         return {metadata: currentMetadata, updated: false};
       }
     }
 
+    // now apply any git metadata patches after checking for changes
+    this._applyGitPatch(context.data.git, context.data.metadata);
+
     this.logger.info('Updating existing file metadata', context.logSignal);
     await dbClient.updateFileMetadata(filePath, context.data);
+    await this._setPartitionKeys({
+      fileId: currentMetadata.file_id,
+      autoPathKeys: autoPathKeys.partition,
+      manualKeys: context.data.partitionKeys,
+      dbClient
+    });
 
     return {
       metadata: await this.metadata(context),
       updated: true
     };
+  }
+
+  /**
+   * @method _setPartitionKeys
+   * @description Internal method to set partition keys for a file. Will clear existing keys first.
+   * This assumes you have the complete list of new keys, both from the auto-path parser and any
+   * user specified keys via context.
+   *
+   * @param {Object} opts
+   * @param {String} opts.fileId
+   * @param {Array} opts.autoPathKeys array of auto-path partition key objects with name and value properties.  
+   *                                  result of getAutoPathValues().partition
+   * @param {Array} opts.manualKeys array of user specified partition key strings
+   * @param {DatabaseClient} opts.dbClient
+   * 
+   * @returns {Promise<Array>} array of partition keys
+   */
+  async _setPartitionKeys(opts={}) {
+    const { fileId, autoPathKeys, manualKeys, dbClient } = opts;
+    if( !fileId || !dbClient ) {
+      throw new Error('fileId and dbClient are required');
+    }
+
+    const keySet = new Set();
+
+    await dbClient.clearFilePartitionKeys(fileId);
+
+    // add any provided user specified partition keys
+    if( manualKeys ) {
+      for( let pk of manualKeys ) {
+        await dbClient.addPartitionKeyToFile(fileId, pk);
+        keySet.add(pk);
+      }
+    }
+
+    // add any auto-path partition keys
+    if( autoPathKeys ) {
+      for( let pk of autoPathKeys ) {
+        await dbClient.addPartitionKeyToFile(fileId, pk.value, pk.name);
+        keySet.add(pk.value);
+      }
+    }
+    
+    return Array.from(keySet);
   }
 
   /**
@@ -445,6 +536,10 @@ class CaskFs {
 
     let data = res.rows[0];
     data.fullPath = this.cas.diskPath(data.hash_value);
+
+    if( !data.partition_keys ) {
+      data.partition_keys = [];
+    }
 
     if( context.stats ) {
       res = await dbClient.query(`
@@ -582,12 +677,11 @@ class CaskFs {
    * @param {Object|CaskFSContext} context context or object with filePath property
    * @param {String} context.filePath file path to delete
    * @param {DatabaseClient} context.dbClient optional database client to use
-   * @param {Objects} opts options object
-   * @param {Boolean} opts.softDelete if true, perform a soft delete removing the file from db but leaving hash
+   * @param {Boolean} context.softDelete if true, perform a soft delete removing the file from db but leaving hash
    *                                  file on disk even if no other references exist. Default: false
    * @returns {Promise<Object>} result object with metadata, fileDeleted (boolean), referencesRemaining (int)
    */
-  async delete(context={}, opts={}) {
+  async delete(context={}) {
     context = createContext(context, this.dbClient);
 
     await this.canWriteFile(context);
@@ -603,8 +697,10 @@ class CaskFs {
       DELETE FROM ${this.schema}.file WHERE file_id = $1
     `, [metadata.file_id]);
 
-    opts.dbClient = context.data.dbClient;
-    let casResp = await this.cas.delete(metadata.hash_value, opts);
+    let casResp = await this.cas.delete(metadata.hash_value, {
+      softDelete: context.data.softDelete || false,
+      dbClient: context.data.dbClient
+    });
 
     return {
       metadata,
@@ -912,6 +1008,61 @@ class CaskFs {
   }
 
   /**
+   * @method rewriteAllMetadataFiles
+   * @description Rewrite all metadata files in the CAS.  This will read each file hash from the database
+   * and rewrite the metadata file to CAS.  This can be used to ensure all metadata files are present
+   * in the CAS, or to update the metadata file format if needed.
+   * 
+   * @param {Function} cb optional callback function to report progress.  Will be called with an object
+   *                      with total and count properties.
+   * @returns {Promise<void>}
+   */
+  async rewriteAllMetadataFiles(cb) {
+    let total = await this.dbClient.query(`SELECT COUNT(*) AS count FROM ${this.schema}.hash`);
+    total = parseInt(total.rows[0].count);
+    let count = 0;
+    if( cb ) cb({total, count});
+
+    let query = 'SELECT value FROM ' + this.schema + '.hash';
+    let dbClient = new Database({type: this.opts.dbType || config.database.client});
+    for await (let rows of dbClient.client.batch(query)) {
+      for( let row of rows ) {
+        await this.cas.writeMetadata(row.value);
+        count++;
+      }
+      if( cb ) cb({total, count});
+    }
+    dbClient.end();
+  }
+
+  /**
+   * @method loadAutoPathRulesFromFile
+   * @description Load auto-path rules from a JSON file.
+   *
+   * @param {String} filePath path to JSON file with auto-path rules
+   * @returns {Promise<void>}
+   */
+  async loadAutoPathRulesFromFile(filePath) {
+    if( path.isAbsolute(filePath) === false ) {
+      filePath = path.resolve(process.cwd(), filePath);
+    }
+    if( !(await fs.stat(filePath)).isFile() ) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+
+    let data = JSON.parse(await fs.readFile(filePath, 'utf-8'));
+
+    for( let type in this.autoPath ) {
+      if( !data[type] ) continue;
+      for( let rule of data[type] ) {
+        this.logger.info(`Setting auto-path rule for type ${type}`);
+        await this.autoPath[type].set(rule);
+      }
+    }
+  }
+
+
+  /**
    * @method getAutoPathValues
    * @description Get the auto-path values (eg bucket and partition keys) for a given file path.  
    * This will return the bucket and partition keys based on the configured auto-path rules.
@@ -927,7 +1078,7 @@ class CaskFs {
     context = createContext(context, this.dbClient);
 
     let results = {};
-    for( let type in this.autoPath ) {
+    for( let type in this.autoPath ) { 
       results[type] = await this.autoPath[type].getFromPath(context.data.filePath);
     }
 
@@ -938,19 +1089,6 @@ class CaskFs {
       results.bucket = results.bucket[0]; // take the first bucket if multiple matched
     } else {
       results.bucket = null;
-    }
-
-    // combine all partition keys into a single array
-    if( results.partition ) {
-      if( !context.data.partitionKeys ) {
-        context.data.partitionKeys = [];
-      }
-      if( !Array.isArray(context.data.partitionKeys) ) {
-        context.data.partitionKeys = [context.data.partitionKeys];
-      }
-      results.partitionKeys = new Set([...context.data.partitionKeys, ...results.partition]);
-      results.partitionKeys = Array.from(results.partitionKeys);
-      delete results.partition;
     }
 
     return results;
@@ -1128,12 +1266,50 @@ class CaskFs {
   }
 
   async powerWash() {
-    if( !config.powerWashEnabled ) {
+    if( !config.powerwashEnabled ) {
       throw new Error('Powerwash is not enabled in the configuration');
     }
     await this.cas.powerWash();
     await this.dbClient.powerWash();
     await this.dbClient.init();
+  }
+
+  _arrayEquals(arr1, arr2) {
+    if( arr1.length !== arr2.length ) return false;
+    for( let val of arr1 ) {
+      if( !arr2.includes(val) ) return false;
+    }
+    return true;
+  }
+
+  /**
+   * @method _applyGitPatch
+   * @description Apply git metadata patch to existing metadata object.  Removes any existing git- properties
+   * before applying the patch.  Only git values in 'patch' object that are defined and non-null will be applied.
+   * 
+   * @param {Object} patch key/value pairs to patch for allowed git metadata properties 
+   * @param {Object} metadata main metadata object to apply the patch to
+   * 
+   * @returns {Object} updated metadata object
+   */
+  _applyGitPatch(patch={}, metadata={}) {
+    if( !patch ) patch = {};
+    if( !metadata ) metadata = {};
+
+    // always remove all git- properties first
+    for( let key in metadata ) {
+      if( key.startsWith('git-') ) {
+        delete metadata[key];
+      }
+    }
+
+    // apply the patch
+    for( let key of config.git.metadataProperties ) {
+      if( patch[key] === undefined || patch[key] === null ) continue;
+      metadata[`git-${key}`] = patch[key];
+    }
+
+    return metadata;
   }
 
 

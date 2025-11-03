@@ -102,7 +102,7 @@ class Cas {
    * 
    * @returns {Promise<Boolean>} resolves with true if the file was copied, false if it already existed
    */
-  async finalizeWrite(tmpFile, hashFile, opts={}) {
+  async finalizeWrite(tmpFile, hashFile, nquads, opts={}) {
     let copied = false;
     await this.init();
 
@@ -110,6 +110,12 @@ class Cas {
       copied = true;
       await this.storage.mkdir(path.dirname(hashFile), {recursive: true});
       await this.storage.copyFile(tmpFile, hashFile, opts);
+
+      if( nquads ) {
+        await opts.dbClient.query(`
+          UPDATE ${config.database.schema}.hash SET nquads = $1 WHERE value = $2
+        `, [nquads, path.basename(hashFile)]);
+      }
     }
 
     if( fs.existsSync(tmpFile) ) {
@@ -222,6 +228,7 @@ class Cas {
     let files = await this.dbClient.query(`
       select * from ${config.database.schema}.file_view where hash_value = $1
     `, [hash]);
+    files = files.rows;
 
 
     if (files.length > 0) {
@@ -229,7 +236,7 @@ class Cas {
       fileMetadata.value = files[0].hash_value;
       fileMetadata.metadata = files[0].hash_metadata;
       fileMetadata.files = files.map(row => ({
-        assetId: row.file_id,
+        fileId: row.file_id,
         filename: row.filename,
         directory: row.directory,
         metadata: row.metadata,
@@ -237,15 +244,7 @@ class Cas {
       }));
     }
 
-    let filepath = this._getHashFilePath(hash);
-    let fileParts = path.parse(filepath);
-
-    let metadataFile;
-    if( this.cloudStorageEnabled ) {
-      metadataFile = path.join(fileParts.dir, fileParts.base + '.json');
-    } else {
-      metadataFile = path.join(config.rootDir, fileParts.dir, fileParts.base + '.json');
-    }
+    let metadataFile = this.diskPath(hash)+'.json';
 
     await this.storage.mkdir(path.dirname(metadataFile), {recursive: true});
     await this.storage.writeFile(metadataFile, JSON.stringify(fileMetadata, null, 2));
@@ -413,11 +412,12 @@ class Cas {
       digests[algo] = hash;
     }
 
-    let stream = fs.createReadStream(filePath).on('data', (chunk) => {
-      for( let algo of config.digests ) {
-        digests[algo].update(chunk);
-      }
-    });
+    let stream = fs.createReadStream(filePath, { highWaterMark: 8 * 1024 * 1024 })
+      .on('data', (chunk) => {
+        for( let algo of digestsAlgo ) {
+          digests[algo].update(chunk);
+        }
+      });
 
     let prom = new Promise((resolve, reject) => {
       stream.on('end', () => {

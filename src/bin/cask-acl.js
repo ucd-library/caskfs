@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import CaskFs from '../index.js';
 import { stringify as stringifyYaml } from 'yaml'
-import {optsWrapper, handleUser} from './opts-wrapper.js';
+import {optsWrapper, handleGlobalOpts} from './opts-wrapper.js';
 
 const program = new Command();
 optsWrapper(program);
@@ -11,16 +11,18 @@ const PERMISSIONS = ['public', 'read', 'write', 'admin'];
 program.command('user-add <username>')
   .description('Add a new user')
   .action(async (username) => {
+    const opts = handleGlobalOpts({ user: username });
     const cask = new CaskFs();
-    await cask.ensureUser(handleUser({ user: username }));
+    await cask.ensureUser(opts);
     cask.dbClient.end();
   });
 
 program.command('user-remove <username>')
   .description('Remove a user')
   .action(async (username) => {
+    const opts = handleGlobalOpts({ user: username });
     const cask = new CaskFs();
-    await cask.removeUser(handleUser({ user: username }));
+    await cask.removeUser(opts);
     cask.dbClient.end();
   });
 
@@ -36,17 +38,20 @@ program.command('user-role-get')
     if( role && username ) {
       throw new Error('Must provide either a username or a role, not both');
     }
+    const roleOpts = handleGlobalOpts({ role, dbClient: cask.dbClient });
+    const userOpts = handleGlobalOpts({ user: username, dbClient: cask.dbClient });
+
     const cask = new CaskFs();
 
     if( role ) {
-      let resp = await cask.acl.getRole(handleUser({ role, dbClient: cask.dbClient }));
+      let resp = await cask.acl.getRole(roleOpts);
       console.log(resp.map(r => r.user).join('\n'));
       cask.dbClient.end();
       return;
     }
 
     if( username ) {
-      let resp = await cask.acl.getUserRoles(handleUser({ user: username, dbClient: cask.dbClient }));
+      let resp = await cask.acl.getUserRoles(userOpts);
       console.log(resp.join('\n'));
       cask.dbClient.end();
       return;
@@ -56,39 +61,43 @@ program.command('user-role-get')
 program.command('user-role-set <username> <role>')
   .description('Set a user role')
   .action(async (username, role) => {
+    const opts = handleGlobalOpts({ user: username, role });
     const cask = new CaskFs();
-    await cask.setUserRole(handleUser({ user: username, role }));
+    await cask.setUserRole(opts);
     cask.dbClient.end();
   });
 
 program.command('user-role-remove <username> <role>')
   .description('Remove a user role')
   .action(async (username, role) => {
+    const opts = handleGlobalOpts({ user: username, role });
     const cask = new CaskFs();
-    await cask.removeUserRole(handleUser({ user: username, role }));
+    await cask.removeUserRole(opts);
     cask.dbClient.end();
   });
 
 program.command('role-add <role>')
   .description('Add a new role')
   .action(async (role) => {
+    const opts = handleGlobalOpts({ role });
     const cask = new CaskFs();
-    await cask.ensureRole(handleUser({ role }));
+    await cask.ensureRole(opts);
     cask.dbClient.end();
   });
 
 program.command('role-remove <role>')
   .description('Remove a role')
   .action(async (role) => {
+    const opts = handleGlobalOpts({ role });
     const cask = new CaskFs();
-    await cask.removeRole(handleUser({ role }));
+    await cask.removeRole(opts);
     cask.dbClient.end();
   });
 
 program.command('public-set <directory> <permission>')
   .description('Set a directory as public.  Permission should be true or false')
   .action(async (directory, permission, options={}) => {
-    handleUser(options);
+    handleGlobalOpts(options);
 
     const cask = new CaskFs();
     if( !['true', 'false'].includes(permission) ) {
@@ -105,36 +114,39 @@ program.command('public-set <directory> <permission>')
 program.command('permission-set <directory> <role> <permission>')
   .description('Set a permission for a role on a directory')
   .action(async (directory, role, permission) => {
+    const opts = handleGlobalOpts({ directory, role, permission });
     const cask = new CaskFs();
-    await cask.setDirectoryPermission(handleUser({ directory, role, permission }));
+    await cask.setDirectoryPermission(opts);
     cask.dbClient.end();
   });
 
 program.command('permission-remove <directory> <role> <permission>')
   .description('Remove a permission for a role on a directory')
   .action(async (directory, role, permission) => {
+    const opts = handleGlobalOpts({ directory, role, permission });
     const cask = new CaskFs();
-    await cask.removeDirectoryPermission(handleUser({ directory, role, permission }));
+    await cask.removeDirectoryPermission(opts);
     cask.dbClient.end();
   });
 
 program.command('remove <directory>')
   .description('Remove the ACL for a directory.  This will remove all permissions and any inheritance settings.')
   .action(async (directory) => {
+    const opts = handleGlobalOpts({ directory });
     const cask = new CaskFs();
-    await cask.removeDirectoryAcl(handleUser({ directory }));
+    await cask.removeDirectoryAcl(opts);
     cask.dbClient.end();
   });
 
 program.command('get <path>')
   .description('Get the ACL for a directory')
   .action(async (path, options={}) => {
-    handleUser(options);
+    handleGlobalOpts(options);
 
     const cask = new CaskFs();
     cask.dbClient.connect();
     let resp = await cask.getDirectoryAcl({ 
-      directory: path,
+      filePath: path,
       requestor: options.requestor,
     });
 
@@ -167,6 +179,7 @@ program.command('test <path> <username> <permission>')
   .option('-x, --no-cache', 'Disable caching for this check', false)
   .option('-b, --no-admin-bypass', 'Do not allow admin users to bypass checks', false)
   .action(async (path, username, permission, options) => {
+    handleGlobalOpts(options);
     const cask = new CaskFs();
 
     if( !PERMISSIONS.includes(permission) ) {

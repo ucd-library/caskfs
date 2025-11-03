@@ -9,6 +9,7 @@ import {silenceLoggers} from '../lib/logger.js';
 import path from 'path';
 import os from 'os';
 import config from '../lib/config.js';
+import git from '../lib/git.js';
 import {parse as parseYaml} from 'yaml';
 import {optsWrapper, handleGlobalOpts} from './opts-wrapper.js';
 import cliProgress from 'cli-progress';
@@ -68,6 +69,7 @@ program
       if( !path.isAbsolute(opts.readPath) ) {
         opts.readPath = path.resolve(process.cwd(), opts.readPath);
       }
+      opts.git = await git.info(opts.readPath);
     }
 
     let partitionKeys = (options.partitionKeys ? options.partitionKeys.split(',') : [])
@@ -136,7 +138,8 @@ program
         requestor: options.requestor,
         bucket: options.bucket,
         readPath: sourcePath,
-        replace: options.replace
+        replace: options.replace,
+        git: await git.info(sourcePath)
       });
       
       location = await cask.getCasLocation(context);
@@ -176,7 +179,8 @@ program
         requestor: options.requestor,
         bucket: options.bucket,
         readPath: file,
-        replace: options.replace
+        replace: options.replace,
+        git: await git.info(file)
       });
 
       location = await cask.getCasLocation(context);
@@ -265,23 +269,15 @@ program
   });
 
 program
-  .command('ld')
+  .command('ld <file-path>')
   .description('Read linked data and output as supported RDF format to stdout')
-  .option('-f, --file <file-path>', 'Only include RDF triples for the specified file')
-  .option('-s, --subject <subject-uri>', 'Only include RDF triples with the specified subject')
-  .option('-o, --object <object-uri>', 'Only include RDF triples with the specified object')
-  .option('-g, --graph <graph-uri>', 'Only include RDF triples in the specified graph. Must be used with --subject or --file')
-  .option('-k, --partition-keys <keys>', 'Only include RDF triples with the specified partition keys (comma-separated). Must be used with --subject or --file')
-  .option('-e, --format <format>', 'RDF format to output: jsonld, compact, flattened, expanded, nquads or json. Default is jsonld', 'jsonld')
-  .action(async (options) => {
+  .option('-o, --format <format>', 'RDF format to output: jsonld, compact, flattened, expanded, nquads or json. Default is jsonld', 'jsonld')
+  .action(async (filePath, options) => {
     handleGlobalOpts(options);
 
     const cask = new CaskFs();
 
-    if( options.partition ) {
-      options.partition = options.partition.split(',').map(k => k.trim());
-    }
-
+    options.filePath = filePath;
     let resp = await cask.rdf.read(options);
 
     if( typeof resp === 'object' ) {
@@ -297,7 +293,6 @@ program
   .alias('relationships')
   .description('Get relationships for a file in the CASK FS')
   .option('-p, --predicate <predicate>', 'Only include relationships with the specified predicate, comma-separated')
-  .option('-i, --ignore-predicate <predicate>', 'Only include relationships that do NOT have the specified predicate(s), comma-separated')
   .option('-k, --partition-keys <keys>', 'Only include relationships with the specified partition keys (comma-separated)')
   .option('-g, --graph <graph-uri>', 'Only include relationships in the specified graph')
   .option('-s, --subject <subject-uri>', 'Only include relationships with the specified subject URI')
@@ -333,6 +328,7 @@ program
   .option('-g, --graph <graph-uri>', 'Only include files in the specified graph')
   .option('-s, --subject <subject-uri>', 'Only include files with the specified subject URI')
   .option('-o, --object <object-uri>', 'Only include files with the specified object URI')
+  .option('-t, --type <type-uri>', 'Only include files with the specified RDF type URI')
   .option('-l, --limit <number>', 'Limit the number of results returned', parseInt)
   .option('-f, --offset <number>', 'Offset the results returned by the specified number', parseInt)
   .option('-d, --debug-query', 'Output the SQL query used to find the files', false)
@@ -345,7 +341,17 @@ program
       options.partitionKeys = options.partitionKeys.split(',').map(k => k.trim());
     }
 
-    console.log(await cask.rdf.find(options));
+    let resp = await cask.rdf.find(options);
+    cask.dbClient.end();
+    
+    if( options.debugQuery ) {
+      console.log('SQL Query:');
+      console.log(resp.query);
+      console.log(resp.args);
+      return;
+    }
+
+    console.log(resp);
     cask.dbClient.end();
   });
 
@@ -356,11 +362,10 @@ program
   .action(async (filePath, options) => {
     handleGlobalOpts(options);
 
+    options.filePath = filePath;
+
     const cask = new CaskFs();
-    const resp = await cask.delete(filePath, { 
-      softDelete: options.softDelete,
-      user: options.user
-    });
+    const resp = await cask.delete(options);
     console.log(resp);
     cask.dbClient.end();
   });
@@ -403,15 +408,7 @@ program
 program.command('acl', 'Manage ACL rules');
 program.command('auto-path', 'Manage auto-path rules');
 program.command('env', 'Manage cask cli environment');
-
-program
-  .command('stats')
-  .description('Get statistics about the CaskFS')
-  .action(async () => {
-    const caskfs = new CaskFs();
-    console.log(await caskfs.stats());
-    caskfs.dbClient.end();
-  });
+program.command('admin', 'CaskFS administrative commands');
 
 program
   .command('init-pg')
@@ -423,7 +420,7 @@ program
     await cask.dbClient.init();
 
     if( options.userRolesFile ) {
-      let userRoles = await loadUserRolesFile(options.userRolesFile);
+      let userRoles = JSON.parse(await fs.readFile(options.userRolesFile, 'utf-8'));
       await cask.ensureUserRoles(handleGlobalOpts({}), userRoles);
     }
 
@@ -434,58 +431,10 @@ program
   .command('init-user-roles <user-roles-file>')
   .description('Initialize user roles in the PostgreSQL database')
   .action(async (userRolesFile) => {
-    let userRoles = await loadUserRolesFile(userRolesFile);
+    let userRoles = JSON.parse(await fs.readFile(options.userRolesFile, 'utf-8'));
 
     const cask = new CaskFs();
     await cask.ensureUserRoles(handleGlobalOpts({}), userRoles);
-    cask.dbClient.end();
-  });
-
-program
-  .command('powerwash')
-  .description('Power wash the CaskFS - WARNING: This will delete ALL data and metadata!')
-  .option('-a, --include-admin', 'Set current user to admin role', false)
-  .option('-r, --user-roles-file <user-roles-file>', 'Path to a JSON or YAML file containing user roles to initialize after powerwash')
-  .action(async (options) => {
-    const readline = await import('readline');
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout
-    });
-
-    let dir = path.resolve(config.rootDir);
-    console.warn(`\n**** WARNING ****
-* This will delete ALL data and metadata in the CaskFs root directory: ${dir}
-* This action is irreversible!
-*****************\n`);
-
-    const confirm = await new Promise(resolve => {
-      rl.question('Are you sure you want to continue? (yes/no): ', answer => {
-        rl.close();
-        resolve(answer.trim().toLowerCase());
-      });
-    });
-
-    if (confirm !== 'yes') {
-      console.log('Powerwash aborted.');
-      process.exit(0);
-    }
-
-    const cask = new CaskFs();
-    await cask.powerWash();
-
-    if( options.includeAdmin ) {
-      let user = os.userInfo().username;
-      console.log(`Setting user ${user} to have admin role`);
-      await cask.setUserRole({ user, role: config.acl.adminRole });
-    }
-
-    if( options.userRolesFile ) {
-      console.log(`Loading user roles from ${options.userRolesFile}`);
-      let userRoles = await loadUserRolesFile(options.userRolesFile);
-      await cask.ensureUserRoles(handleGlobalOpts({}), userRoles);
-    }
-
     cask.dbClient.end();
   });
 
@@ -516,6 +465,13 @@ program
   .description('Start the CaskFs web application')
   .option('-p, --port <port>', 'Port to run the web application on')
   .action(async (options) => {
+    handleGlobalOpts(options);
+
+    if( options.environment && options.environment?.config?.clientEnv === 'dev' ) {
+      console.log('Starting CaskFs web application in development mode');
+      config.webapp.isDevEnv = true;
+    }
+
     const { startServer } = await import('../client/index.js');
     startServer(options);
   });
