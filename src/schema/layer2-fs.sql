@@ -64,14 +64,19 @@ CREATE TABLE IF NOT EXISTS caskfs.directory (
 CREATE INDEX IF NOT EXISTS idx_directory_name ON caskfs.directory(name);
 CREATE INDEX IF NOT EXISTS idx_directory_parent_id ON caskfs.directory(parent_id);
 
+CREATE OR REPLACE FUNCTION caskfs.get_directory_id(p_fullname VARCHAR(256))
+RETURNS UUID AS $$
+    SELECT directory_id FROM caskfs.directory WHERE fullname = p_fullname;
+$$ LANGUAGE sql STABLE PARALLEL SAFE;
+
 ----------------
 -- root_directory_acl
 ----------------
 CREATE TABLE IF NOT EXISTS caskfs.root_directory_acl (
     root_directory_acl_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    directory_id         UUID UNIQUE NOT NULL REFERENCES caskfs.directory(directory_id),
-    public                 BOOLEAN NOT NULL DEFAULT FALSE,
-    modified               TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    directory_id         UUID UNIQUE NOT NULL REFERENCES caskfs.directory(directory_id) ON DELETE CASCADE,
+    public               BOOLEAN NOT NULL DEFAULT FALSE,
+    modified             TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_root_directory_acl_directory_id ON caskfs.root_directory_acl(directory_id);
 
@@ -80,8 +85,8 @@ CREATE INDEX IF NOT EXISTS idx_root_directory_acl_directory_id ON caskfs.root_di
 ----------------
 CREATE TABLE IF NOT EXISTS caskfs.directory_acl (
     directory_acl_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    directory_id          UUID UNIQUE NOT NULL REFERENCES caskfs.directory(directory_id),
-    root_directory_acl_id UUID REFERENCES caskfs.root_directory_acl(root_directory_acl_id),
+    directory_id          UUID UNIQUE NOT NULL REFERENCES caskfs.directory(directory_id) ON DELETE CASCADE,
+    root_directory_acl_id UUID REFERENCES caskfs.root_directory_acl(root_directory_acl_id) ON DELETE CASCADE,
     modified              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_directory_acl_directory_id ON caskfs.directory_acl(directory_id, root_directory_acl_id);
@@ -93,7 +98,7 @@ CREATE TABLE IF NOT EXISTS caskfs.acl_permission (
     acl_permission_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     root_directory_acl_id      UUID NOT NULL REFERENCES caskfs.root_directory_acl(root_directory_acl_id) ON DELETE CASCADE,
     permission        caskfs.permission NOT NULL,
-    role_id           UUID REFERENCES caskfs.acl_role(role_id),
+    role_id           UUID REFERENCES caskfs.acl_role(role_id) ON DELETE CASCADE,
     created           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     modified          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(root_directory_acl_id, permission, role_id)
@@ -245,14 +250,6 @@ GROUP BY directory, p.user;
 
 -- Ensure root directory exists
 INSERT INTO caskfs.directory (fullname, parent_id) VALUES ('/', NULL) ON CONFLICT (fullname) DO NOTHING;
-
--- Function to get directory_id by fullname
-CREATE OR REPLACE FUNCTION caskfs.get_directory_id(p_fullname VARCHAR(256))
-RETURNS UUID AS $$
-BEGIN
-    RETURN (SELECT directory_id FROM caskfs.directory WHERE fullname = p_fullname);
-END;
-$$ LANGUAGE plpgsql;
 
 ----------------
 -- partition_key
@@ -525,14 +522,3 @@ CREATE OR REPLACE TRIGGER trigger_file_update_modified
     BEFORE UPDATE ON caskfs.file
     FOR EACH ROW
     EXECUTE FUNCTION caskfs.update_modified_timestamp();
-
-CREATE OR REPLACE VIEW caskfs.stats AS
-SELECT
-    (SELECT COUNT(*) FROM caskfs.hash) AS total_hashes,
-    (SELECT COUNT(*) FROM caskfs.unused_hashes) AS unused_hashes,
-    (SELECT COUNT(*) FROM caskfs.file) AS total_files,
-    (SELECT COUNT(*) FROM caskfs.directory) AS total_directories,
-    (SELECT COUNT(*) FROM caskfs.file_partition_key) AS total_file_partition_keys,
-    (SELECT COUNT(*) FROM caskfs.acl_user) AS total_acl_users,
-    (SELECT COUNT(*) FROM caskfs.acl_role) AS total_acl_roles;
-

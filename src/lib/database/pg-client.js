@@ -32,7 +32,8 @@ class PgClient {
       'config.sql',
       'layer1-cas.sql',
       'layer2-fs.sql',
-      'layer3-ld.sql'
+      'layer3-ld.sql',
+      'stats.sql'
     ]
   }
 

@@ -157,15 +157,16 @@ class Rdf {
 
   async literal(opts={}) {
     let data = await this.dbClient.getLiteralValues(opts);
-    data = data.map(q => quad(
+    data.results = data.results.map(q => quad(
       namedNode(q.subject),
       namedNode(q.predicate),
       literal(q.object, q.language || namedNode(q.datatype)),
       namedNode(q.graph)
     ));
  
-    data = await this._objectToNQuads(data);
-    return this.format(data, opts.format);
+    data.results = await this._objectToNQuads(data.results);
+    data.results = await this.format(data.results, opts.format);
+    return data;
   }
 
   /**
@@ -380,35 +381,42 @@ class Rdf {
 
     for( let key of filterKeys ) {
       filters[key] = Array.from(filters[key]);
-      for( let value of filters[key] ) {
+      for( let i = 0; i < filters[key].length; i += this.insertBatchSize ) {
+        let data = filters[key].slice(i, i + this.insertBatchSize).map(v => ({type: key, uri: v}));
         await dbClient.query(`
-          select caskfs.insert_file_ld_filter($1::UUID, $2::caskfs.ld_filter_type, $3::VARCHAR)`, 
-          [file.file_id, key, value]
+          select caskfs.insert_file_ld_filter_batch($1::UUID, $2::JSONB)`,
+          [file.file_id, JSON.stringify(data)]
         );
       }
     }
 
     if( types && types.length > 0 ) {
-      for( let t of types ) {
+      for( let i = 0; i < types.length; i += this.insertBatchSize ) {
+        let data = types.slice(i, i + this.insertBatchSize).map(t => ({type: 'type', uri: t}));
         await dbClient.query(`
-          select caskfs.insert_file_ld_filter($1::UUID, $2::caskfs.ld_filter_type, $3::VARCHAR)`,
-          [file.file_id, 'type', t]
+          select caskfs.insert_file_ld_filter_batch($1::UUID, $2::JSONB)`,
+          [file.file_id, JSON.stringify(data)]
         );
       }
     }
 
     linkMap = Array.from(linkMap.values());
-    for( let link of linkMap ) {
+    for( let i = 0; i < linkMap.length; i += this.insertBatchSize ) {
+      let batch = linkMap.slice(i, i + this.insertBatchSize).map(link => ({
+        predicate: link.predicate.value,
+        object: this._resolveIdPath(link.object.value, filepath)
+      }));
       await dbClient.query(`
-        select caskfs.insert_file_ld_link($1::UUID, $2::VARCHAR, $3::VARCHAR)`,
-        [file.file_id, link.predicate.value, this._resolveIdPath(link.object.value, filepath)]
+        select caskfs.insert_file_ld_link_batch($1::UUID, $2::JSONB)`,
+        [file.file_id, JSON.stringify(batch)]
       );
     }
 
-    for( let literal of literals ) {
+    for( let i = 0; i < literals.length; i += this.insertBatchSize ) {
+      let batch = literals.slice(i, i + this.insertBatchSize);
       await dbClient.query(
-        `select caskfs.insert_file_ld_literal($1::UUID, $2::VARCHAR, $3::VARCHAR, $4::TEXT, $5::VARCHAR, $6::VARCHAR, $7::VARCHAR)`,
-        [file.file_id, literal.graph, literal.subject, literal.predicate, literal.object.value, literal.object.language || null, literal.object.datatype || null]
+        `select caskfs.insert_file_ld_literal_batch($1::UUID, $2::JSONB)`,
+        [file.file_id, JSON.stringify(batch)]
       );
     }
 
@@ -684,7 +692,7 @@ class Rdf {
    * @returns {Promise}
    */
   async delete(fileMetadata, opts={}) {
-    this.logger.info('Deleting LD data for file', fileMetadata.filepath);
+    this.logger.debug('Deleting LD data for file', fileMetadata.filepath);
     let dbClient = opts.dbClient || this.dbClient;
     await dbClient.query(
       `delete from ${config.database.schema}.file_ld_filter where file_id = $1`, 

@@ -166,6 +166,24 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION caskfs.insert_file_ld_filter_batch (
+    p_file_id UUID,
+    p_data JSONB
+)  
+RETURNS VOID AS $$
+DECLARE
+    v_item JSONB;
+    v_type caskfs.ld_filter_type;
+    v_uri VARCHAR(1028);
+BEGIN
+    FOR v_item IN SELECT * FROM jsonb_array_elements(p_data) LOOP
+        v_type := (v_item->>'type')::caskfs.ld_filter_type;
+        v_uri := v_item->>'uri';
+        PERFORM caskfs.insert_file_ld_filter(p_file_id, v_type, v_uri);
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE OR REPLACE FUNCTION caskfs.insert_file_ld_link(
     p_file_id UUID,
     p_predicate VARCHAR(1028),
@@ -187,6 +205,24 @@ BEGIN
         (SELECT ld_link_id FROM caskfs.ld_link WHERE predicate = v_predicate_uri_id AND object = v_object_uri_id)
     )
     ON CONFLICT (file_id, ld_link_id) DO NOTHING;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION caskfs.insert_file_ld_link_batch (
+    p_file_id UUID,
+    p_data JSONB
+)  
+RETURNS VOID AS $$
+DECLARE
+    v_item JSONB;
+    v_predicate VARCHAR(1028);
+    v_object VARCHAR(1028);
+BEGIN
+    FOR v_item IN SELECT * FROM jsonb_array_elements(p_data) LOOP
+        v_predicate := v_item->>'predicate';
+        v_object := v_item->>'object';
+        PERFORM caskfs.insert_file_ld_link(p_file_id, v_predicate, v_object);
+    END LOOP;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -238,4 +274,38 @@ BEGIN
     )
     ON CONFLICT (file_id, ld_literal_id) DO NOTHING;
 END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION caskfs.insert_file_ld_literal_batch (
+    p_file_id UUID,
+    p_data JSONB
+)  
+RETURNS VOID AS $$
+DECLARE
+    v_item JSONB;
+    v_graph VARCHAR(1028);
+    v_subject VARCHAR(1028);
+    v_predicate VARCHAR(1028);
+    v_value TEXT;
+    v_language VARCHAR(32);
+    v_datatype VARCHAR(256);
+BEGIN
+    FOR v_item IN SELECT * FROM jsonb_array_elements(p_data) LOOP
+        v_graph := v_item->>'graph';
+        v_subject := v_item->>'subject';
+        v_predicate := v_item->>'predicate';
+        v_value := v_item->'object'->>'value';
+        v_language := v_item->'object'->>'language';
+        v_datatype := v_item->'object'->>'datatype';
+        PERFORM caskfs.insert_file_ld_literal(
+            p_file_id,
+            v_graph,
+            v_subject,
+            v_predicate,
+            v_value,
+            v_language,
+            v_datatype
+        );
+    END LOOP;
+END; 
 $$ LANGUAGE plpgsql;

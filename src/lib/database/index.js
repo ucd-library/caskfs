@@ -96,12 +96,16 @@ class Database {
    * @param {Object} opts
    * @param {String} opts.fileId file ID to look up
    * @param {String} opts.filePath file path to look up
-   *
+   * @param {Boolean} opts.simple if true, only return basic file table row not the full view
+   * 
    * @returns {Promise} resolves to the file record, or null if not found
    */
   async getFile(opts={}) {
     let where = [];
     let params = [];
+
+    let fileNameField = opts.simple ? 'name' : 'filename';
+    let tableName = opts.simple ? `${this.schema}.file` : `${this.schema}.file_view`;
 
     if( opts.fileId ) {
       params.push(opts.fileId);
@@ -109,13 +113,13 @@ class Database {
     } else if( opts.filePath ) {
       let fileParts = path.parse(opts.filePath);
       params.push(fileParts.dir, fileParts.base);
-      where.push(`directory = $${params.length - 1} AND filename = $${params.length}`);
+      where.push(`directory_id = ${this.schema}.get_directory_id($${params.length - 1}) AND ${fileNameField} = $${params.length}`);
     } else {
       throw new Error('fileId, or filePath is required to get a file');
     }
 
     let resp = await this.client.query(`
-      SELECT * FROM ${this.schema}.file_view WHERE ${where.join(' AND ')}
+      SELECT * FROM ${tableName} WHERE ${where.join(' AND ')}
     `, params);
     return resp.rows[0] || null;
   }
@@ -484,22 +488,47 @@ class Database {
   }
 
   async getLiteralValues(opts={}) {
+    if( !opts.subject ) {
+      throw new Error('subject is required to get literal values');
+    }
+
     let withClauses = [];
     let args = [];
 
+    let offset = opts.offset || 0;
+    let limit = opts.limit || 5;
+
+    let where = [];
+    ['subject', 'predicate', 'graph'].forEach(field => {
+      if( opts[field] ) {
+        where.push(`${field} = caskfs.get_uri_id($${args.length + 1})`);
+        args.push(opts[field]);
+      }
+    });
+
+    let fileFilter = 'f.ld_literal_id IN (SELECT ld_literal_id FROM subject_match)';
+    if( opts.filePath ) {
+      let fileId = await this.getFile({ filePath: opts.filePath });
+      if( !fileId ) throw new MissingResourceError('File', opts.filePath);
+      fileFilter = `f.file_id = $${args.length + 1}`;
+      args.push(fileId.file_id);
+    }
+
     withClauses.push(`subject_match AS (
       SELECT ld_literal_id FROM ${config.database.schema}.ld_literal
-      WHERE subject = caskfs.get_uri_id($${args.length + 1})
+      WHERE ${where.join(' AND ')}
     ),
     files AS (
       SELECT DISTINCT f.file_id FROM ${config.database.schema}.file_ld_literal f
-      JOIN subject_match sm ON sm.ld_literal_id = f.ld_literal_id
+      WHERE ${fileFilter}
     )
     `);
-    args.push(opts.subject);
 
     let {table, aclQuery} = await this.generateAclWithFilter(opts, args);
     if( aclQuery ) withClauses.push(aclQuery);
+
+    args.push(limit);
+    args.push(offset);
 
     let query = `
       WITH ${withClauses.join(', ')}
@@ -516,8 +545,8 @@ class Database {
       LEFT JOIN caskfs.uri pu ON ll.predicate = pu.uri_id
       LEFT JOIN caskfs.uri su ON ll.subject = su.uri_id
       LEFT JOIN caskfs.uri gu ON ll.graph = gu.uri_id
-      WHERE ll.subject = caskfs.get_uri_id($1)
-      LIMIT 1000
+      WHERE fll.ld_literal_id IN (SELECT ld_literal_id FROM subject_match)
+      LIMIT $${args.length - 1} OFFSET $${args.length}
     `;
 
     if( opts.debugQuery ) {
@@ -525,7 +554,11 @@ class Database {
     }
 
     let resp = await this.client.query(query, args);
-    return resp.rows;
+    return {
+      limit,
+      offset,
+      results: resp.rows,
+    }
   }
 
   powerWash() {
