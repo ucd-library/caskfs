@@ -369,9 +369,7 @@ class Rdf {
           graph: this._resolveIdPath(q.graph.value),
           subject: this._resolveIdPath(q.subject.value, filepath),
           predicate: q.predicate.value,
-          object: object,
-          isLiteral: true,
-          quad: q
+          object
         });
 
         return;
