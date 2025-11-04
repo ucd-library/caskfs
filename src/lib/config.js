@@ -5,6 +5,14 @@ const literalPredicates = (env.CASKFS_LITERAL_PREDICATES ?
   env.CASKFS_LITERAL_PREDICATES : 
   'http://schema.org/name').split(',').map(s => s.trim()).filter(s => s.length > 0);
 
+const literalPredicateMatches = (env.CASKFS_LITERAL_PREDICATE_MATCHES ?
+  env.CASKFS_LITERAL_PREDICATE_MATCHES :
+  '(#|\/)name$')
+  .split(',')
+  .map(s => s.trim())
+  .filter(s => s.length > 0)
+  .map(s => new RegExp(s));
+
 const stringDataTypes = (env.CASKFS_STRING_DATA_TYPES ?
   env.CASKFS_STRING_DATA_TYPES :
   'http://www.w3.org/1999/02/22-rdf-syntax-ns#langString, http://www.w3.org/2001/XMLSchema#string')
@@ -25,11 +33,15 @@ const config = {
 
   cliEnvFile : '.caskfs-cli',
 
-  TYPE_PREDICATE: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
-  literalPredicates,
-  stringDataTypes,
-
   powerwashEnabled: (env.CASKFS_ENABLE_POWERWASH === 'true'),
+
+  ld : {
+    insertBatchSize : parseInt(env.CASKFS_LD_INSERT_BATCH_SIZE) || 10000,
+    literalPredicates,
+    literalPredicateMatches,
+    stringDataTypes,
+    typePredicate: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
+  },
 
   database : {
     client : env.CASKFS_DB_CLIENT || 'pg',

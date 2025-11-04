@@ -30,16 +30,19 @@ class Rdf {
 
     this.logger = getLogger('rdf');
 
+    this.insertBatchSize = config.ld.insertBatchSize;
+
     this.jsonldExt = '.jsonld.json';
     this.jsonLdMimeType = 'application/ld+json';
     this.nquadsMimeType = 'application/n-quads';
     this.n3MimeType = 'text/n3';
     this.turtleMimeType = 'text/turtle';
 
-    this.literalPredicates = new Set(config.literalPredicates);
-    this.stringDataTypes = new Set(config.stringDataTypes);
+    this.literalPredicates = new Set(config.ld.literalPredicates);
+    this.literalPredicateMatches = config.ld.literalPredicateMatches;
+    this.stringDataTypes = new Set(config.ld.stringDataTypes);
 
-    this.TYPE_PREDICATE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+    this.TYPE_PREDICATE = config.ld.typePredicate;
   }
 
   /**
@@ -300,66 +303,114 @@ class Rdf {
     parser.DEFAULTGRAPH = namedNode(config.defaultGraph);
 
     let allQuads = [];
+    let types = null;
 
     if( fileQuads ) {
       fileQuads = parser.parse(fileQuads);
       allQuads = [...caskQuads, ...fileQuads];
+      
+      // extract types from the file quads
+      types = new Set(fileQuads.filter(q => q.predicate.value === this.TYPE_PREDICATE)
+        .map(q => q.object.value));
+      types = Array.from(types);
     } else {
       allQuads = caskQuads;
     }
 
-    allQuads = allQuads
-      .map(q => {
-        let object = null, isLiteral = false;
-        if( q.object.termType === 'Literal' && this.literalPredicates.has(q.predicate.value) ) {
-          object = {
-            value: q.object.value,
-            language: q.object.language || null,
-            datatype: q.object?.datatype?.id || null
-          };
-          // default is string, so remove it
-          if( this.stringDataTypes.has(object.datatype) ) {
-            delete object.datatype;
-          }
-          isLiteral = true;
-        } else if( q.object.termType === 'NamedNode' ) {
-          object = this._resolveIdPath(q.object.value, filepath);
+    let filters = {
+      graph: new Set(),
+      subject: new Set(),
+      predicate: new Set(),
+      object: new Set(),
+    }
+    let linkMap = new Map();
+    let literals = [];
+    let filterKeys = Object.keys(filters);
+    let object;
+
+    allQuads.forEach(q => {
+      if( q.predicate.value === this.TYPE_PREDICATE ) {
+        return
+      }
+
+      for( let fk of filterKeys ) {
+        if( q[fk].termType !== 'NamedNode' ) continue;
+
+        if( fk === 'subject' || fk === 'object' ) {
+          filters[fk].add(this._resolveIdPath(q[fk].value, filepath));
+        } else if( fk === 'predicate' ) {
+          filters[fk].add(q[fk].value);
+        } else if( fk === 'graph' ) {
+          filters[fk].add(this._resolveIdPath(q.graph.value));
+        }
+      }
+
+      if( q.predicate.termType === 'NamedNode' && q.object.termType === 'NamedNode' ) {
+        let lkey = `${q.predicate.value}|${q.object.value}`;
+        if( !linkMap.has(lkey) ) {
+          linkMap.set(lkey, q);
+        }
+      }
+
+      if( this._isLiteralPredicate(q) ) {
+        object = {
+          value: q.object.value,
+          language: q.object.language || null,
+          datatype: q.object?.datatype?.id || null
+        };
+
+        // default is string, so remove it
+        if( this.stringDataTypes.has(object.datatype) ) {
+          delete object.datatype;
         }
 
-        return {
+        literals.push({
           graph: this._resolveIdPath(q.graph.value),
           subject: this._resolveIdPath(q.subject.value, filepath),
           predicate: q.predicate.value,
           object: object,
-          isLiteral: isLiteral,
+          isLiteral: true,
           quad: q
-        };
-      });
+        });
 
-    let types = null;
+        return;
+      } 
 
-    if( fileQuads ) {
-      types = new Set(fileQuads.filter(q => q.predicate.value === this.TYPE_PREDICATE)
-        .map(q => q.object.value));
-      types = Array.from(types);
+    });
+
+    for( let key of filterKeys ) {
+      filters[key] = Array.from(filters[key]);
+      for( let value of filters[key] ) {
+        await dbClient.query(`
+          select caskfs.insert_file_ld_filter($1::UUID, $2::caskfs.ld_filter_type, $3::VARCHAR)`, 
+          [file.file_id, key, value]
+        );
+      }
     }
-    let otherQuads = allQuads.filter(q => q.predicate !== this.TYPE_PREDICATE);
 
-    // filter out the quad data for insertion
-    let fileIdQuads = otherQuads.map(q => ({
-      graph : q.graph,
-      subject : q.subject,
-      predicate : q.predicate,
-      object : q.object,
-      is_literal : q.isLiteral
-    }));
+    if( types && types.length > 0 ) {
+      for( let t of types ) {
+        await dbClient.query(`
+          select caskfs.insert_file_ld_filter($1::UUID, $2::caskfs.ld_filter_type, $3::VARCHAR)`,
+          [file.file_id, 'type', t]
+        );
+      }
+    }
 
-    await dbClient.query(
-      `select caskfs.insert_file_ld($1::UUID, $2::JSONB, $3::JSONB)`, [
-        file.file_id, 
-        JSON.stringify(fileIdQuads),
-        types ? JSON.stringify(types) : null
-      ]);
+    linkMap = Array.from(linkMap.values());
+    for( let link of linkMap ) {
+      await dbClient.query(`
+        select caskfs.insert_file_ld_link($1::UUID, $2::VARCHAR, $3::VARCHAR)`,
+        [file.file_id, link.predicate.value, this._resolveIdPath(link.object.value, filepath)]
+      );
+    }
+
+    for( let literal of literals ) {
+      await dbClient.query(
+        `select caskfs.insert_file_ld_literal($1::UUID, $2::VARCHAR, $3::VARCHAR, $4::TEXT, $5::VARCHAR, $6::VARCHAR, $7::VARCHAR)`,
+        [file.file_id, literal.graph, literal.subject, literal.predicate, literal.object.value, literal.object.language || null, literal.object.datatype || null]
+      );
+    }
 
     if( fileQuads ) {
       // ensure proper path resolution for subject IDs
@@ -371,8 +422,6 @@ class Rdf {
 
     return {
       file,
-      links: fileIdQuads,
-      types,
       fileQuads: fileQuads,
       caskQuads: await this._objectToNQuads(caskQuads)
     };
@@ -775,6 +824,17 @@ class Rdf {
     } else if( node[property] !== value ) {
       node[property] = [node[property], value];
     }
+  }
+
+  _isLiteralPredicate(quad) {
+    if( quad.subject.termType !== 'NamedNode' ) return false;
+    if( quad.predicate.termType !== 'NamedNode' ) return false;
+    if( quad.object.termType !== 'Literal' ) return false;
+    if( this.literalPredicates.has(quad.predicate.value) ) return true;
+    if( this.literalPredicateMatches.some(regex => regex.test(quad.predicate.value)) ) {
+      return true;
+    }
+    return false;
   }
 
   _setEmptyIds(data) {

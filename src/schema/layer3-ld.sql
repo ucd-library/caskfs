@@ -104,12 +104,12 @@ LEFT JOIN caskfs.uri ou ON ll.object = ou.uri_id;
 
 CREATE TABLE IF NOT EXISTS caskfs.ld_literal (
     ld_literal_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    graph UUID,
+    graph UUID NOT NULL,
     subject UUID NOT NULL,
     predicate UUID NOT NULL,
     value TEXT NOT NULL,
-    language VARCHAR(32),
-    datatype VARCHAR(256),
+    language VARCHAR(32) DEFAULT '' NOT NULL,
+    datatype VARCHAR(256) DEFAULT '' NOT NULL,
     UNIQUE(graph, subject, predicate, value, language, datatype)
 );
 CREATE INDEX IF NOT EXISTS idx_ld_literal_subject ON caskfs.ld_literal(subject);
@@ -141,146 +141,101 @@ LEFT JOIN caskfs.uri pu ON ll.predicate = pu.uri_id
 LEFT JOIN caskfs.uri su ON ll.subject = su.uri_id
 LEFT JOIN caskfs.uri gu ON ll.graph = gu.uri_id;
 
-CREATE OR REPLACE FUNCTION caskfs.insert_file_ld(
+
+CREATE OR REPLACE FUNCTION caskfs.insert_file_ld_filter(
     p_file_id UUID,
-    p_nquads JSONB,
-    p_types JSONB
+    p_type caskfs.ld_filter_type,
+    p_uri VARCHAR(1028)
+)
+RETURNS VOID AS $$
+DECLARE
+    v_uri_id UUID;
+BEGIN
+    v_uri_id := caskfs.upsert_uri(p_uri);
+
+    INSERT INTO caskfs.ld_filter (type, uri_id)
+    VALUES (p_type, v_uri_id)
+    ON CONFLICT (type, uri_id) DO NOTHING;
+
+    INSERT INTO caskfs.file_ld_filter (file_id, ld_filter_id)
+    VALUES (
+        p_file_id,
+        (SELECT ld_filter_id FROM caskfs.ld_filter WHERE type = p_type AND uri_id = v_uri_id)
+    )
+    ON CONFLICT (file_id, ld_filter_id) DO NOTHING;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION caskfs.insert_file_ld_link(
+    p_file_id UUID,
+    p_predicate VARCHAR(1028),
+    p_object VARCHAR(1028)
+) RETURNS VOID AS $$
+DECLARE
+    v_predicate_uri_id UUID;
+    v_object_uri_id UUID;
+BEGIN
+    v_predicate_uri_id := caskfs.upsert_uri(p_predicate);
+    v_object_uri_id := caskfs.upsert_uri(p_object); 
+    INSERT INTO caskfs.ld_link (predicate, object)
+    VALUES (v_predicate_uri_id, v_object_uri_id)
+    ON CONFLICT (predicate, object) DO NOTHING;
+
+    INSERT INTO caskfs.file_ld_link (file_id, ld_link_id)
+    VALUES (
+        p_file_id,
+        (SELECT ld_link_id FROM caskfs.ld_link WHERE predicate = v_predicate_uri_id AND object = v_object_uri_id)
+    )
+    ON CONFLICT (file_id, ld_link_id) DO NOTHING;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION caskfs.insert_file_ld_literal(
+    p_file_id UUID,
+    p_graph VARCHAR(1028),
+    p_subject VARCHAR(1028),
+    p_predicate VARCHAR(1028),
+    p_value TEXT,
+    p_language VARCHAR(32) DEFAULT NULL,
+    p_datatype VARCHAR(256) DEFAULT NULL
 ) RETURNS VOID AS $$
 DECLARE
     v_graph_uri_id UUID;
     v_subject_uri_id UUID;
     v_predicate_uri_id UUID;
-    v_object_uri_id UUID;
-    v_type_uri_id UUID;
-    record RECORD;
 BEGIN
-    -- insert types into filter table
-    IF p_types IS NOT NULL THEN
-        FOR record IN
-            SELECT type_uri
-            FROM jsonb_array_elements_text(p_types) AS type_uri
-        LOOP
-            v_type_uri_id := caskfs.upsert_uri(record.type_uri);
-            INSERT INTO caskfs.ld_filter (type, uri_id)
-            VALUES ('type', v_type_uri_id)
-            ON CONFLICT (type, uri_id) DO NOTHING;
+    IF p_graph IS NOT NULL THEN
+        v_graph_uri_id := caskfs.upsert_uri(p_graph);
+    END IF;
+    v_subject_uri_id := caskfs.upsert_uri(p_subject);
+    v_predicate_uri_id := caskfs.upsert_uri(p_predicate);
 
-            INSERT INTO caskfs.file_ld_filter (file_id, ld_filter_id)
-            VALUES (
-                p_file_id,
-                (SELECT ld_filter_id FROM caskfs.ld_filter WHERE type = 'type' AND uri_id = v_type_uri_id)
-            )
-            ON CONFLICT (file_id, ld_filter_id) DO NOTHING;
-        END LOOP;
+    IF p_language IS NULL THEN
+        p_language := '';
     END IF;
 
-    -- loop through nquads and insert into filter and links tables
-    FOR record IN
-        SELECT
-            (triple->>'graph') AS graph,
-            (triple->>'subject') AS subject,
-            (triple->>'predicate') AS predicate,
-            (triple->'object') AS object,
-            (triple->>'is_literal')::BOOLEAN AS is_literal
-        FROM jsonb_array_elements(p_nquads) AS triple
-    LOOP
-        IF record.graph IS NOT NULL THEN
-            v_graph_uri_id := caskfs.upsert_uri(record.graph);
-            
-            INSERT INTO caskfs.ld_filter (type, uri_id)
-            VALUES ('graph', v_graph_uri_id)
-            ON CONFLICT (type, uri_id) DO NOTHING;
+    IF p_datatype IS NULL THEN
+        p_datatype := '';
+    END IF;
 
-            INSERT INTO caskfs.file_ld_filter (file_id, ld_filter_id)
-            VALUES (
-                p_file_id,
-                (SELECT ld_filter_id FROM caskfs.ld_filter WHERE type = 'graph' AND uri_id = v_graph_uri_id)
-            )
-            ON CONFLICT (file_id, ld_filter_id) DO NOTHING;
-        END IF;
+    INSERT INTO caskfs.ld_literal (graph, subject, predicate, value, language, datatype)
+    VALUES (v_graph_uri_id, v_subject_uri_id, v_predicate_uri_id,
+            p_value, p_language, p_datatype)
+    ON CONFLICT (graph, subject, predicate, value, language, datatype) DO NOTHING;
 
-        -- Upsert subject
-        v_subject_uri_id := caskfs.upsert_uri(record.subject);
-        INSERT INTO caskfs.ld_filter (type, uri_id)
-        VALUES ('subject', v_subject_uri_id)
-        ON CONFLICT (type, uri_id) DO NOTHING;
-
-        INSERT INTO caskfs.file_ld_filter (file_id, ld_filter_id)
-        VALUES (
-            p_file_id,
-            (SELECT ld_filter_id FROM caskfs.ld_filter WHERE type = 'subject' AND uri_id = v_subject_uri_id)
+    INSERT INTO caskfs.file_ld_literal (file_id, ld_literal_id)
+    VALUES (
+        p_file_id,
+        (SELECT ld_literal_id FROM caskfs.ld_literal 
+         WHERE 
+            graph = v_graph_uri_id AND 
+            subject = v_subject_uri_id AND 
+            predicate = v_predicate_uri_id AND 
+            value = p_value AND
+            language = p_language AND
+            datatype = p_datatype
         )
-        ON CONFLICT (file_id, ld_filter_id) DO NOTHING;
-
-        -- Upsert predicate
-        v_predicate_uri_id := caskfs.upsert_uri(record.predicate);
-        INSERT INTO caskfs.ld_filter (type, uri_id)
-        VALUES ('predicate', v_predicate_uri_id)
-        ON CONFLICT (type, uri_id) DO NOTHING;
-        INSERT INTO caskfs.file_ld_filter (file_id, ld_filter_id)
-        VALUES (
-            p_file_id,
-            (SELECT ld_filter_id FROM caskfs.ld_filter WHERE type = 'predicate' AND uri_id = v_predicate_uri_id)
-        )
-        ON CONFLICT (file_id, ld_filter_id) DO NOTHING;
-
-        -- Check if named node for object, if so add to filter and predicate/object links
-        IF record.object IS NOT NULL THEN
-
-            IF record.is_literal THEN
-                -- Insert into literals table
-                INSERT INTO caskfs.ld_literal (graph, subject, predicate, value, language, datatype)
-                VALUES (
-                    v_graph_uri_id,
-                    v_subject_uri_id,
-                    v_predicate_uri_id,
-                    record.object->>'value',
-                    record.object->>'language',
-                    record.object->>'datatype'
-                )
-                ON CONFLICT (graph, subject, predicate, value, language, datatype) DO NOTHING;
-
-                INSERT INTO caskfs.file_ld_literal (file_id, ld_literal_id)
-                VALUES (
-                    p_file_id,
-                    (SELECT ld_literal_id FROM caskfs.ld_literal 
-                    WHERE 
-                        graph = v_graph_uri_id AND 
-                        subject = v_subject_uri_id AND 
-                        predicate = v_predicate_uri_id AND 
-                        value = record.object->>'value' AND
-                        language IS NOT DISTINCT FROM record.object->>'language' AND
-                        datatype IS NOT DISTINCT FROM record.object->>'datatype')
-                )
-                ON CONFLICT (file_id, ld_literal_id) DO NOTHING;
-
-                CONTINUE;
-            END IF;
-
-            v_object_uri_id := caskfs.upsert_uri(record.object::TEXT);
-            INSERT INTO caskfs.ld_filter (type, uri_id)
-            VALUES ('object', v_object_uri_id)
-            ON CONFLICT (type, uri_id) DO NOTHING;
-
-            INSERT INTO caskfs.file_ld_filter (file_id, ld_filter_id)
-            VALUES (
-                p_file_id,
-                (SELECT ld_filter_id FROM caskfs.ld_filter WHERE type = 'object' AND uri_id = v_object_uri_id)
-            )
-            ON CONFLICT (file_id, ld_filter_id) DO NOTHING;
-
-            -- Insert into links table
-            INSERT INTO caskfs.ld_link (predicate, object)
-            VALUES (v_predicate_uri_id, v_object_uri_id)
-            ON CONFLICT (predicate, object) DO NOTHING;
-
-            INSERT INTO caskfs.file_ld_link (file_id, ld_link_id)
-            VALUES (
-                p_file_id,
-                (SELECT ld_link_id FROM caskfs.ld_link WHERE predicate = v_predicate_uri_id AND object = v_object_uri_id)
-            )
-            ON CONFLICT (file_id, ld_link_id) DO NOTHING;
-        END IF;
-    END LOOP;
+    )
+    ON CONFLICT (file_id, ld_literal_id) DO NOTHING;
 END;
 $$ LANGUAGE plpgsql;

@@ -437,20 +437,53 @@ CREATE OR REPLACE FUNCTION caskfs.insert_file(
 ) RETURNS UUID AS $$
 DECLARE
     v_file_id UUID;
+    v_hash_id UUID;
 BEGIN
-    WITH hash_upsert AS (
-        INSERT INTO caskfs.hash (value, digests, size, bucket) 
-        VALUES (p_hash_value, p_digests, p_size, p_bucket)
-        ON CONFLICT (value) DO UPDATE SET 
-            value = EXCLUDED.value, 
-            digests = EXCLUDED.digests, 
-            size = EXCLUDED.size
-        RETURNING hash_id
-    )
+    INSERT INTO caskfs.hash (value, digests, size, bucket) 
+    VALUES (p_hash_value, p_digests, p_size, p_bucket)
+    ON CONFLICT (value) DO NOTHING;
+
+    SELECT hash_id INTO v_hash_id FROM caskfs.hash WHERE value = p_hash_value;
+
     INSERT INTO caskfs.file (directory_id, name, hash_id, metadata, last_modified_by)
-    SELECT p_directory_id, p_filename, hash_id, p_metadata, p_last_modified_by
-    FROM hash_upsert
+    SELECT p_directory_id, p_filename, v_hash_id, p_metadata, p_last_modified_by
     RETURNING file_id INTO v_file_id;
+
+    RETURN v_file_id;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION caskfs.update_file(
+    p_directory_id UUID,
+    p_hash_value VARCHAR(256),
+    p_filename VARCHAR(256),
+    p_last_modified_by TEXT,
+    p_digests JSONB DEFAULT '{}'::jsonb,
+    p_size BIGINT DEFAULT 0,
+    p_metadata JSONB DEFAULT '{}'::jsonb
+) RETURNS UUID AS $$
+DECLARE
+    v_file_id UUID;
+    v_hash_id UUID;
+BEGIN
+    v_file_id := (SELECT file_id FROM caskfs.file WHERE directory_id = p_directory_id AND name = p_filename);
+
+    IF v_file_id IS NULL THEN
+        RAISE EXCEPTION 'File % does not exist in directory %', p_filename, p_directory_id;
+    END IF;
+
+    INSERT INTO caskfs.hash (value, digests, size)
+    VALUES (p_hash_value, p_digests, p_size)
+    ON CONFLICT (value) DO NOTHING;
+
+    SELECT hash_id INTO v_hash_id FROM caskfs.hash WHERE value = p_hash_value;
+
+    UPDATE caskfs.file
+    SET hash_id = v_hash_id,
+        metadata = p_metadata,
+        last_modified_by = p_last_modified_by,
+        modified = NOW()
+    WHERE file_id = v_file_id;
 
     RETURN v_file_id;
 END;
