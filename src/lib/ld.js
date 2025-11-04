@@ -330,7 +330,7 @@ class Rdf {
 
     allQuads.forEach(q => {
       if( q.predicate.value === this.TYPE_PREDICATE ) {
-        return
+        return;
       }
 
       for( let fk of filterKeys ) {
