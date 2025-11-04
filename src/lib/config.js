@@ -36,7 +36,7 @@ const config = {
   powerwashEnabled: (env.CASKFS_ENABLE_POWERWASH === 'true'),
 
   ld : {
-    insertBatchSize : parseInt(env.CASKFS_LD_INSERT_BATCH_SIZE) || 10000,
+    insertBatchSize : parseInt(env.CASKFS_LD_INSERT_BATCH_SIZE) || 1000,
     literalPredicates,
     literalPredicateMatches,
     stringDataTypes,

@@ -104,6 +104,13 @@ class Directory {
 
     return parentId; // Return the parent directory ID
   }
+
+  delete(opts={}) {
+    return opts.dbClient.query(
+        `DELETE FROM ${config.database.schema}.directory WHERE fullname = $1`,
+      [opts.directory]
+    );
+  }
 }
 
 export default Directory;

@@ -302,7 +302,11 @@ program
 program
   .command('literal <subject>')
   .description('Read literal labels for a subject URI and output as supported RDF format to stdout')
+  .option('-g, --graph <graph-uri>', 'Only include literals in the specified graph')
+  .option('-p, --predicate <predicate>', 'Only include literals with the specified predicate')
+  .option('-f, --file-path <file-path>', 'Only include literals for the specified file path')
   .option('-o, --format <format>', 'RDF format to output: jsonld, compact, flattened, expanded, nquads or json. Default is jsonld', 'jsonld')
+  .option('-d, --debug-query', 'Output the SQL query used to find the literals', false)
   .action(async (subject, options) => {
     handleGlobalOpts(options);
 
@@ -389,6 +393,7 @@ program
 program
   .command('rm <file-path>')
   .description('Remove a file from the filesystem layer and the underlying storage')
+  .option('-d, --directory', 'Indicates that the file-path is a directory and all files in the directory should be deleted recursively', false)
   .option('-s, --soft-delete', 'Never delete the file from the underlying storage, even if all references are removed', false)
   .action(async (filePath, options) => {
     handleGlobalOpts(options);
@@ -396,8 +401,16 @@ program
     options.filePath = filePath;
 
     const cask = new CaskFs();
-    const resp = await cask.delete(options);
-    console.log(resp);
+
+    if( options.directory ) {
+      options.directory = filePath;
+      const resp = await cask.deleteDirectory(options);
+    } else {
+      const resp = await cask.deleteFile(options);
+      console.log(resp);
+    }
+
+    
     cask.dbClient.end();
   });
 

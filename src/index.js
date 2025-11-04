@@ -688,8 +688,80 @@ class CaskFs {
     return res.rows[0];
   }
 
+  async deleteDirectory(context={}) {
+    context = createContext(context);
+    let dirPath = context.data.directory;
+    let softDelete = context.data.softDelete || false;
+
+    if( !context.data.rootDir ) {
+      let dbClient = new Database({
+        type: context.data.dbType || config.database.client
+      });
+
+      context.update({
+        rootDir: dirPath,
+        casFilePaths: [],
+        dbClient
+      });
+
+      await dbClient.query('BEGIN');
+    }
+
+    if( dirPath === '/' ) {
+      throw new Error('Cannot delete root directory');
+    }
+
+    let ls = await this.ls(context);
+    for( let file of ls.files ) {
+      context.data.casFilePaths.push(file.fullPath);
+      await this.deleteFile({
+        filePath: file.filepath, 
+        dbClient: context.data.dbClient, 
+        ignoreAcl: true,
+        softDelete: true
+      });
+      this.logger.info(`Deleted file: ${file.filepath}`, context.logSignal);
+    }
+
+    // remove all sub-directories recursively
+    for( let dir of ls.directories ) {
+      await this.deleteDirectory(
+        createContext({
+          directory: dir.name,
+          rootDir : context.data.rootDir,
+          requestor: context.data.requestor,
+          casFilePaths: context.data.casFilePaths,
+          dbClient: context.data.dbClient
+        })
+      );
+    }
+
+    // finally remove the directory itself
+    await this.directory.delete({directory: dirPath, dbClient: context.data.dbClient});
+
+    this.logger.info(`Directory deleted: ${dirPath}`, context.logSignal);
+
+    if( dirPath === context.data.rootDir ) {
+      await context.data.dbClient.query('COMMIT');
+      await context.data.dbClient.end();
+
+      // now that the transaction is committed, delete the cas files
+      if( softDelete !== true ) {
+        for( let casFilePath of context.data.casFilePaths ) {
+          try {
+            await fs.unlink(casFilePath);
+          } catch (err) {
+            this.logger.error(`Error deleting CAS file: ${casFilePath}`, {error: err.message});
+          }
+        }
+      }
+
+      this.logger.info(`Completed delete of root directory: ${dirPath}`);
+    }
+  }
+
   /**
-   * @method delete
+   * @method deleteFile
    * @description Delete a file from the CASKFS. Removes the file record, partition keys, RDF triples, and
    * then calls the CAS delete method to remove the file from storage if no other references exist.
    *
@@ -700,16 +772,15 @@ class CaskFs {
    *                                  file on disk even if no other references exist. Default: false
    * @returns {Promise<Object>} result object with metadata, fileDeleted (boolean), referencesRemaining (int)
    */
-  async delete(context={}) {
+  async deleteFile(context={}) {
     context = createContext(context, this.dbClient);
 
     await this.canWriteFile(context);
 
-
     let metadata = await this.metadata(context);
 
     // remove RDF triples first
-    this.rdf.delete(metadata);
+    await this.rdf.delete(metadata);
 
     // remove the file record
     await context.data.dbClient.query(`

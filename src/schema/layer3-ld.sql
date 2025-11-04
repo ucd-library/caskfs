@@ -166,6 +166,24 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION caskfs.insert_file_ld_filter_batch (
+    p_file_id UUID,
+    p_data JSONB
+)  
+RETURNS VOID AS $$
+DECLARE
+    v_item JSONB;
+    v_type caskfs.ld_filter_type;
+    v_uri VARCHAR(1028);
+BEGIN
+    FOR v_item IN SELECT * FROM jsonb_array_elements(p_data) LOOP
+        v_type := (v_item->>'type')::caskfs.ld_filter_type;
+        v_uri := v_item->>'uri';
+        PERFORM caskfs.insert_file_ld_filter(p_file_id, v_type, v_uri);
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE OR REPLACE FUNCTION caskfs.insert_file_ld_link(
     p_file_id UUID,
     p_predicate VARCHAR(1028),
@@ -187,6 +205,24 @@ BEGIN
         (SELECT ld_link_id FROM caskfs.ld_link WHERE predicate = v_predicate_uri_id AND object = v_object_uri_id)
     )
     ON CONFLICT (file_id, ld_link_id) DO NOTHING;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION caskfs.insert_file_ld_link_batch (
+    p_file_id UUID,
+    p_data JSONB
+)  
+RETURNS VOID AS $$
+DECLARE
+    v_item JSONB;
+    v_predicate VARCHAR(1028);
+    v_object VARCHAR(1028);
+BEGIN
+    FOR v_item IN SELECT * FROM jsonb_array_elements(p_data) LOOP
+        v_predicate := v_item->>'predicate';
+        v_object := v_item->>'object';
+        PERFORM caskfs.insert_file_ld_link(p_file_id, v_predicate, v_object);
+    END LOOP;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -237,5 +273,73 @@ BEGIN
         )
     )
     ON CONFLICT (file_id, ld_literal_id) DO NOTHING;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION caskfs.insert_file_ld_literal_batch (
+    p_file_id UUID,
+    p_data JSONB
+)  
+RETURNS VOID AS $$
+DECLARE
+    v_item JSONB;
+    v_graph VARCHAR(1028);
+    v_subject VARCHAR(1028);
+    v_predicate VARCHAR(1028);
+    v_value TEXT;
+    v_language VARCHAR(32);
+    v_datatype VARCHAR(256);
+BEGIN
+    FOR v_item IN SELECT * FROM jsonb_array_elements(p_data) LOOP
+        v_graph := v_item->>'graph';
+        v_subject := v_item->>'subject';
+        v_predicate := v_item->>'predicate';
+        v_value := v_item->'object'->>'value';
+        v_language := v_item->'object'->>'language';
+        v_datatype := v_item->'object'->>'datatype';
+        PERFORM caskfs.insert_file_ld_literal(
+            p_file_id,
+            v_graph,
+            v_subject,
+            v_predicate,
+            v_value,
+            v_language,
+            v_datatype
+        );
+    END LOOP;
+END; 
+$$ LANGUAGE plpgsql;
+
+-------
+-- Unused ld data
+-------
+CREATE OR REPLACE VIEW caskfs.unused_ld_filters AS
+SELECT ldf.*
+FROM caskfs.ld_filter ldf
+LEFT JOIN caskfs.file_ld_filter flf ON ldf.ld_filter_id = flf.ld_filter_id
+WHERE flf.ld_filter_id IS NULL;
+
+CREATE OR REPLACE VIEW caskfs.unused_ld_links AS
+SELECT ll.*
+FROM caskfs.ld_link ll
+LEFT JOIN caskfs.file_ld_link fll ON ll.ld_link_id = fll.ld_link_id
+WHERE fll.ld_link_id IS NULL;
+
+CREATE OR REPLACE VIEW caskfs.unused_ld_literals AS
+SELECT ll.*
+FROM caskfs.ld_literal ll
+LEFT JOIN caskfs.file_ld_literal fll ON ll.ld_literal_id = fll.ld_literal_id
+WHERE fll.ld_literal_id IS NULL;
+
+CREATE OR REPLACE FUNCTION caskfs.delete_unused_ld_data() RETURNS VOID AS $$
+BEGIN
+    DELETE FROM caskfs.ld_filter
+    WHERE ld_filter_id IN (SELECT ld_filter_id FROM caskfs.unused_ld_filters);
+
+    DELETE FROM caskfs.ld_link
+    WHERE ld_link_id IN (SELECT ld_link_id FROM caskfs.unused_ld_links);
+
+    DELETE FROM caskfs.ld_literal
+    WHERE ld_literal_id IN (SELECT ld_literal_id FROM caskfs.unused_ld_literals);
 END;
 $$ LANGUAGE plpgsql;
