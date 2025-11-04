@@ -309,3 +309,37 @@ BEGIN
     END LOOP;
 END; 
 $$ LANGUAGE plpgsql;
+
+-------
+-- Unused ld data
+-------
+CREATE OR REPLACE VIEW caskfs.unused_ld_filters AS
+SELECT ldf.*
+FROM caskfs.ld_filter ldf
+LEFT JOIN caskfs.file_ld_filter flf ON ldf.ld_filter_id = flf.ld_filter_id
+WHERE flf.ld_filter_id IS NULL;
+
+CREATE OR REPLACE VIEW caskfs.unused_ld_links AS
+SELECT ll.*
+FROM caskfs.ld_link ll
+LEFT JOIN caskfs.file_ld_link fll ON ll.ld_link_id = fll.ld_link_id
+WHERE fll.ld_link_id IS NULL;
+
+CREATE OR REPLACE VIEW caskfs.unused_ld_literals AS
+SELECT ll.*
+FROM caskfs.ld_literal ll
+LEFT JOIN caskfs.file_ld_literal fll ON ll.ld_literal_id = fll.ld_literal_id
+WHERE fll.ld_literal_id IS NULL;
+
+CREATE OR REPLACE FUNCTION caskfs.delete_unused_ld_data() RETURNS VOID AS $$
+BEGIN
+    DELETE FROM caskfs.ld_filter
+    WHERE ld_filter_id IN (SELECT ld_filter_id FROM caskfs.unused_ld_filters);
+
+    DELETE FROM caskfs.ld_link
+    WHERE ld_link_id IN (SELECT ld_link_id FROM caskfs.unused_ld_links);
+
+    DELETE FROM caskfs.ld_literal
+    WHERE ld_literal_id IN (SELECT ld_literal_id FROM caskfs.unused_ld_literals);
+END;
+$$ LANGUAGE plpgsql;
