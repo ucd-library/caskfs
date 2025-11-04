@@ -6,7 +6,7 @@ import path from "path";
 import fsp from "fs/promises";
 import { getLogger } from './logger.js';
 import acl from './acl.js';
-const { namedNode } = DataFactory;
+const { namedNode, quad, literal } = DataFactory;
 
 const customLoader = async (url, options) => {
   url = new URL(url);
@@ -30,13 +30,19 @@ class Rdf {
 
     this.logger = getLogger('rdf');
 
+    this.insertBatchSize = config.ld.insertBatchSize;
+
     this.jsonldExt = '.jsonld.json';
     this.jsonLdMimeType = 'application/ld+json';
     this.nquadsMimeType = 'application/n-quads';
     this.n3MimeType = 'text/n3';
     this.turtleMimeType = 'text/turtle';
 
-    this.TYPE_PREDICATE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+    this.literalPredicates = new Set(config.ld.literalPredicates);
+    this.literalPredicateMatches = config.ld.literalPredicateMatches;
+    this.stringDataTypes = new Set(config.ld.stringDataTypes);
+
+    this.TYPE_PREDICATE = config.ld.typePredicate;
   }
 
   /**
@@ -100,22 +106,19 @@ class Rdf {
     }
 
     data = nquads.join('\n');
+    return this.format(data, format, filePath);
+  }
+
+  async format(data, format, filePath=null) {
+
+    // let data = nquads.join('\n');
 
     if( format === 'nquads' || format === 'application/n-quads' ) {
-      // return jsonld.canonize(data, {
-      //   algorithm: 'URDNA2015',
-      //   format: 'application/n-quads'
-      // });
-      return nquads;
+      return data;
     }
 
     if( format === 'json' || format === 'application/json' ) {
-      // const nquads = await jsonld.canonize(data, {
-      //   algorithm: 'URDNA2015',
-      //   format: 'application/n-quads'
-      // });
-
-      return this.quadsParser.parse(nquads)
+      return this.quadsParser.parse(data)
         .map(q => ({
           graph: q.graph.value || null,
           subject: q.subject.value,
@@ -150,6 +153,19 @@ class Rdf {
     }
 
     throw new Error(`Unsupported RDF format: ${format}`);
+  }
+
+  async literal(opts={}) {
+    let data = await this.dbClient.getLiteralValues(opts);
+    data = data.map(q => quad(
+      namedNode(q.subject),
+      namedNode(q.predicate),
+      literal(q.object, q.language || namedNode(q.datatype)),
+      namedNode(q.graph)
+    ));
+ 
+    data = await this._objectToNQuads(data);
+    return this.format(data, opts.format);
   }
 
   /**
@@ -287,46 +303,114 @@ class Rdf {
     parser.DEFAULTGRAPH = namedNode(config.defaultGraph);
 
     let allQuads = [];
+    let types = null;
 
     if( fileQuads ) {
       fileQuads = parser.parse(fileQuads);
       allQuads = [...caskQuads, ...fileQuads];
+      
+      // extract types from the file quads
+      types = new Set(fileQuads.filter(q => q.predicate.value === this.TYPE_PREDICATE)
+        .map(q => q.object.value));
+      types = Array.from(types);
     } else {
       allQuads = caskQuads;
     }
 
-    allQuads = allQuads
-      .map(q => ({
-        graph: this._resolveIdPath(q.graph.value),
-        subject: this._resolveIdPath(q.subject.value, filepath),
-        predicate: q.predicate.value,
-        object: q.object.termType === 'NamedNode' ? this._resolveIdPath(q.object.value, filepath) : null,
-        quad: q
-      }));
-
-    let types = null;
-
-    if( fileQuads ) {
-      types = new Set(fileQuads.filter(q => q.predicate.value === this.TYPE_PREDICATE)
-        .map(q => q.object.value));
-      types = Array.from(types);
+    let filters = {
+      graph: new Set(),
+      subject: new Set(),
+      predicate: new Set(),
+      object: new Set(),
     }
-    let otherQuads = allQuads.filter(q => q.predicate !== this.TYPE_PREDICATE);
+    let linkMap = new Map();
+    let literals = [];
+    let filterKeys = Object.keys(filters);
+    let object;
 
-    // filter out the quad data for insertion
-    let fileIdQuads = otherQuads.map(q => ({
-      graph : q.graph,
-      subject : q.subject,
-      predicate : q.predicate,
-      object : q.object
-    }));
+    allQuads.forEach(q => {
+      if( q.predicate.value === this.TYPE_PREDICATE ) {
+        return;
+      }
 
-    await dbClient.query(
-      `select caskfs.insert_file_ld($1::UUID, $2::JSONB, $3::JSONB)`, [
-        file.file_id, 
-        JSON.stringify(fileIdQuads),
-        types ? JSON.stringify(types) : null
-      ]);
+      for( let fk of filterKeys ) {
+        if( q[fk].termType !== 'NamedNode' ) continue;
+
+        if( fk === 'subject' || fk === 'object' ) {
+          filters[fk].add(this._resolveIdPath(q[fk].value, filepath));
+        } else if( fk === 'predicate' ) {
+          filters[fk].add(q[fk].value);
+        } else if( fk === 'graph' ) {
+          filters[fk].add(this._resolveIdPath(q.graph.value));
+        }
+      }
+
+      if( q.predicate.termType === 'NamedNode' && q.object.termType === 'NamedNode' ) {
+        let lkey = `${q.predicate.value}|${q.object.value}`;
+        if( !linkMap.has(lkey) ) {
+          linkMap.set(lkey, q);
+        }
+      }
+
+      if( this._isLiteralPredicate(q) ) {
+        object = {
+          value: q.object.value,
+          language: q.object.language || null,
+          datatype: q.object?.datatype?.id || null
+        };
+
+        // default is string, so remove it
+        if( this.stringDataTypes.has(object.datatype) ) {
+          delete object.datatype;
+        }
+
+        literals.push({
+          graph: this._resolveIdPath(q.graph.value),
+          subject: this._resolveIdPath(q.subject.value, filepath),
+          predicate: q.predicate.value,
+          object: object,
+          isLiteral: true,
+          quad: q
+        });
+
+        return;
+      } 
+
+    });
+
+    for( let key of filterKeys ) {
+      filters[key] = Array.from(filters[key]);
+      for( let value of filters[key] ) {
+        await dbClient.query(`
+          select caskfs.insert_file_ld_filter($1::UUID, $2::caskfs.ld_filter_type, $3::VARCHAR)`, 
+          [file.file_id, key, value]
+        );
+      }
+    }
+
+    if( types && types.length > 0 ) {
+      for( let t of types ) {
+        await dbClient.query(`
+          select caskfs.insert_file_ld_filter($1::UUID, $2::caskfs.ld_filter_type, $3::VARCHAR)`,
+          [file.file_id, 'type', t]
+        );
+      }
+    }
+
+    linkMap = Array.from(linkMap.values());
+    for( let link of linkMap ) {
+      await dbClient.query(`
+        select caskfs.insert_file_ld_link($1::UUID, $2::VARCHAR, $3::VARCHAR)`,
+        [file.file_id, link.predicate.value, this._resolveIdPath(link.object.value, filepath)]
+      );
+    }
+
+    for( let literal of literals ) {
+      await dbClient.query(
+        `select caskfs.insert_file_ld_literal($1::UUID, $2::VARCHAR, $3::VARCHAR, $4::TEXT, $5::VARCHAR, $6::VARCHAR, $7::VARCHAR)`,
+        [file.file_id, literal.graph, literal.subject, literal.predicate, literal.object.value, literal.object.language || null, literal.object.datatype || null]
+      );
+    }
 
     if( fileQuads ) {
       // ensure proper path resolution for subject IDs
@@ -338,8 +422,6 @@ class Rdf {
 
     return {
       file,
-      links: fileIdQuads,
-      types,
       fileQuads: fileQuads,
       caskQuads: await this._objectToNQuads(caskQuads)
     };
@@ -696,7 +778,13 @@ class Rdf {
         this._caskCompactMergeProperty(node, q.predicate.value, q.object, filePath);
       });
 
-    return Object.values(nodes);
+    nodes = Object.values(nodes);
+    nodes.forEach(n => {
+      if( n['@type'].length === 0 ) {
+        delete n['@type'];
+      }
+    });
+    return nodes;
   }
 
   _caskCompactMergeProperty(node, property, object, filePath='') {
@@ -736,6 +824,17 @@ class Rdf {
     } else if( node[property] !== value ) {
       node[property] = [node[property], value];
     }
+  }
+
+  _isLiteralPredicate(quad) {
+    if( quad.subject.termType !== 'NamedNode' ) return false;
+    if( quad.predicate.termType !== 'NamedNode' ) return false;
+    if( quad.object.termType !== 'Literal' ) return false;
+    if( this.literalPredicates.has(quad.predicate.value) ) return true;
+    if( this.literalPredicateMatches.some(regex => regex.test(quad.predicate.value)) ) {
+      return true;
+    }
+    return false;
   }
 
   _setEmptyIds(data) {

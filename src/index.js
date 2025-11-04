@@ -47,6 +47,7 @@ class CaskFs {
     this.jsonldExt = '.jsonld.json';
     this.jsonLdMimeType = 'application/ld+json';
     this.nquadsMimeType = 'application/n-quads';
+    this.nTriplesMimeType = 'application/n-triples';
     this.n3MimeType = 'text/n3';
     this.turtleMimeType = 'text/turtle';
 
@@ -190,6 +191,7 @@ class CaskFs {
       if( metadata.mimeType === this.nquadsMimeType ||
           metadata.mimeType === this.jsonLdMimeType ||
           metadata.mimeType === this.n3MimeType ||
+          metadata.mimeType === this.nTriplesMimeType ||
           metadata.mimeType === this.turtleMimeType ||
           context.readPath?.endsWith(this.jsonldExt) ) {
         this.logger.debug('Detected RDF file based on mime type or file extension', context.logSignal);
@@ -246,7 +248,21 @@ class CaskFs {
 
         context.data.actions.fileInsert = true;
         context.data.actions.updatedMetadata = true;
+      } else if( context.data.file.hash_value !== context.data.stagedFile.hash_value ) {
+        this.logger.info('Updating existing file record with new hash value', context.logSignal);
+        await dbClient.updateFile({
+          directoryId,
+          filePath, 
+          hash: context.data.stagedFile.hash_value, 
+          metadata, 
+          digests: context.data.stagedFile.digests,
+          size: context.data.stagedFile.size,
+          user: context.data.requestor
+        });
+
       } else {
+        this.logger.info('File exists with same hash value, checking for metadata updates', context.logSignal);
+
         let {updated} = await this.patchMetadata(
           context, 
           {onlyOnChange: true}
@@ -260,6 +276,9 @@ class CaskFs {
 
       // now add the layer3 RDF triples for the file
       // if its an RDF file parse and add the file contents triples as well
+      // TODO: if the hash exists but the file does not, we just need to copy the file-
+      // specific relation table entries from another file with the same hash rather
+      // than re-parsing all the RDF
       if( !context.data.stagedFile.hashExists || !context.data.fileExists ) {
         // if replacing an existing file, delete old triples first
         this.logger.info('Replacing existing RDF file, deleting old triples', context.logSignal);

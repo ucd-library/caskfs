@@ -169,6 +169,26 @@ class Database {
     return resp.rows[0].file_id;
   }
 
+  async updateFile(opts) {
+    let {directoryId, filePath, hash, metadata={}, digests={}, size=0} = opts;
+
+    let fileParts = path.parse(filePath);
+    let resp = await this.client.query(`
+      SELECT * FROM ${this.schema}.update_file(
+        p_directory_id := $1::UUID,
+        p_filename := $2::VARCHAR,
+        p_hash_value := $3::VARCHAR,
+        p_metadata := $4::JSONB,
+        p_digests := $5::JSONB,
+        p_size := $6::BIGINT,
+        p_last_modified_by := $7::VARCHAR
+      ) AS file_id
+    `, [directoryId, fileParts.base, hash, metadata, digests, 
+       size, opts.user]);
+
+    return resp.rows[0].file_id;
+  }
+
   /**
    * @method addPartitionKeyToFile
    * @description Add a partition key to a file.  This will create the partition key
@@ -461,6 +481,51 @@ class Database {
     }
 
     return withClauses.join(', ');
+  }
+
+  async getLiteralValues(opts={}) {
+    let withClauses = [];
+    let args = [];
+
+    withClauses.push(`subject_match AS (
+      SELECT ld_literal_id FROM ${config.database.schema}.ld_literal
+      WHERE subject = caskfs.get_uri_id($${args.length + 1})
+    ),
+    files AS (
+      SELECT DISTINCT f.file_id FROM ${config.database.schema}.file_ld_literal f
+      JOIN subject_match sm ON sm.ld_literal_id = f.ld_literal_id
+    )
+    `);
+    args.push(opts.subject);
+
+    let {table, aclQuery} = await this.generateAclWithFilter(opts, args);
+    if( aclQuery ) withClauses.push(aclQuery);
+
+    let query = `
+      WITH ${withClauses.join(', ')}
+      SELECT
+        gu.uri AS graph,
+        su.uri AS subject,
+        pu.uri AS predicate,
+        ll.value AS object,
+        ll.language AS language,
+        ll.datatype AS datatype
+      FROM ${table} f
+      LEFT JOIN ${config.database.schema}.file_ld_literal fll ON fll.file_id = f.file_id
+      LEFT JOIN caskfs.ld_literal ll ON fll.ld_literal_id = ll.ld_literal_id
+      LEFT JOIN caskfs.uri pu ON ll.predicate = pu.uri_id
+      LEFT JOIN caskfs.uri su ON ll.subject = su.uri_id
+      LEFT JOIN caskfs.uri gu ON ll.graph = gu.uri_id
+      WHERE ll.subject = caskfs.get_uri_id($1)
+      LIMIT 1000
+    `;
+
+    if( opts.debugQuery ) {
+      return { query, args };
+    }
+
+    let resp = await this.client.query(query, args);
+    return resp.rows;
   }
 
   powerWash() {

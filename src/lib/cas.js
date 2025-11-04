@@ -80,6 +80,7 @@ class Cas {
     let stats = await fsp.stat(statsFile);
 
     let stagedFile = { 
+      hash_value: digests[primaryHash],
       digests, 
       tmpFile,
       size: stats.size,
