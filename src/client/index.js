@@ -49,7 +49,10 @@ function caskRouter(opts = {}) {
 function startServer(opts = {}) {
   const app = express();
   const port = opts.port || config.webapp.port;
-  const basepath = opts.basepath || config.webapp.basepath || '/';
+  let basepath = opts.basepath || config.webapp.basepath || '/';
+  if ( !basepath.startsWith('/') ) {
+    basepath = '/' + basepath;
+  }
   const disableWebApp = opts.disableWebApp || false;
   const logRequests = opts.logRequests === undefined ? true : opts.logRequests;
 
