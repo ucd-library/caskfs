@@ -1410,6 +1410,7 @@ class CaskFs {
    * @returns 
    */
   close() {
+    this.rdf.end();
     return this.dbClient.end();
   }
 }

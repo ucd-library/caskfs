@@ -15,6 +15,7 @@ import {optsWrapper, handleGlobalOpts} from './opts-wrapper.js';
 import cliProgress from 'cli-progress';
 import printLogo from './print-logo.js';
 import { fileURLToPath } from 'url';
+import environment from '../lib/environment.js';
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -244,7 +245,7 @@ program
     console.log(`  - CAS writes: ${stats.casWrites}`);
     console.log(`  - CAS deletes: ${stats.casDeletes}`);
 
-    cask.dbClient.end();
+    cask.close();
     return;
   });
 
@@ -255,11 +256,9 @@ program
     handleGlobalOpts(options);
 
     const cask = new CaskFs();
-    const context = createContext({
-      filePath,
-      requestor: options.requestor
-    });
-    console.log(await cask.metadata(context));
+    options.filePath = filePath;
+
+    console.log(await cask.metadata(options));
     cask.dbClient.end();
   });
 
@@ -270,12 +269,9 @@ program
     handleGlobalOpts(options);
 
     const cask = new CaskFs();
-    const context = createContext({
-      filePath,
-      requestor: options.requestor,
-      user: options.user
-    });
-    console.log((await cask.read(context)).toString('utf-8'));
+    options.filePath = filePath;
+
+    console.log((await cask.read(options)).toString('utf-8'));
     cask.dbClient.end();
   });
 

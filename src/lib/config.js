@@ -88,6 +88,11 @@ const config = {
 
   git : {
     metadataProperties : ['remote', 'branch', 'commit', 'tag', 'lastCommitTime']
+  },
+
+  workers : {
+    enabled : (env.CASKFS_WORKERS_ENABLED !== 'false'),
+    maxWorkers : parseInt(env.CASKFS_WORKERS_MAX_WORKERS) || 4
   }
 
 }
