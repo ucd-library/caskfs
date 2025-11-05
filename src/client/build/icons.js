@@ -19,7 +19,7 @@ export function buildIconsets(){
         'spinner', 'circle-exclamation', 'upload', 'circle-info',
         'diagram-project', 'arrow-up-right-from-square', 'layer-group',
         'fingerprint', 'right-from-bracket', 'right-to-bracket',
-        'arrows-to-circle', 'copy', 'eye'
+        'arrows-to-circle', 'copy', 'eye', 'plus'
       ]
     }, 
     { name: 'ucdlib-core', 
