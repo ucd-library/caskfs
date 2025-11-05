@@ -72,15 +72,22 @@ export default class CaskfsFilePreview extends Mixin(LitElement)
     const res = await this.FsModel.getFileContents(this.filepath);
     if ( res.state === 'loaded' ) {
       if ( this.previewType === 'json' ){
+
         try {
+          let jsonObj = res.payload;
+          if ( typeof jsonObj === 'string') {
+            jsonObj = JSON.parse(jsonObj);
+          }
           this.fileContents = Prism.highlight(
-            JSON.stringify(JSON.parse(res.payload), null, 2), 
+            JSON.stringify(jsonObj, null, 2), 
             Prism.languages.json, 
             'json'
           );
           
         } catch(e) {
-          this.fileContents = 'Error parsing JSON file for preview.';
+          this.logger.warn('CaskfsFilePreview: Error parsing JSON file for preview', e);
+          this.fileContents = res.payload;
+          this.previewType = 'text';
         }
       } else {
         this.fileContents = res.payload;
