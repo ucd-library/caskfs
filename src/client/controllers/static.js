@@ -47,7 +47,6 @@ export default (app) => {
     },
 
     template : (req, res, next) => {
-      console.log('cask base path:', req.caskBasePath);
       const basepath = req.caskBasePath === '/' ? '' : req.caskBasePath;
       const bundle = config.webapp.isDevEnv ? 
         `<script src='${basepath}/js/dev/${config.webapp.bundleName}?v=${(new Date()).toISOString()}'></script>` : 

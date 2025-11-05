@@ -464,12 +464,17 @@ program
   .command('serve')
   .description('Start the CaskFs web application')
   .option('-p, --port <port>', 'Port to run the web application on')
+  .option('-r, --path-prefix <path-prefix>', 'Path prefix to mount the web application at')
   .action(async (options) => {
     handleGlobalOpts(options);
 
     if( options.environment && options.environment?.config?.clientEnv === 'dev' ) {
       console.log('Starting CaskFs web application in development mode');
       config.webapp.isDevEnv = true;
+    }
+
+    if ( options.pathPrefix ) {
+      config.webapp.basepath = options.pathPrefix;
     }
 
     const { startServer } = await import('../client/index.js');
