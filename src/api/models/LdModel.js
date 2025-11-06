@@ -17,6 +17,10 @@ class LdModel extends BaseModel {
     return this.service.rel(path, query);
   }
 
+  find(query) {
+    return this.service.find(query);
+  }
+
 }
 
 const model = new LdModel();

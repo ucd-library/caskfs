@@ -1,24 +1,23 @@
 import { LitElement, html } from 'lit';
-import {render, styles} from "./caskfs-directory-item.tpl.js";
+import {render} from "./caskfs-fs-item.tpl.js";
 import { LitCorkUtils, Mixin } from '@ucd-lib/cork-app-utils';
+import { MainDomElement } from "@ucd-lib/theme-elements/utils/mixins/main-dom-element.js";
 
 import './caskfs-delete-form.js';
 import DirectoryItemSelectController from '../../controllers/DirectoryItemSelectController.js';
 import FsDisplayUtils from '../../utils/FsDisplayUtils.js';
 
-export default class CaskfsDirectoryItem extends Mixin(LitElement)
-  .with(LitCorkUtils) {
+export default class CaskfsFsItem extends Mixin(LitElement)
+  .with(LitCorkUtils, MainDomElement) {
 
   static get properties() {
     return {
       data: { type: Object },
       fsUtils: { state: true },
-      hideSelect: { type: Boolean, attribute: 'hide-select' }
+      hideSelect: { type: Boolean, attribute: 'hide-select' },
+      showDirectoryLink: { type: Boolean, attribute: 'show-directory-link' },
+      hideTypeIcon: { type: Boolean, attribute: 'hide-type-icon' }
     };
-  }
-
-  static get styles() {
-    return styles();
   }
 
   constructor() {
@@ -26,6 +25,8 @@ export default class CaskfsDirectoryItem extends Mixin(LitElement)
     this.render = render.bind(this);
     this.data = {};
     this.hideSelect = false;
+    this.showDirectoryLink = false;
+    this.hideTypeIcon = false;
     this.selectCtl = new DirectoryItemSelectController(this, {hostDataProperty: 'data'});
 
     this._injectModel('AppStateModel');
@@ -37,18 +38,6 @@ export default class CaskfsDirectoryItem extends Mixin(LitElement)
     }
   }
 
-  _onItemClick() {
-    // not sure if this should be a button with an event or just a plain link - sp
-    this.dispatchEvent(new CustomEvent('item-click', {
-      detail: {
-        data: this.data,
-        selected: this.selectCtl.hostIsSelected,
-        isDirectory: this.fsUtils.isDirectory
-      }
-    }));
-    this.renderRoot.activeElement?.blur();
-  }
-
   _onDeleteClick(){
     this.AppStateModel.showDialogModal({
       content: () => html`<caskfs-delete-form .items=${this.data}></caskfs-delete-form>`,
@@ -57,4 +46,4 @@ export default class CaskfsDirectoryItem extends Mixin(LitElement)
 
 }
 
-customElements.define('caskfs-directory-item', CaskfsDirectoryItem);
+customElements.define('caskfs-fs-item', CaskfsFsItem);

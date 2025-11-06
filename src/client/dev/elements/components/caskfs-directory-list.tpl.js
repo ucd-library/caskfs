@@ -1,5 +1,5 @@
 import { html, css } from 'lit';
-import './caskfs-directory-item.js';
+import './caskfs-fs-items.js';
 import './caskfs-fs-breadcrumbs.js';
 
 export function styles() {
@@ -28,12 +28,6 @@ export function styles() {
     caskfs-directory-list .name-container input[type="checkbox"] {
       margin: 0;
     }
-    caskfs-directory-list .no-contents {
-      display: flex;
-      align-items: center;
-      gap: .5rem;
-      padding: 2rem 0;
-    }
     @container (min-width: 775px) {
       caskfs-directory-list .table-header .desktop-view {
         display: grid;
@@ -56,27 +50,8 @@ export function render() {
       <caskfs-fs-breadcrumbs></caskfs-fs-breadcrumbs>
       <div>
         <div ?hidden=${!this.contents.length}>
-          <div class='table-header'>
-            <div class='desktop-view'>
-              ${renderNameHeader.call(this)}
-              <div>Kind</div>
-              <div>Size</div>
-              <div>Modified</div>
-              <div>Modified By</div>
-              <div></div>
-            </div>
-            <div class='mobile-view'>
-              ${renderNameHeader.call(this)}
-            </div>
-
-          </div>
           <div>
-            ${this.contents.map(item => html`
-              <caskfs-directory-item 
-                @item-click=${e => this._onItemClick(e)}
-                .data=${item.data}>
-              </caskfs-directory-item>
-            `)}
+            <caskfs-fs-items .items=${this.contents.map(item => item.data)}></caskfs-fs-items>
           </div>
           <ucd-theme-pagination
             current-page=${this.qsCtl.query.page || 1}
@@ -93,15 +68,4 @@ export function render() {
       </div>
     </div>
   `;
-}
-
-function renderNameHeader(){
-  return html`
-    <div class='name-container'>
-      <input type="checkbox" 
-        @click=${() => this.selectCtl.toggleAll()} 
-        .checked=${this.selectCtl.allSelected}>
-      <div>Name</div>
-    </div>
-  `
 }

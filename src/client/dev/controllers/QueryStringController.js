@@ -1,6 +1,9 @@
 import { Registry } from '@ucd-lib/cork-app-utils';
 import AppComponentController from './AppComponentController.js';
 
+/**
+ * @description Controller for managing query string parameters in the URL.
+ */
 export default class QueryStringController {
 
   constructor(host, opts={}){
@@ -15,21 +18,39 @@ export default class QueryStringController {
     this.updateComplete = Promise.resolve();
   }
 
+  /**
+   * @description Set a query string parameter
+   * @param {String} key - the query string parameter key
+   * @param {*} value - the query string parameter value
+   */
   setParam(key, value){
     this.query[key] = value;
     this.host.requestUpdate();
   }
 
+  /**
+   * @description Delete a query string parameter
+   * @param {String} key - the query string parameter key
+   */
   deleteParam(key){
     delete this.query[key];
     this.host.requestUpdate();
   }
 
+  /**
+   * @description Get the current page offset based on page size and page number
+   * @returns {Number} - the page offset
+   */
   get pageOffset(){
     const page = this.query.page || 1;
     return (page - 1) * this.pageSize;
   }
 
+  /**
+   * @description Calculate the maximum number of pages based on total items and page size
+   * @param {Number} totalItems - the total number of items
+   * @returns {Number} - the maximum number of pages
+   */
   maxPages(totalItems){
     if ( Array.isArray(totalItems) ) {
       totalItems = totalItems.length;
@@ -37,6 +58,11 @@ export default class QueryStringController {
     return Math.ceil(totalItems / this.pageSize);
   }
 
+  /**
+   * @description Paginate data based on current page and page size
+   * @param {Array} data - the data to paginate
+   * @returns {Array} - Array with only the items for the current page
+   */
   paginateData(data){
     const page = this.query.page || 1;
     const start = (page - 1) * this.pageSize;
@@ -44,6 +70,11 @@ export default class QueryStringController {
     return data.slice(start, end);
   }
 
+  /**
+   * @description Add a sort field to internal sort state
+   * @param {String} field - The field to sort by
+   * @param {Boolean} isDesc - Whether to sort in descending order
+   */
   addSortField(field, isDesc=false){
     const sort = this.sort;
     const existing = sort.find(s => s.field === field);
@@ -55,11 +86,20 @@ export default class QueryStringController {
     this.sort = sort;
   }
 
+  /**
+   * @description Remove a sort field from internal sort state
+   * @param {String} field - The field to remove from sorting
+   */
   removeSortField(field){
     const sort = this.sort.filter(s => s.field !== field);
     this.sort = sort;
   }
 
+  /**
+   * @description Multi-sort data based on internal sort state
+   * @param {Array} data - Data to sort
+   * @returns {Array} - Sorted data
+   */
   multiSort(data) {
     return data.sort((a, b) => {
       for (const { field, isDesc } of this.sort) {
@@ -79,10 +119,18 @@ export default class QueryStringController {
     });
   }
 
+  /**
+   * @description Sort state from query string
+   * @returns {Array} - Array of sort fields and directions
+   */
   get sort(){
     return this.parseSortString(this.query.sort);
   }
 
+  /**
+   * @description Set sort state
+   * @param {Array|String} value - Array of sort fields and directions or sort string
+   */
   set sort(value){
     if ( Array.isArray(value) ) {
       this.query.sort = this.sortToString(value);
@@ -94,6 +142,11 @@ export default class QueryStringController {
     this.host.requestUpdate();
   }
 
+  /**
+   * @description Parse a sort string into an array of sort objects
+   * @param {String} sortString - The comma-separated sort string
+   * @returns {Array} - Array of sort objects
+   */
   parseSortString(sortString=''){
     return sortString
       .split(',')
@@ -105,12 +158,22 @@ export default class QueryStringController {
       }));
   }
 
+  /**
+   * @description Convert an array of sort objects into a sort string
+   * @param {Array} sortArray - Objects representing sort fields and directions
+   * @returns {String} - The comma-separated sort string
+   */
   sortToString(sortArray=[]){
     return sortArray
       .map(s => (s.isDesc ? '-' : '+') + s.field)
       .join(',');
   }
 
+  /**
+   * @description Get the current query string parameters 
+   * @param {Boolean} asObject - Whether to return the query as an object
+   * @returns {Object|URLSearchParams} - The current query string parameters
+   */
   getQuery(asObject){
     let q = {}
     for ( const key of Object.keys(this.query) ) {
@@ -133,12 +196,18 @@ export default class QueryStringController {
     return qp;
   }
 
+  /**
+   * @description Update the browser location from internal controller state
+   */
   setLocation(){
     const qs = this.getQuery().toString();
     this.AppStateModel.setLocation(`${this.AppStateModel.store.data.location.pathname}${qs ? '?'+qs : ''}`);
   }
 
 
+  /**
+   * @description Reset query to default values based on types
+   */
   resetQuery(){
     const q = {};
     for ( const key of Object.keys(this.types) ) {
@@ -153,6 +222,10 @@ export default class QueryStringController {
     this.query = q;
   }
 
+  /**
+   * @description Sync internal query state from application state
+   * @param {Object} e - Application state event data. Defaults to current app state if not provided
+   */
   syncState(e){
     if ( !e ) e = this.AppStateModel.store.data;
     const q = e.location?.query || {};

@@ -322,6 +322,7 @@ class Database {
         FROM ${table}
       )
       SELECT
+        fv.file_id,
         fv.filepath,
         fv.metadata,
         fv.created,

@@ -28,6 +28,9 @@ export function styles() {
     input {
       box-sizing: border-box;
     }
+    cork-icon-button {
+      --cork-icon-button-size: 2rem;
+    }
 
     @container (min-width: 400px) {
       form {

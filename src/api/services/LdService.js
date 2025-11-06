@@ -45,6 +45,36 @@ class LdService extends BaseService {
     return store.get(id);
   }
 
+  async find(query={}) {
+    let id = await digest(query);
+    const store = this.store.data.find;
+
+    const appStateOptions = {
+      errorSettings: {message: 'Unable to perform linked data find query'}
+    };
+
+    await this.checkRequesting(
+      id, store,
+      () => this.request({
+        url : `${this.baseUrl}/find`,
+        json: true,
+        fetchOptions: { 
+          method: 'POST',
+          body: query
+        },
+        checkCached : () => store.get(id),
+        onUpdate : resp => this.store.set(
+          {...resp, id},
+          store,
+          null,
+          appStateOptions
+        )
+      })
+    );
+
+    return store.get(id);
+  }
+
 }
 
 const service = new LdService();

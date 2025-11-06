@@ -7,7 +7,8 @@ class LdStore extends BaseStore {
     super();
 
     this.data = {
-      rel: new LruStore({name: 'ld.rel'})
+      rel: new LruStore({name: 'ld.rel'}),
+      find: new LruStore({name: 'ld.find'})
     };
     this.events = {};
   }
