@@ -199,6 +199,7 @@ class Rdf {
 
 
 
+
   /**
    * @function insert
    * @description Insert rdf layer for a file into the database.  This accepts a custom filepath
@@ -218,13 +219,83 @@ class Rdf {
       `, [fileId]);
 
     file = file.rows[0];
-    let filepath = path.join(file.directory, file.filename);
+    if( opts.filepath ) {
+      file.fullpath = opts.filepath;
+    }
+    let filepath = file.filepath;
 
+    let parseResp;
+    // TODO: re-enable workers
+    // if( config.workers.enabled ) {
+    //   if( !this.workerManager ) {
+    //     const workerManagerModule = await import('./workers/worker-manager.js');
+    //     this.workerManager = workerManagerModule.default;
+    //     this.workerManager.initialize();
+    //   }
+    //   parseResp = await this.workerManager.parseLinkedData(file);
+    // } else {
+      parseResp = await this.parseLinkedData(file);
+    // }
+
+    let { filters, linkMap, literals, types, fileQuads, caskQuads } = parseResp;
+    let filterKeys = Object.keys(filters);
+
+    for( let key of filterKeys ) {
+      filters[key] = Array.from(filters[key]);
+      for( let i = 0; i < filters[key].length; i += this.insertBatchSize ) {
+        let data = filters[key].slice(i, i + this.insertBatchSize).map(v => ({type: key, uri: v}));
+        await dbClient.query(`
+          select caskfs.insert_file_ld_filter_batch($1::UUID, $2::JSONB)`,
+          [file.file_id, JSON.stringify(data)]
+        );
+      }
+    }
+
+    if( types && types.length > 0 ) {
+      for( let i = 0; i < types.length; i += this.insertBatchSize ) {
+        let data = types.slice(i, i + this.insertBatchSize).map(t => ({type: 'type', uri: t}));
+        await dbClient.query(`
+          select caskfs.insert_file_ld_filter_batch($1::UUID, $2::JSONB)`,
+          [file.file_id, JSON.stringify(data)]
+        );
+      }
+    }
+
+    linkMap = Array.from(linkMap.values());
+    for( let i = 0; i < linkMap.length; i += this.insertBatchSize ) {
+      let batch = linkMap.slice(i, i + this.insertBatchSize).map(link => ({
+        predicate: link.predicate,
+        object: this._resolveIdPath(link.object, filepath)
+      }));
+      await dbClient.query(`
+        select caskfs.insert_file_ld_link_batch($1::UUID, $2::JSONB)`,
+        [file.file_id, JSON.stringify(batch)]
+      );
+    }
+
+    for( let i = 0; i < literals.length; i += this.insertBatchSize ) {
+      let batch = literals.slice(i, i + this.insertBatchSize);
+      await dbClient.query(
+        `select caskfs.insert_file_ld_literal_batch($1::UUID, $2::JSONB)`,
+        [file.file_id, JSON.stringify(batch)]
+      );
+    }
+
+
+    return {
+      file,
+      fileQuads,
+      caskQuads 
+    };
+  }
+
+  async parseLinkedData(file) {
     let data = '';
     let fileQuads, parserMimeType;
+    let filepath = file.filepath;
 
     if( file.metadata.resourceType === 'rdf' ) {
-      data = await fsp.readFile(opts.filepath || filepath, {encoding: 'utf8'});
+      data = await fsp.readFile(file.fullpath, {encoding: 'utf8'});
 
       if( file.metadata.mimeType === this.jsonLdMimeType ) {
         data = JSON.parse(data);
@@ -291,7 +362,7 @@ class Rdf {
       };
     }
 
-    const caskQuads = this.quadsParser.parse(
+    let caskQuads = this.quadsParser.parse(
       await jsonld.canonize(caskFileNode, {
         algorithm: 'URDNA2015',
         format: 'application/n-quads',
@@ -349,7 +420,7 @@ class Rdf {
       if( q.predicate.termType === 'NamedNode' && q.object.termType === 'NamedNode' ) {
         let lkey = `${q.predicate.value}|${q.object.value}`;
         if( !linkMap.has(lkey) ) {
-          linkMap.set(lkey, q);
+          linkMap.set(lkey, {predicate: q.predicate.value, object: q.object.value});
         }
       }
 
@@ -371,52 +442,9 @@ class Rdf {
           predicate: q.predicate.value,
           object
         });
-
-        return;
       } 
 
     });
-
-    for( let key of filterKeys ) {
-      filters[key] = Array.from(filters[key]);
-      for( let i = 0; i < filters[key].length; i += this.insertBatchSize ) {
-        let data = filters[key].slice(i, i + this.insertBatchSize).map(v => ({type: key, uri: v}));
-        await dbClient.query(`
-          select caskfs.insert_file_ld_filter_batch($1::UUID, $2::JSONB)`,
-          [file.file_id, JSON.stringify(data)]
-        );
-      }
-    }
-
-    if( types && types.length > 0 ) {
-      for( let i = 0; i < types.length; i += this.insertBatchSize ) {
-        let data = types.slice(i, i + this.insertBatchSize).map(t => ({type: 'type', uri: t}));
-        await dbClient.query(`
-          select caskfs.insert_file_ld_filter_batch($1::UUID, $2::JSONB)`,
-          [file.file_id, JSON.stringify(data)]
-        );
-      }
-    }
-
-    linkMap = Array.from(linkMap.values());
-    for( let i = 0; i < linkMap.length; i += this.insertBatchSize ) {
-      let batch = linkMap.slice(i, i + this.insertBatchSize).map(link => ({
-        predicate: link.predicate.value,
-        object: this._resolveIdPath(link.object.value, filepath)
-      }));
-      await dbClient.query(`
-        select caskfs.insert_file_ld_link_batch($1::UUID, $2::JSONB)`,
-        [file.file_id, JSON.stringify(batch)]
-      );
-    }
-
-    for( let i = 0; i < literals.length; i += this.insertBatchSize ) {
-      let batch = literals.slice(i, i + this.insertBatchSize);
-      await dbClient.query(
-        `select caskfs.insert_file_ld_literal_batch($1::UUID, $2::JSONB)`,
-        [file.file_id, JSON.stringify(batch)]
-      );
-    }
 
     if( fileQuads ) {
       // ensure proper path resolution for subject IDs
@@ -425,12 +453,9 @@ class Rdf {
       });
       fileQuads = await this._objectToNQuads(fileQuads);
     }
+    caskQuads = await this._objectToNQuads(caskQuads);
 
-    return {
-      file,
-      fileQuads: fileQuads,
-      caskQuads: await this._objectToNQuads(caskQuads)
-    };
+    return { filters, linkMap, literals, types, fileQuads, caskQuads };
   }
 
 
