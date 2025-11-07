@@ -4,6 +4,8 @@ import '../components/caskfs-ld-filter-form.js';
 import '../components/caskfs-ld-filter-buttons.js';
 import '../components/caskfs-file-search-results.js';
 
+import appUrlUtils from '../../utils/appUrlUtils.js';
+
 export function styles() {
   const elementStyles = css`
     caskfs-page-file-search {
@@ -35,7 +37,10 @@ export function render() {
 return html`
   <div>
     <div><h1 class="page-title">File Search</h1></div>
-    <ol class="breadcrumbs"><li>File Search</li></ol>
+    <ol class="breadcrumbs">
+      <li><a href=${appUrlUtils.fullPath()}>Home</a></li>
+      <li>File Search</li>
+    </ol>
     <div class="l-container">
       <div>
         <div class='find-controls'>

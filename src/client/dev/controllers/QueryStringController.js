@@ -13,7 +13,7 @@ export default class QueryStringController {
     host.addController(this);
     this.AppStateModel = Registry.getModel('AppStateModel');
     this.appComponentController = new AppComponentController(host);
-    this.query = {};
+    this.syncState();
 
     this.updateComplete = Promise.resolve();
   }
@@ -228,7 +228,7 @@ export default class QueryStringController {
    */
   syncState(e){
     if ( !e ) e = this.AppStateModel.store.data;
-    const q = e.location?.query || {};
+    const q = e?.location?.query || {};
     this.resetQuery();
     for ( const key of Object.keys(q) ) {
       if ( this.types[key] === 'array' ) {

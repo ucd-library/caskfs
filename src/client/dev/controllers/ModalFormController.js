@@ -123,7 +123,7 @@ export default class ModalFormController {
     if ( this.noCloseOnSubmit ) return;
 
     // only close the modal if no validation errors
-    r = Array.isArray(r) ? r : [r];
+    r = (Array.isArray(r) ? r : [r]).filter(req => req);
     if ( !r.find(req => req?.payload?.error?.response?.status == 422) ) {
       this.modal.close();
     }

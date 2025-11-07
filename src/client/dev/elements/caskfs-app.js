@@ -26,6 +26,7 @@ import './components/cork-app-toast.js';
 import './components/cork-app-dialog-modal.js';
 import './components/cork-toggle-switch.js';
 import './components/caskfs-section-header.js';
+import './components/caskfs-partition-status-button.js';
 
 // icon elements and model
 import '@ucd-lib/cork-icon';

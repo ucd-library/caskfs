@@ -31,6 +31,9 @@ export function styles() {
     cork-icon-button {
       --cork-icon-button-size: 2rem;
     }
+    .filters-container label {
+      padding-bottom: 0;
+    }
 
     @container (min-width: 400px) {
       form {
