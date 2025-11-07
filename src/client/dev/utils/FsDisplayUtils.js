@@ -1,4 +1,4 @@
-import appPathUtils from "./appPathUtils.js";
+import appUrlUtils from "./appUrlUtils.js";
 
 export default class FsDisplayUtils {
 
@@ -12,9 +12,9 @@ export default class FsDisplayUtils {
   get link(){
     if ( !this.metadata ) return null;
     if ( this.isDirectory ) {
-      return appPathUtils.fullPath(`/directory${this.metadata.fullname}`);
+      return appUrlUtils.fullPath(`/directory${this.metadata.fullname}`);
     } else {
-      return appPathUtils.fullPath(`/file${this.metadata.filepath}`);
+      return appUrlUtils.fullPath(`/file${this.metadata.filepath}`);
     }
   }
 

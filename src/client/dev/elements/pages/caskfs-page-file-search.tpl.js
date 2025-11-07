@@ -16,7 +16,6 @@ export function styles() {
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      gap: 1rem;
     }
     caskfs-page-file-search .filter-controls {
       flex-grow: 1;
@@ -24,6 +23,7 @@ export function styles() {
     @media (min-width: 500px) {
       caskfs-page-file-search .find-controls {
         flex-direction: row;
+        gap: 1rem;
       }
     }
   `;
@@ -44,7 +44,14 @@ return html`
             <caskfs-ld-filter-buttons></caskfs-ld-filter-buttons>
           </div>
           <div>
-            Todo: delete
+            <cork-icon-button
+              icon='fas.trash'
+              color='medium'
+              title='Delete Selected Items'
+              ?hidden=${!this.ctl.select.selected.length}
+              @click=${this._onBulkDeleteClick}
+              link-aria-label='Delete Selected Items'>
+            </cork-icon-button>
           </div>
 
         </div>

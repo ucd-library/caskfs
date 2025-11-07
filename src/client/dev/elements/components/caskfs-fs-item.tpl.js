@@ -1,7 +1,7 @@
 import { html } from 'lit';
 import { classMap } from 'lit/directives/class-map.js';
 
-import appPathUtils from '../../utils/appPathUtils.js';
+import appUrlUtils from '../../utils/appUrlUtils.js';
 
 // see caskfs-fs-items.js for styles
 
@@ -95,7 +95,7 @@ function renderName(){
           <div class='name-text'>${this.fsUtils.name}</div>
         </a>
         <div ?hidden=${!(this.showDirectoryLink && this.fsUtils.directory) }>
-          <a class='directory-link' href=${appPathUtils.fullPath(`/directory/${this.fsUtils.directory}`)}>${this.fsUtils.directory}</a>
+          <a class='directory-link' href=${appUrlUtils.fullPath(`/directory/${this.fsUtils.directory}`)}>${this.fsUtils.directory}</a>
         </div>
       </div>
 

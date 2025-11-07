@@ -134,6 +134,7 @@ export default class ModalFormController {
    */
   _onAppDialogOpen(){
     this.setDefaultModalValues();
+    this.host.requestUpdate();
   }
 
   hostConnected() {

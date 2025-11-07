@@ -1,7 +1,7 @@
 import {BaseService, digest} from '@ucd-lib/cork-app-utils';
 import LdStore from '../stores/LdStore.js';
 
-import appPathUtils from '../../client/dev/utils/appPathUtils.js';
+import appUrlUtils from '../../client/dev/utils/appUrlUtils.js';
 
 class LdService extends BaseService {
 
@@ -11,7 +11,7 @@ class LdService extends BaseService {
   }
 
   get baseUrl(){
-    return `${appPathUtils.basePath}/api`;
+    return `${appUrlUtils.basePath}/api`;
   }
 
   async rel(path, query={}) {

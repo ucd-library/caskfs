@@ -2,7 +2,7 @@ import { html, css } from 'lit';
 import headingsStyles from '@ucd-lib/theme-sass/1_base_html/_headings.css.js';
 import headingsClasses from '@ucd-lib/theme-sass/2_base_class/_headings.css.js';
 
-import appPathUtils from '../../utils/appPathUtils.js';
+import appUrlUtils from '../../utils/appUrlUtils.js';
 
 export function styles() {
   const elementStyles = css`
@@ -106,21 +106,21 @@ export function render() {
                           color="medium"
                           title="View Linked Data Relationships"
                           link-aria-label="View Linked Data Relationships"
-                          href=${appPathUtils.fullPath(`/rel${node.uri}`)}
+                          href=${appUrlUtils.fullPath(`/rel${node.uri}`)}
                         ></cork-icon-button>
                         <cork-icon-button
                           icon="fas.folder"
                           color="medium"
                           title="Go To Directory"
                           link-aria-label="Go To Directory"
-                          href=${appPathUtils.fullPath(`/directory${node.ns}`)}
+                          href=${appUrlUtils.fullPath(`/directory${node.ns}`)}
                         ></cork-icon-button>
                         <cork-icon-button
                           icon="fas.file-import"
                           color="medium"
                           title="Go To File"
                           link-aria-label="Go To File"
-                          href=${appPathUtils.fullPath(`/file${node.uri}`)}
+                          href=${appUrlUtils.fullPath(`/file${node.uri}`)}
                         ></cork-icon-button>
                         <cork-icon-button
                           icon="fas.copy"
