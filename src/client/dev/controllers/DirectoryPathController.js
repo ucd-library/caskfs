@@ -1,6 +1,6 @@
 import { Registry, getLogger } from '@ucd-lib/cork-app-utils';
 import AppComponentController from './AppComponentController.js';
-import appPathUtils from '../utils/appPathUtils.js';
+import appUrlUtils from '../utils/appUrlUtils.js';
 
 export default class DirectoryPathController {
 
@@ -12,9 +12,9 @@ export default class DirectoryPathController {
     this.logger = getLogger('DirectoryPathController');
 
     this.pathPrefix = {
-      'directory': appPathUtils.fullPath('directory', {returnArray: true}),
-      'file': appPathUtils.fullPath('file', {returnArray: true}),
-      'rel': appPathUtils.fullPath('rel', {returnArray: true})
+      'directory': appUrlUtils.fullPath('directory', {returnArray: true}),
+      'file': appUrlUtils.fullPath('file', {returnArray: true}),
+      'rel': appUrlUtils.fullPath('rel', {returnArray: true})
     };
 
     this.path = [];

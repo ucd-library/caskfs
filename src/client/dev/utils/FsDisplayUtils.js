@@ -1,3 +1,5 @@
+import appUrlUtils from "./appUrlUtils.js";
+
 export default class FsDisplayUtils {
 
   constructor(metadata, options={}){
@@ -7,9 +9,40 @@ export default class FsDisplayUtils {
 
   }
 
+  get link(){
+    if ( !this.metadata ) return null;
+    if ( this.isDirectory ) {
+      return appUrlUtils.fullPath(`/directory${this.metadata.fullname}`);
+    } else {
+      return appUrlUtils.fullPath(`/file${this.metadata.filepath}`);
+    }
+  }
+
   get name(){
     if ( !this.metadata ) return this.missingValue;
-    return (this.metadata?.file_id ? this.metadata.filename : this.metadata?.name?.split('/').filter(Boolean).pop()) || this.missingValue;
+    if ( this.metadata.filename ) {
+      return this.metadata.filename;
+    }
+    if ( this.metadata.name ){
+      return this.metadata.name.split('/').filter(Boolean).pop();
+    }
+    if ( this.metadata.filepath ) {
+      return this.metadata.filepath.split('/').filter(Boolean).pop();
+    }
+    return this.missingValue;
+  }
+
+  get directory(){
+    if ( !this.metadata ) return this.missingValue;
+    if ( this.metadata.directory ){
+      return this.metadata.directory;
+    }
+    if ( this.metadata.filepath ) {
+      const parts = this.metadata.filepath.split('/').filter(Boolean);
+      parts.pop();
+      return '/' + parts.join('/');
+    }
+    return this.missingValue;
   }
 
   get isDirectory(){

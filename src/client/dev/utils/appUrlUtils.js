@@ -1,9 +1,9 @@
 import config from '../config.js';
 
 /**
- * @description Utility class for handling paths with respect to the application base path.
+ * @description Utility class for handling app urls with respect to the application base path and global url params.
  */
-export class AppPathUtils {
+export class AppUrlUtils {
   constructor(basePath){
     this.basePath = basePath === '/' ? '' : basePath;
     this.basePathParts = basePath.split('/').filter(d => d);
@@ -56,5 +56,5 @@ export class AppPathUtils {
   }
 }
 
-const appPathUtils = new AppPathUtils(config.basePath);
-export default appPathUtils;
+const appUrlUtils = new AppUrlUtils(config.basePath);
+export default appUrlUtils;

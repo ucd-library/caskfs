@@ -25,7 +25,6 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
     super();
     this.render = render.bind(this);
 
-    this.pathStartIndex = 0;
     this.contents = [];
     this.selectedItems = [];
     this.totalPages = 1;
@@ -100,14 +99,6 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
     }
     this.totalPages = this.qsCtl.maxPages(contents);
     this.contents = this.qsCtl.paginateData(contents);
-  }
-
-  _onItemClick(e){
-    if ( e.detail.isDirectory ) {
-      this.directoryPathCtl.setLocation(e.detail.data.name);
-      return;
-    }
-    this.directoryPathCtl.setFileLocation(e.detail.data.filepath);
   }
 
   _onPageChange(e){

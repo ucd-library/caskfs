@@ -1,7 +1,7 @@
 import {BaseService, digest} from '@ucd-lib/cork-app-utils';
 import LdStore from '../stores/LdStore.js';
 
-import appPathUtils from '../../client/dev/utils/appPathUtils.js';
+import appUrlUtils from '../../client/dev/utils/appUrlUtils.js';
 
 class LdService extends BaseService {
 
@@ -11,7 +11,7 @@ class LdService extends BaseService {
   }
 
   get baseUrl(){
-    return `${appPathUtils.basePath}/api`;
+    return `${appUrlUtils.basePath}/api`;
   }
 
   async rel(path, query={}) {
@@ -27,6 +27,36 @@ class LdService extends BaseService {
       id, store,
       () => this.request({
         url : `${this.baseUrl}/rel${path}`,
+        json: true,
+        fetchOptions: { 
+          method: 'POST',
+          body: query
+        },
+        checkCached : () => store.get(id),
+        onUpdate : resp => this.store.set(
+          {...resp, id},
+          store,
+          null,
+          appStateOptions
+        )
+      })
+    );
+
+    return store.get(id);
+  }
+
+  async find(query={}) {
+    let id = await digest(query);
+    const store = this.store.data.find;
+
+    const appStateOptions = {
+      errorSettings: {message: 'Unable to perform linked data find query'}
+    };
+
+    await this.checkRequesting(
+      id, store,
+      () => this.request({
+        url : `${this.baseUrl}/find`,
         json: true,
         fetchOptions: { 
           method: 'POST',

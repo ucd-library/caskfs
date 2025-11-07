@@ -2,7 +2,7 @@ import {BaseService} from '@ucd-lib/cork-app-utils';
 import SystemStore from '../stores/SystemStore.js';
 
 import payload from '../utils/payload.js';
-import appPathUtils from '../../client/dev/utils/appPathUtils.js';
+import appUrlUtils from '../../client/dev/utils/appUrlUtils.js';
 
 class SystemService extends BaseService {
 
@@ -12,7 +12,7 @@ class SystemService extends BaseService {
   }
 
   get baseUrl(){
-    return `${appPathUtils.basePath}/api/system`;
+    return `${appUrlUtils.basePath}/api/system`;
   }
 
   async stats(){

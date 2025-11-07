@@ -14,7 +14,7 @@ export function styles() {
       border: none;
       padding: 1rem 0;
       border-radius: 1rem;
-      animation: dialog-fade-out 0.5s ease-out;
+      animation: dialog-fade-out 0.3s ease-out;
       margin: 0;
       overflow-y: hidden;
       position: fixed;
@@ -41,10 +41,10 @@ export function styles() {
       }
     }
     cork-app-dialog-modal dialog[open] {
-      animation: dialog-fade-in 0.4s ease-out;
+      animation: dialog-fade-in 0.3s ease-out;
     }
     cork-app-dialog-modal dialog[open]::backdrop {
-      animation: dialog-backdrop-fade-in 0.4s ease-out forwards;
+      animation: dialog-backdrop-fade-in 0.3s ease-out forwards;
     }
     @keyframes dialog-fade-in {
       0% {

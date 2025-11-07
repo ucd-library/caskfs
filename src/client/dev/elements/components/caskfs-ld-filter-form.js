@@ -60,7 +60,6 @@ export default class CaskfsLdFilterForm extends Mixin(LitElement)
   _onFilterSelect(e){
     this.filter = e.target.value || '';
     this.value = this.ctl.qs.query[this.filter] || '';
-    console.log('select', this.filter, this.value);
   }
 
 }

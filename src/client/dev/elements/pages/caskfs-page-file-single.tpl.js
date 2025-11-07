@@ -1,6 +1,6 @@
 import { html, css } from 'lit';
 
-import appPathUtils from '../../utils/appPathUtils.js';
+import appUrlUtils from '../../utils/appUrlUtils.js';
 import mimeTypeUtils from '../../utils/mimeTypeUtils.js';
 
 import '../components/caskfs-file-metadata.js';
@@ -34,7 +34,7 @@ return html`
                 basic
                 title="View Linked Data Relationships"
                 link-aria-label="View Linked Data Relationships"
-                href=${appPathUtils.fullPath(`/rel${this.ctl.directoryPath.pathname}`)}
+                href=${appUrlUtils.fullPath(`/rel${this.ctl.directoryPath.pathname}`)}
               ></cork-icon-button>
             </div>
           </caskfs-section-header>

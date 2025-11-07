@@ -123,6 +123,13 @@ export default class ScrollController {
       if ( !record.scrollY ) return;
       window.scrollTo(0, record.scrollY); 
     };
+    record.queryEquals = (q={}) => {
+      const keys = Object.keys(q);
+      for ( const key of keys ) {
+        if ( record.location?.query?.[key] !== q[key] ) return false;
+      }
+      return true;
+    };
     SCROLL_STATE.history.push(record);
     if ( SCROLL_STATE.history.length > 20 ) SCROLL_STATE.history.shift();
   }

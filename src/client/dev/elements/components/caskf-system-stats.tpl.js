@@ -1,5 +1,5 @@
 import { html, css } from 'lit';
-import appPathUtils from '../../utils/appPathUtils.js';
+import appUrlUtils from '../../utils/appUrlUtils.js';
 
 export function styles() {
   const elementStyles = css`
@@ -38,7 +38,7 @@ export function render() {
     <div class='system-stats__factoids'>
       <div class="category-brand--rec-pool">
         <div class="factoid factoid--brackets">
-          <a href=${appPathUtils.fullPath('directory')} class="factoid__link">
+          <a href=${appUrlUtils.fullPath('directory')} class="factoid__link">
             <div class="factoid__bracket-one"></div>
             <div class="factoid__bracket-wrapper">
               <div class="factoid__figure factoid__icon">
@@ -55,7 +55,7 @@ export function render() {
       </div>
       <div class="category-brand--thiebaud-icing">
         <div class="factoid factoid--brackets">
-          <a href=${appPathUtils.fullPath('directory')} class="factoid__link">
+          <a href=${appUrlUtils.fullPath('directory')} class="factoid__link">
             <div class="factoid__bracket-one"></div>
             <div class="factoid__bracket-wrapper">
               <div class="factoid__figure factoid__icon">
@@ -75,7 +75,7 @@ export function render() {
       </div>
       <div class="category-brand--cabernet">
         <div class="factoid factoid--brackets">
-          <a href=${appPathUtils.fullPath('config/partitions')} class="factoid__link">
+          <a href=${appUrlUtils.fullPath('config/partitions')} class="factoid__link">
             <div class="factoid__bracket-one"></div>
             <div class="factoid__bracket-wrapper">
               <div class="factoid__figure factoid__icon">

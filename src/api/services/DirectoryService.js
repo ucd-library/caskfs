@@ -2,7 +2,7 @@ import {BaseService} from '@ucd-lib/cork-app-utils';
 import DirectoryStore from '../stores/DirectoryStore.js';
 
 import payload from '../utils/payload.js';
-import appPathUtils from '../../client/dev/utils/appPathUtils.js';
+import appUrlUtils from '../../client/dev/utils/appUrlUtils.js';
 
 class DirectoryService extends BaseService {
 
@@ -12,7 +12,7 @@ class DirectoryService extends BaseService {
   }
 
   get baseUrl(){
-    return `${appPathUtils.basePath}/api/dir`;
+    return `${appUrlUtils.basePath}/api/dir`;
   }
 
   async list(path){

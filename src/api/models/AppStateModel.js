@@ -1,7 +1,7 @@
 import {AppStateModel} from '@ucd-lib/cork-app-state';
 import AppStateStore from '../stores/AppStateStore.js';
 import config from '../../client/dev/config.js';
-import appPathUtils from '../../client/dev/utils/appPathUtils.js';
+import appUrlUtils from '../../client/dev/utils/appUrlUtils.js';
 
 class AppStateModelImpl extends AppStateModel {
 
@@ -10,10 +10,10 @@ class AppStateModelImpl extends AppStateModel {
     this.store = AppStateStore;
 
     let routes = config.routes;
-    if ( appPathUtils.basePath ){
-      routes = routes.map(r => appPathUtils.fullPath(r, { noLeadingSlash: true }));
+    if ( appUrlUtils.basePath ){
+      routes = routes.map(r => appUrlUtils.fullPath(r, { noLeadingSlash: true }));
     }
-    this.init(routes, { homeRoute: appPathUtils.fullPath() });
+    this.init(routes, { homeRoute: appUrlUtils.fullPath() });
 
     this.loadingRequests = [];
     this._loaderVisible = false;
@@ -29,7 +29,7 @@ class AppStateModelImpl extends AppStateModel {
     if( update.location ) {
       update.lastPage = this.store.data.page;
       update.lastLocation = JSON.parse(JSON.stringify(this.store.data.location));
-      const relativePath = appPathUtils.relativePath(update.location.pathname, { returnArray: true });
+      const relativePath = appUrlUtils.relativePath(update.location.pathname, { returnArray: true });
       let page = relativePath?.[0] ? relativePath[0] : 'home';
 
       if ( page === 'config' && relativePath?.[1] ) {

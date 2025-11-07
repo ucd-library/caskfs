@@ -58,7 +58,11 @@ export default class CaskfsLdFilterButtons extends Mixin(LitElement)
     this.appliedFilters = appliedFilters;
   }
 
-  _onFilterClick(filter){}
+  _onFilterClick(filter){
+    this.ctl.qs.deleteParam(filter.filter.value);
+    this.ctl.qs.setParam('page', 1);
+    this.ctl.qs.setLocation();
+  }
 
 }
 
