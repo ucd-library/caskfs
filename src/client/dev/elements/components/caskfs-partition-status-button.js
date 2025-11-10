@@ -25,7 +25,7 @@ export default class CaskfsPartitionStatusButton extends Mixin(LitElement)
     this.render = render.bind(this);
 
     this.ctl = {
-      qs: new QueryStringController(this, { types: { partition: 'array' } })
+      qs: new QueryStringController(this, { types: { partition: 'array' }, alwaysSyncOnAppStateUpdate: true })
     };
 
     this._injectModel('AppStateModel');

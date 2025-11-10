@@ -95,7 +95,7 @@ function renderName(){
           <div class='name-text'>${this.fsUtils.name}</div>
         </a>
         <div ?hidden=${!(this.showDirectoryLink && this.fsUtils.directory) }>
-          <a class='directory-link' href=${appUrlUtils.fullPath(`/directory/${this.fsUtils.directory}`)}>${this.fsUtils.directory}</a>
+          <a class='directory-link' href=${appUrlUtils.fullLocation(`/directory/${this.fsUtils.directory}`)}>${this.fsUtils.directory}</a>
         </div>
       </div>
 

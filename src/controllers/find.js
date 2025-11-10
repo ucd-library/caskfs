@@ -1,28 +1,23 @@
 import { Router, json } from 'express';
 import handleError from './handleError.js';
 import caskFs from './caskFs.js';
+import { Validator } from './validate.js';
 
 const router = Router();
 
 const parseArgs = ( query ) => {
-  const parsed = {};
+  const validator = new Validator({
+    subject: { type: 'string' },
+    predicate: { type: 'string' },
+    object: { type: 'string' },
+    graph: { type: 'string' },
+    type: { type: 'string' },
+    limit: { type: 'positiveInteger' },
+    offset: { type: 'positiveIntegerOrZero' },
+    partitionKeys: { type: 'string', multiple: true }
+  });
 
-  const stringArgs = ['subject', 'predicate', 'object', 'graph', 'type'];
-  for (const key of stringArgs) {
-    if (query[key]) {
-      parsed[key] = query[key];
-    }
-  }
-
-  const positiveIntArgs = ['limit', 'offset'];
-  for (const key of positiveIntArgs) {
-    if (query[key]) {
-      const value = parseInt(query[key], 10);
-      if (!isNaN(value) && value > 0) {
-        parsed[key] = value;
-      }
-    }
-  }
+  const parsed = validator.validate(query);
 
   if ( !parsed.limit ) {
     parsed.limit = 20;

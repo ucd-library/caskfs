@@ -25,24 +25,37 @@ export default class CaskfsPartitionApplyForm extends Mixin(LitElement)
 
     this.ctl = {
       qs: new QueryStringController(this, { types: { partition: 'array' } }),
-      modal: new ModalFormController(this, {title: 'Apply/Remove Partitions', submitText: 'Apply', submitCallback: '_onSubmitClick'})
+      modal: new ModalFormController(this, {
+        title: 'Apply/Remove Partitions', 
+        submitText: 'Apply', 
+        submitCallback: '_onSubmitClick', 
+        openCallback: 'resetForm' 
+      })
     };
+
+    this.resetForm();
+  }
+
+  resetForm(){
+    this.ctl.qs.syncState();
+    if ( !this.ctl.qs.query.partition.length ) {
+      this.ctl.qs.setParam('partition', '');
+    }
   }
 
   _onSubmit(e){
     e.preventDefault();
-    if ( this.modalCtl.modal ){
-      this.modalCtl.submit();
+    if ( this.ctl.modal.modal ){
+      this.ctl.modal.submit();
     } else {
       this._onSubmitClick();
     }
   }
 
-  apply(){
+  async _onSubmitClick(){
+    this.ctl.qs.deleteParam('page');
     this.ctl.qs.setLocation();
   }
-
-  async _onSubmitClick(){}
 
 }
 

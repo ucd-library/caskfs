@@ -34,7 +34,7 @@ return html`
                 basic
                 title="View Linked Data Relationships"
                 link-aria-label="View Linked Data Relationships"
-                href=${appUrlUtils.fullPath(`/rel${this.ctl.directoryPath.pathname}`)}
+                href=${appUrlUtils.fullLocation(`/rel${this.ctl.directoryPath.pathname}`)}
               ></cork-icon-button>
             </div>
           </caskfs-section-header>

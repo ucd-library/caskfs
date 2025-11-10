@@ -9,6 +9,7 @@ export default class QueryStringController {
   constructor(host, opts={}){
     this.types = opts.types || {};
     this.pageSize = opts.pageSize || 20;
+    this.alwaysSyncOnAppStateUpdate = opts.alwaysSyncOnAppStateUpdate || false;
     this.host = host;
     host.addController(this);
     this.AppStateModel = Registry.getModel('AppStateModel');
@@ -22,9 +23,48 @@ export default class QueryStringController {
    * @description Set a query string parameter
    * @param {String} key - the query string parameter key
    * @param {*} value - the query string parameter value
+   * @param {Object} opts - options for setting the parameter
+   * @param {Number} opts.position - position to insert value at (for array types)
+   * @param {Boolean} opts.append - whether to append value to array (for array types)
+   * @param {Boolean} opts.increasePosition - whether to move value up one position in array (for array types)
+   * @param {Boolean} opts.decreasePosition - whether to move value down one position in array (for array types)
+   * @param {Boolean} opts.update - whether to update existing value at position (for array types)
    */
-  setParam(key, value){
-    this.query[key] = value;
+  setParam(key, value, opts={}){
+
+    // array param
+    if ( this.types[key] === 'array' && !Array.isArray(value) ) {
+      
+      if ( opts.position !== undefined ) {
+        if ( opts.update ) {
+          this.query[key][opts.position] = value;
+        } else {
+          this.query[key].splice(opts.position, 0, value);
+        }
+      } else if ( opts.append ) {
+        this.query[key].push(value);
+      } else if ( opts.increasePosition ) {
+        const index = this.query[key].indexOf(value);
+        if ( index > 0 ) {
+          this.query[key].splice(index, 1);
+          this.query[key].splice(index - 1, 0, value);
+        }
+      } else if ( opts.decreasePosition ) {
+        const index = this.query[key].indexOf(value);
+        if ( index > -1 && index < this.query[key].length - 1 ) {
+          this.query[key].splice(index, 1);
+          this.query[key].splice(index + 1, 0, value);
+        }
+      } else {
+        this.query[key] = [value];
+      }
+    
+    // string param
+    } else {
+      this.query[key] = value;
+    }
+
+    
     this.host.requestUpdate();
   }
 
@@ -32,8 +72,16 @@ export default class QueryStringController {
    * @description Delete a query string parameter
    * @param {String} key - the query string parameter key
    */
-  deleteParam(key){
-    delete this.query[key];
+  deleteParam(key, opts={}){
+    if ( this.types[key] === 'array' ) {
+      if ( opts.position !== undefined ) {
+        this.query[key].splice(opts.position, 1);
+      } else {
+        this.query[key] = [];
+      }
+    } else {
+      delete this.query[key];
+    }
     this.host.requestUpdate();
   }
 
@@ -177,9 +225,10 @@ export default class QueryStringController {
   getQuery(asObject){
     let q = {}
     for ( const key of Object.keys(this.query) ) {
-      if ( this.types[key] === 'array' ) {
-        if ( Array.isArray(this.query[key]) && this.query[key].length ) {
-          q[key] = this.query[key].join(',');
+      if ( this.types[key] === 'array' && Array.isArray(this.query[key]) ) {
+        const qs = this.query[key].filter(v => v);
+        if ( qs.length ) {
+          q[key] = qs.join(',');
         }
       } else if ( this.types[key] === 'boolean' ) {
         if ( this.query[key] ) q[key] = 'true';
@@ -258,7 +307,7 @@ export default class QueryStringController {
 
     // set query params based on location and default types
     try {
-      if ( !this.appComponentController.isOnActivePage ) {
+      if ( !this.appComponentController.isOnActivePage && !this.alwaysSyncOnAppStateUpdate ) {
         return;
       }
       this.syncState(e);

@@ -30,7 +30,7 @@ export default class CaskfsFileSearchResults extends Mixin(LitElement)
 
     this.ctl = {
       appComponent: new AppComponentController(this),
-      qs: new QueryStringController(this),
+      qs: new QueryStringController(this, { types: { partition: 'array'}}),
       select: new DirectoryItemSelectController(this),
       scroll: new ScrollController(this)
     }
@@ -67,11 +67,15 @@ export default class CaskfsFileSearchResults extends Mixin(LitElement)
     await this.ctl.qs.updateComplete;
     this.ctl.qs.pageSize = this.ctl.qs.query.limit || 20;
 
-    const res = await this.LdModel.find({
+    const query = {
       ...this.ctl.qs.query,
       offset: this.ctl.qs.pageOffset,
-      limit: this.ctl.qs.pageSize
-    });
+      limit: this.ctl.qs.pageSize,
+    }
+    if ( this.ctl.qs.query.partition?.length ) {
+      query.partitionKeys = this.ctl.qs.query.partition;
+    }
+    const res = await this.LdModel.find(query);
         if ( res.state !== 'loaded' ) {
       this.results = [];
       return;

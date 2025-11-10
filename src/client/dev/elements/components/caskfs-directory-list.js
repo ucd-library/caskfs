@@ -31,7 +31,7 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
 
     this.appComponentCtl = new AppComponentController(this);
     this.directoryPathCtl = new DirectoryPathController(this);
-    this.qsCtl = new QueryStringController(this);
+    this.qsCtl = new QueryStringController(this, { types: { partition: 'array'}});
     this.selectCtl = new DirectoryItemSelectController(this);
     this.scrollCtl = new ScrollController(this);
 
@@ -73,7 +73,15 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
       return;
     }
     let contents = [];
+    const partitions = this.qsCtl.query.partition;
     for ( const file of res.payload.files ) {
+
+      // filter by partition if applicable
+      if ( partitions.length ) {
+        const filePartitions = file.partition_keys || [];
+        if ( !partitions.some(p => filePartitions.includes(p)) ) continue;
+      }
+
       contents.push({
         data: file,
         name: file.filename,

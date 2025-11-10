@@ -12,9 +12,9 @@ export default class FsDisplayUtils {
   get link(){
     if ( !this.metadata ) return null;
     if ( this.isDirectory ) {
-      return appUrlUtils.fullPath(`/directory${this.metadata.fullname}`);
+      return appUrlUtils.fullLocation(`/directory${this.metadata.fullname}`);
     } else {
-      return appUrlUtils.fullPath(`/file${this.metadata.filepath}`);
+      return appUrlUtils.fullLocation(`/file${this.metadata.filepath}`);
     }
   }
 

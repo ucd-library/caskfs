@@ -67,7 +67,7 @@ export default class DirectoryPathController {
     if ( !path ){
       path = this.path.slice(1);
     }
-    const newPath = '/' + [ ...this.pathPrefix[prefixKey], ...path ].join('/');
+    const newPath = appUrlUtils.fullLocation('/' + [  ...this.pathPrefix[prefixKey], ...path ].join('/'));
     return newPath;
   }
 
@@ -126,7 +126,8 @@ export default class DirectoryPathController {
       this.path = ['/', ...e.location.path.slice(pathStartIndex).filter(Boolean)];
       this.breadcrumbs = this.path.map((part, index) => ({
         name: part === '/' ? 'root' : part,
-        url: '/' + [ ...this.pathPrefix.directory, ...this.path.slice(1, index + 1) ].join('/'),
+        //url: '/' + [ ...this.pathPrefix.directory, ...this.path.slice(1, index + 1) ].join('/'),
+        url: this._getLocation(this.path.slice(1, index + 1), 'directory'),
         currentPage: index === this.path.length - 1
       }));
 

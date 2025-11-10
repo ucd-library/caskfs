@@ -59,7 +59,7 @@ function renderHeader(){
       <div slot="branding-bar" class="branding-bar">
         <ucdlib-branding-bar
             site-name="UC Davis Library"
-            site-url=${appUrlUtils.fullPath()}
+            site-url=${appUrlUtils.fullLocation()}
             slogan="Cask File System">
         </ucdlib-branding-bar>
         <caskfs-partition-status-button></caskfs-partition-status-button>
@@ -67,11 +67,11 @@ function renderHeader(){
 
       <ucd-theme-primary-nav>
         <ul link-text='File System'>
-          <li><a href=${appUrlUtils.fullPath('/directory')}>Directory</a></li>
-          <li><a href=${appUrlUtils.fullPath('/file-search')}>File Search</a></li>
+          <li><a href=${appUrlUtils.fullLocation('/directory')}>Directory</a></li>
+          <li><a href=${appUrlUtils.fullLocation('/file-search')}>File Search</a></li>
         </ul>
         <ul link-text='Config'>
-          <li><a href=${appUrlUtils.fullPath('/config/partitions')}>Partitions</a></li>
+          <li><a href=${appUrlUtils.fullLocation('/config/partitions')}>Partitions</a></li>
         </ul>
       </ucd-theme-primary-nav>
     </ucd-theme-header>
