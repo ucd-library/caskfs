@@ -4,6 +4,7 @@ import { LitCorkUtils, Mixin } from '@ucd-lib/cork-app-utils';
 
 import DirectoryPathController from '../../controllers/DirectoryPathController.js';
 import AppComponentController from '../../controllers/AppComponentController.js';
+import QueryStringController from '../../controllers/QueryStringController.js';
 
 export default class CaskfsLdRelationships extends Mixin(LitElement)
   .with(LitCorkUtils) {
@@ -29,7 +30,8 @@ export default class CaskfsLdRelationships extends Mixin(LitElement)
 
     this.ctl = {
       directoryPath: new DirectoryPathController(this),
-      appComponent: new AppComponentController(this)
+      appComponent: new AppComponentController(this),
+      qs: new QueryStringController(this, { types: { partition: 'array'}})
     };
 
     this._injectModel('AppStateModel', 'LdModel');
@@ -41,9 +43,16 @@ export default class CaskfsLdRelationships extends Mixin(LitElement)
   }
 
   async getData(){
+    await this.ctl.qs.updateComplete;
+
+    const query = {};
+    if ( this.ctl.qs.query.partition?.length ) {
+      query.partitionKeys = this.ctl.qs.query.partition;
+    }
+    
     const r = await this.LdModel.rel(
       this.ctl.directoryPath.pathname,
-      { }
+      query
     );
     if ( r.state !== 'loaded' ) return;
 

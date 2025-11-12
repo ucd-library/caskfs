@@ -45,6 +45,14 @@ export default class FsDisplayUtils {
     return this.missingValue;
   }
 
+  get partitions(){
+    if ( !this.metadata ) return this.missingValue;
+    if ( Array.isArray(this.metadata.partition_keys) && this.metadata.partition_keys.length > 0 ) {
+      return this.metadata.partition_keys.join(', ');
+    }
+    return this.missingValue;
+  }
+
   get isDirectory(){
     if ( !this.metadata ) return false;
     return !this.metadata?.file_id;

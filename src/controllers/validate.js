@@ -8,19 +8,29 @@ export class Validator {
    * @param {Object} schema - validation schema
    * @param {string} schema.[field].type - type of field: string, integer, positiveInteger, positiveIntegerOrZero, boolean
    * @param {boolean} schema.[field].multiple - whether multiple values are allowed (comma-separated strings or arrays)
+   * @param {boolean} schema.[field].required - whether field is required
+   * @param {Array} schema.[field].inSet - array of allowed values
    */
   constructor( schema={} ){
     this.schema = schema;
     this.errors = [];
     this.errorCodes = {
+      REQUIRED: { code: 'REQUIRED', message: 'Field is required' },
       INTEGER: { code: 'INTEGER', message: 'Expected integer value' },
       POSITIVE_INTEGER: { code: 'POSITIVE_INTEGER', message: 'Expected positive integer value' },
       POSITIVE_INTEGER_OR_ZERO: { code: 'POSITIVE_INTEGER_OR_ZERO', message: 'Expected positive integer or zero value' },
-      BOOLEAN: { code: 'BOOLEAN', message: 'Expected boolean value' }
+      BOOLEAN: { code: 'BOOLEAN', message: 'Expected boolean value' },
+      IN_SET: { code: 'IN_SET', message: 'Value not in allowed set' }
     };
 
     this.results = {};
   }
+
+  /**
+   * @description Validate data against schema
+   * @param {Object} data - data to validate
+   * @returns {Object} - validated and coerced data
+   */
   validate( data={} ){
     this.errors = [];
     const out = {};
@@ -31,6 +41,9 @@ export class Validator {
         let value = data[key];
 
         if ( value === undefined || value === null ){
+          if ( rules.required ){
+            throw new SingleValidationError( this.errorCodes.REQUIRED );
+          }
           continue;
         }
 
@@ -41,7 +54,7 @@ export class Validator {
           value = [ value ];
         }
 
-        // type coercion
+        // test & coerce integer types
         if ( rules.type === 'integer' || rules.type === 'positiveInteger' || rules.type === 'positiveIntegerOrZero' ){
           if ( rules.multiple ){
             value = value.map( v => {
@@ -52,11 +65,21 @@ export class Validator {
           }
         }
 
+        // test & coerce boolean types
         if ( rules.type === 'boolean' ){
           if ( rules.multiple ){
             value = value.map( v => this.validateBoolean( v ));
           } else {
             value = this.validateBoolean( value );
+          }
+        }
+
+        // test inSet
+        if ( rules.inSet ){
+          if ( rules.multiple ){
+            value.forEach( v => this.validateInSet( v, rules.inSet ));
+          } else {
+            this.validateInSet( value, rules.inSet );
           }
         }
 
@@ -72,12 +95,19 @@ export class Validator {
     }
 
     if ( this.errors.length > 0 ){
-      throw new ApiValidationError( this.errors.map( e => ({
-        field: e.field,
-        value: e.value,
-        code: e.code,
-        message: e.code ? this.errorCodes[e.code].message : 'Validation error'
-      })));
+      throw new ApiValidationError( this.errors.map( e => {
+
+        const details = {
+          field: e.field,
+          value: e.value,
+          code: e.code,
+          message: e.code ? this.errorCodes[e.code].message : 'Validation error'
+        };
+        if ( e.code === 'IN_SET' ){
+          details.allowedValues = this.schema[e.field].inSet;
+        }
+        return details;
+      }));
     }
 
     return out;
@@ -105,6 +135,15 @@ export class Validator {
     } else {
       throw new SingleValidationError( this.errorCodes.BOOLEAN );
     }
+  }
+
+  validateInSet( value, allowedValues=[] ){
+    value = String(value).toLowerCase();
+    const loweredAllowed = allowedValues.map( v => String(v).toLowerCase() );
+    if ( !loweredAllowed.includes(value) ){
+      throw new SingleValidationError( this.errorCodes.IN_SET );
+    }
+    return true;
   }
 
 }

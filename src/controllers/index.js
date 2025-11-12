@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import autoPath from './auto-path.js';
 import dir from './dir.js';
 import fs from './fs.js';
 import rel from './rel.js';
@@ -8,6 +9,7 @@ import system from './system.js';
 
 const router = Router();
 
+router.use('/auto-path', autoPath);
 router.use('/dir', dir);
 router.use('/fs', fs);
 router.use('/rel', rel);

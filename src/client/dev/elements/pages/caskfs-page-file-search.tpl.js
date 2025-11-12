@@ -16,6 +16,7 @@ export function styles() {
       flex-direction: column;
       justify-content: space-between;
       gap: 1rem;
+      margin-bottom: 1rem;
     }
     caskfs-page-file-search .filter-controls {
       flex-grow: 1;

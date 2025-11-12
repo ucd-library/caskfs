@@ -7,9 +7,6 @@ export function styles() {
       display: block;
       container-type: inline-size;
     }
-    caskf-system-stats cork-icon {
-      --cork-icon-size: 2em;
-    }
     caskf-system-stats .system-stats__factoids {
       display: grid;
       grid-template-columns: minmax(0, 1fr);
@@ -38,14 +35,14 @@ export function render() {
     <div class='system-stats__factoids'>
       <div class="category-brand--rec-pool">
         <div class="factoid factoid--brackets">
-          <a href=${appUrlUtils.fullLocation('directory')} class="factoid__link">
+          <a href=${appUrlUtils.fullLocation('file-search')} class="factoid__link">
             <div class="factoid__bracket-one"></div>
             <div class="factoid__bracket-wrapper">
               <div class="factoid__figure factoid__icon">
                 <cork-icon icon="fas.file"></cork-icon>
               </div>
               <div class="factoid__body">
-                <h2 class="factoid__big-text">${this.stats.total_files}</h2>
+                <h2 class="factoid__big-text">${this.stats.total_files || 0}</h2>
                 <h3 class="factoid__small-text no-wrap">Total Files</h3>
               </div>
             </div>
@@ -59,13 +56,12 @@ export function render() {
             <div class="factoid__bracket-one"></div>
             <div class="factoid__bracket-wrapper">
               <div class="factoid__figure factoid__icon">
-                <cork-icon icon="fas.fingerprint"></cork-icon>
+                <cork-icon icon="fas.folder"></cork-icon>
               </div>
               <div class="factoid__body">
-                <h2 class="factoid__big-text">${this.stats.total_hashes}</h2>
+                <h2 class="factoid__big-text">${this.stats.total_directories || 0}</h2>
                 <h3 class="factoid__small-text">
-                  <div class='no-wrap'>Total Hashes</div> 
-                  <div class='no-wrap'>(${this.stats.unused_hashes} Unused)</div>
+                  <div class='no-wrap'>Total Directories</div>
                 </h3>
               </div>
             </div>
@@ -82,9 +78,9 @@ export function render() {
                 <cork-icon icon="fas.layer-group"></cork-icon>
               </div>
               <div class="factoid__body">
-                <h2 class="factoid__big-text">${this.stats.total_partition_keys}</h2>
+                <h2 class="factoid__big-text">${this.stats.total_file_partition_keys || 0}</h2>
                 <h3 class="factoid__small-text">
-                  <div class='no-wrap'>Partitions</div>
+                  <div class='no-wrap'>Partition Keys</div>
                 </h3>
               </div>
             </div>

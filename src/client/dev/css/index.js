@@ -36,6 +36,9 @@ const styles = `
     gap: .5rem;
     padding: 2rem 0;
   }
+  .factoid cork-icon {
+    --cork-icon-size: 2em;
+  }
 
   ${sharedStyles}
   ${brandCssProps}
