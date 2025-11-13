@@ -26,6 +26,9 @@ export function styles() {
       align-items: center;
       gap: .5rem;
     }
+    caskfs-ld-filter-buttons[has-filters] {
+      margin-top: 1rem;
+    }
     @media (min-width: 500px) {
       caskfs-page-file-search .find-controls {
         flex-direction: row;

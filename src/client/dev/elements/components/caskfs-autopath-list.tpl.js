@@ -42,7 +42,7 @@ export function styles() {
     .row-grid {
       display: grid;
       gap: .5rem;
-      grid-template-columns: 1fr 3rem;
+      grid-template-columns: minmax(0,1fr) 3rem;
       align-items: stretch;
     }
     .desktop-view .row-grid {

@@ -6,6 +6,8 @@ import { LitCorkUtils, Mixin } from '@ucd-lib/cork-app-utils';
 import QueryStringController from '../../controllers/QueryStringController.js';
 import ModalFormController from '../../controllers/ModalFormController.js';
 
+import appUrlUtils from '../../utils/appUrlUtils.js';
+
 export default class CaskfsPartitionApplyForm extends Mixin(LitElement)
   .with(LitCorkUtils) {
 
@@ -34,6 +36,8 @@ export default class CaskfsPartitionApplyForm extends Mixin(LitElement)
     };
 
     this.resetForm();
+
+    this._injectModel('AppStateModel');
   }
 
   resetForm(){
@@ -55,6 +59,15 @@ export default class CaskfsPartitionApplyForm extends Mixin(LitElement)
   async _onSubmitClick(){
     this.ctl.qs.deleteParam('page');
     this.ctl.qs.setLocation();
+  }
+
+  _onAutoPathClick(){
+
+    if ( this.ctl.modal.modal ){
+      this.ctl.modal.closeModal();
+    }
+    this.AppStateModel.setLocation(appUrlUtils.fullPath('config/partitions'));
+    
   }
 
 }

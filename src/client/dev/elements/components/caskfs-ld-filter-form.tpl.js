@@ -74,7 +74,7 @@ return html`
       <input
         type="text"
         id="ld-filter-value"
-        placeholder="Enter filter value"
+        placeholder=${this.filter ? "Enter filter value" : "Select a filter then enter value"}
         aria-label="Filter value"
         ?disabled=${!this.filter}
         .value=${this.value}

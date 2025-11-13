@@ -2,6 +2,8 @@ import { html, css } from 'lit';
 import formStyles from '@ucd-lib/theme-sass/1_base_html/_forms.css.js';
 import buttonStyles from '@ucd-lib/theme-sass/2_base_class/_buttons.css.js';
 
+import appUrlUtils from '../../utils/appUrlUtils.js';
+
 export function styles() {
   const elementStyles = css`
     :host {
@@ -23,6 +25,18 @@ export function styles() {
       display: flex;
       align-items: center;
       gap: .5rem;
+    }
+    .auto-path-btn {
+      all: unset;
+      cursor: pointer;
+      text-decoration: underline;
+      color: var(--ucd-blue-80, #13639e);
+      font-size: .875rem;
+      font-weight: 700;
+      margin-top: 1rem;
+    }
+    .auto-path-btn:hover, .auto-path-btn:focus, .auto-path-btn:active {
+      color: var(--tahoe, #00b2e3);
     }
   `;
 
@@ -60,6 +74,9 @@ export function render() {
         @click=${() => this.ctl.qs.setParam('partition', '', {append: true})}>
         Add another partition
       </button>
+      <div>
+        <button class='auto-path-btn' @click=${this._onAutoPathClick}>View partition auto path rules</button>
+      </div>
     </form>
   `;
 }
