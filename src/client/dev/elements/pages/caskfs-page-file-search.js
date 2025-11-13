@@ -4,6 +4,7 @@ import { LitCorkUtils, Mixin } from '@ucd-lib/cork-app-utils';
 import { MainDomElement } from "@ucd-lib/theme-elements/utils/mixins/main-dom-element.js";
 
 import DirectoryItemSelectController from '../../controllers/DirectoryItemSelectController.js';
+import QueryStringController from '../../controllers/QueryStringController.js';
 
 export default class CaskfsPageFileSearch extends Mixin(LitElement)
   .with(LitCorkUtils, MainDomElement) {
@@ -23,7 +24,8 @@ export default class CaskfsPageFileSearch extends Mixin(LitElement)
     this.render = render.bind(this);
 
     this.ctl = {
-      select: new DirectoryItemSelectController(this)
+      select: new DirectoryItemSelectController(this),
+      qs: new QueryStringController(this, { types: { partition: 'array' } })
     };
 
     this._injectModel('AppStateModel');

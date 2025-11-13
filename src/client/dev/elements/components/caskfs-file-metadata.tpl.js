@@ -91,6 +91,10 @@ return html`
           <div class='prop-label'>Modified By</div>
           <div>${this.fsUtils.modifiedBy}</div>
         </div>
+        <div>
+          <div class='prop-label'>Partitions</div>
+          <div>${this.fsUtils.partitions}</div>
+        </div>
       </div>
     </div>
   </div>

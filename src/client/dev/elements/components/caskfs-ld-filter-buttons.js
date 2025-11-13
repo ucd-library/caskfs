@@ -12,7 +12,8 @@ export default class CaskfsLdFilterButtons extends Mixin(LitElement)
   static get properties() {
     return {
       filters: { state: true },
-      appliedFilters: { state: true }
+      appliedFilters: { state: true },
+      hasFilters: { type: Boolean, attribute: 'has-filters', reflect: true }
     }
   }
 
@@ -56,6 +57,12 @@ export default class CaskfsLdFilterButtons extends Mixin(LitElement)
       }
     }
     this.appliedFilters = appliedFilters;
+  }
+
+  willUpdate(props){
+    if ( props.has('appliedFilters') ) {
+      this.hasFilters = this.appliedFilters.length > 0;
+    }
   }
 
   _onFilterClick(filter){

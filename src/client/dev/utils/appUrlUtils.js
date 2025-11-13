@@ -9,6 +9,24 @@ export class AppUrlUtils {
     this.basePathParts = basePath.split('/').filter(d => d);
   }
 
+  get partition(){
+    const arr = new URLSearchParams(window.location.search).getAll('partition');
+    return arr.length ? arr.join(',') : null;
+  }
+
+  /**
+   * @description Construct a location string relative to the application base path, including any global url params
+   * @param {String|Array} path - The full path as a string or an array of path segments
+   * @returns {String} - The constructed location string
+   */
+  relativeLocation(path){
+    const relativePath = this.relativePath(path);
+    if ( this.partition ) {
+      return `${relativePath}?partition=${this.partition}`;
+    }
+    return relativePath;
+  }
+
   /**
    * @description Extract the relative path from a full path, removing the application base path
    * @param {String|Array} path - The full path as a string or an array of path segments
@@ -29,6 +47,21 @@ export class AppUrlUtils {
 
     const relativePath = path.slice(this.basePathParts.length);
     return returnArray ? relativePath : '/' + relativePath.join('/');
+  }
+
+  /**
+   * @description Construct the full location by prepending the application base path and including any global url params
+   * @param {String|Array} path - The relative path as a string or an array of path segments
+   * @param {Object} opts - Options object
+   * @param {Boolean} opts.noLeadingSlash - If true, the returned string will not have a leading slash
+   * @returns {String} - The constructed full location string
+   */
+  fullLocation(path, opts={}) {
+    const fullPath = this.fullPath(path, { noLeadingSlash: opts.noLeadingSlash });
+    if ( this.partition ) {
+      return `${fullPath}?partition=${this.partition}`;
+    }
+    return fullPath;
   }
 
   /**

@@ -28,6 +28,15 @@ export function styles() {
     caskfs-directory-list .name-container input[type="checkbox"] {
       margin: 0;
     }
+    caskfs-directory-list .breadcrumbs-container {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    caskfs-directory-list .breadcrumbs-container caskfs-fs-breadcrumbs {
+      flex-grow: 1;
+    }
     @container (min-width: 775px) {
       caskfs-directory-list .table-header .desktop-view {
         display: grid;
@@ -47,7 +56,10 @@ export function styles() {
 export function render() { 
   return html`
     <div>
-      <caskfs-fs-breadcrumbs></caskfs-fs-breadcrumbs>
+      <div class='breadcrumbs-container'>
+        <caskfs-fs-breadcrumbs></caskfs-fs-breadcrumbs>
+        <div ?hidden=${!this.qsCtl.query.partition?.length} class='double-decker bold'>Partition Applied</div>
+      </div>
       <div>
         <div ?hidden=${!this.contents.length}>
           <div>

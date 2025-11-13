@@ -12,9 +12,9 @@ export default class FsDisplayUtils {
   get link(){
     if ( !this.metadata ) return null;
     if ( this.isDirectory ) {
-      return appUrlUtils.fullPath(`/directory${this.metadata.fullname}`);
+      return appUrlUtils.fullLocation(`/directory${this.metadata.fullname}`);
     } else {
-      return appUrlUtils.fullPath(`/file${this.metadata.filepath}`);
+      return appUrlUtils.fullLocation(`/file${this.metadata.filepath}`);
     }
   }
 
@@ -41,6 +41,14 @@ export default class FsDisplayUtils {
       const parts = this.metadata.filepath.split('/').filter(Boolean);
       parts.pop();
       return '/' + parts.join('/');
+    }
+    return this.missingValue;
+  }
+
+  get partitions(){
+    if ( !this.metadata ) return this.missingValue;
+    if ( Array.isArray(this.metadata.partition_keys) && this.metadata.partition_keys.length > 0 ) {
+      return this.metadata.partition_keys.join(', ');
     }
     return this.missingValue;
   }

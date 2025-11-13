@@ -7,6 +7,28 @@ export function styles() {
       display: block;
       padding-bottom: 2rem;
     }
+    .branding-bar {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .branding-bar caskfs-partition-status-button {
+      margin-bottom: 1rem;
+    }
+    @media (min-width: 768px) {
+      .branding-bar {
+        flex-direction: row;
+        gap: 2rem;
+        align-items: center;
+        width: 100%;
+      }
+      .branding-bar ucdlib-branding-bar {
+        flex-grow: 1;
+      }
+      .branding-bar caskfs-partition-status-button {
+        margin-bottom: 0;
+      }
+    }
   `;
 
   return [elementStyles];
@@ -34,18 +56,22 @@ return html`
 function renderHeader(){
   return html`
     <ucd-theme-header>
-      <ucdlib-branding-bar
-        site-name="UC Davis Library"
-        site-url=${appUrlUtils.fullPath()}
-        slogan="Cask File System">
-      </ucdlib-branding-bar>
+      <div slot="branding-bar" class="branding-bar">
+        <ucdlib-branding-bar
+            site-name="UC Davis Library"
+            site-url=${appUrlUtils.fullLocation()}
+            slogan="Cask File System">
+        </ucdlib-branding-bar>
+        <caskfs-partition-status-button></caskfs-partition-status-button>
+      </div>
+
       <ucd-theme-primary-nav>
         <ul link-text='File System'>
-          <li><a href=${appUrlUtils.fullPath('/directory')}>Directory</a></li>
-          <li><a href=${appUrlUtils.fullPath('/file-search')}>File Search</a></li>
+          <li><a href=${appUrlUtils.fullLocation('/directory')}>Directory</a></li>
+          <li><a href=${appUrlUtils.fullLocation('/file-search')}>File Search</a></li>
         </ul>
         <ul link-text='Config'>
-          <li><a href=${appUrlUtils.fullPath('/config/partitions')}>Partitions</a></li>
+          <li><a href=${appUrlUtils.fullLocation('/config/partitions')}>Partitions</a></li>
         </ul>
       </ucd-theme-primary-nav>
     </ucd-theme-header>

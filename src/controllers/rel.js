@@ -1,50 +1,21 @@
 import { Router, json } from 'express';
-import handleError, { ApiValidationError } from './handleError.js';
+import handleError from './handleError.js';
+import { Validator } from './validate.js';
 import caskFs from './caskFs.js';
 
 const router = Router();
 
 const parseArgs = ( filePath, query ) => {
-  const out = { filePath };
+  const validator = new Validator({
+    predicate: { type: 'string', multiple: true },
+    ignorePredicate: { type: 'string', multiple: true },
+    partitionKeys: { type: 'string', multiple: true },
+    graph: { type: 'string' },
+    subject: { type: 'string' },
+    stats: { type: 'boolean' }
+  });
 
-  const stringArrayFmt = 'comma separated string or array of strings';
-  if ( query.predicate ){
-    try {
-      out.predicate = (Array.isArray(query.predicate) ? query.predicate : query.predicate.split(',')).map(s => s.trim());
-    } catch(e) {
-      throw new ApiValidationError('predicate', stringArrayFmt, query.predicate);
-    }
-  }
-
-  if ( query.ignorePredicate ){
-    try {
-      out.ignorePredicate = (Array.isArray(query.ignorePredicate) ? query.ignorePredicate : query.ignorePredicate.split(',')).map(s => s.trim());
-    } catch(e) {
-      throw new ApiValidationError('ignorePredicate', stringArrayFmt, query.ignorePredicate);
-    }
-  }
-
-  if ( query.partitionKeys ){
-    try {
-      out.partitionKeys = (Array.isArray(query.partitionKeys) ? query.partitionKeys : query.partitionKeys.split(',')).map(s => s.trim());
-    } catch(e) {
-      throw new ApiValidationError('partitionKeys', stringArrayFmt, query.partitionKeys);
-    }
-  }
-
-  if ( query.graph ){
-    out.graph = query.graph;
-  }
-
-  if ( query.subject ){
-    out.subject = query.subject;
-  }
-
-  if ( query.stats ){
-    out.stats = query.stats === 'true' || query.stats === true;
-  }
-
-  return out;
+  return { filePath, ...validator.validate(query) };
 }
 
 router.get(/(.*)/, async (req, res) => {

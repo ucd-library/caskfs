@@ -31,6 +31,9 @@ export function styles() {
     cork-icon-button {
       --cork-icon-button-size: 2rem;
     }
+    .filters-container label {
+      padding-bottom: 0;
+    }
 
     @container (min-width: 400px) {
       form {
@@ -71,7 +74,7 @@ return html`
       <input
         type="text"
         id="ld-filter-value"
-        placeholder="Enter filter value"
+        placeholder=${this.filter ? "Enter filter value" : "Select a filter then enter value"}
         aria-label="Filter value"
         ?disabled=${!this.filter}
         .value=${this.value}

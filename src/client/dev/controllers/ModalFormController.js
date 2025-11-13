@@ -11,6 +11,7 @@ import { Registry } from '@ucd-lib/cork-app-utils';
  * @param {Function|String} opts.submitCallback The callback to call when the submit button is clicked. 
   *   If a string is provided, it will be treated as the name of a method on the host element.
  * @param {Boolean} opts.noCloseOnSubmit If true, the modal will not close automatically after submit is called. Default is false.
+ * @param {Function|String} opts.openCallback The callback to call when the modal is opened.
  */
 export default class ModalFormController {
 
@@ -25,6 +26,7 @@ export default class ModalFormController {
     this.submitActionId = opts.submitActionId || this.host.tagName + '-SUBMIT';
     this.submitCallback = opts.submitCallback;
     this.noCloseOnSubmit = opts.noCloseOnSubmit || false;
+    this.openCallback = opts.openCallback;
   }
 
   /**
@@ -123,7 +125,7 @@ export default class ModalFormController {
     if ( this.noCloseOnSubmit ) return;
 
     // only close the modal if no validation errors
-    r = Array.isArray(r) ? r : [r];
+    r = (Array.isArray(r) ? r : [r]).filter(req => req);
     if ( !r.find(req => req?.payload?.error?.response?.status == 422) ) {
       this.modal.close();
     }
@@ -132,8 +134,22 @@ export default class ModalFormController {
   /**
    * @description Callback for when the app modal is opened
    */
-  _onAppDialogOpen(){
+  async _onAppDialogOpen(){
+    let modal = this.modal;
+    if ( !modal ) return;
+
+    // there can be a race condition where previous modal form hasnt fully closed yet
+    // wait for update, and bail if host has been disconnected from modal
+    modal.requestUpdate();
+    await modal.updateComplete;
+    if ( !this.modal ) return;
+
     this.setDefaultModalValues();
+    if ( typeof this.openCallback === 'string' ) {
+      this.host[this.openCallback]();
+    } else if ( typeof this.openCallback === 'function' ) {
+      this.openCallback(this.host);
+    }
     this.host.requestUpdate();
   }
 

@@ -26,12 +26,14 @@ import './components/cork-app-toast.js';
 import './components/cork-app-dialog-modal.js';
 import './components/cork-toggle-switch.js';
 import './components/caskfs-section-header.js';
+import './components/caskfs-partition-status-button.js';
 
 // icon elements and model
 import '@ucd-lib/cork-icon';
 
 // cork models
 import '../../../api/models/AppStateModel.js';
+import '../../../api/models/AutoPathModel.js';
 import '../../../api/models/DirectoryModel.js';
 import '../../../api/models/FsModel.js';
 import '../../../api/models/LdModel.js';
