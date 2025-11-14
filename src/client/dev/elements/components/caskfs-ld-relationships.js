@@ -13,7 +13,8 @@ export default class CaskfsLdRelationships extends Mixin(LitElement)
     return {
       inbound: { type: Boolean },
       relationships: { type: Array },
-      brandColor: { type: String, attribute: 'brand-color' }
+      brandColor: { type: String, attribute: 'brand-color' },
+      filters: { type: Array },
     }
   }
 
@@ -27,6 +28,8 @@ export default class CaskfsLdRelationships extends Mixin(LitElement)
     this.inbound = false;
     this.relationships = [];
     this.brandColor = 'ucd-gold';
+
+    this.filters = [];
 
     this.ctl = {
       directoryPath: new DirectoryPathController(this),
@@ -42,8 +45,24 @@ export default class CaskfsLdRelationships extends Mixin(LitElement)
     this.getData();
   }
 
+  willUpdate(props){
+    if ( props.has('inbound') ) {
+      this.filters = [
+        { value: 'subject', label: 'Subject', queryParam: `${this.inbound ? 'inbound' : 'outbound'}-subject` },
+        { value: 'predicate', label: 'Predicate', multiple: true, queryParam: `${this.inbound ? 'inbound' : 'outbound'}-predicate` },
+        { value: 'ignore-predicate', label: 'Ignore Predicate', multiple: true, queryParam: `${this.inbound ? 'inbound' : 'outbound'}-ignore-predicate` },
+        { value: 'graph', label: 'Graph', queryParam: `${this.inbound ? 'inbound' : 'outbound'}-graph` }
+      ];
+    }
+  }
+
   async getData(){
     await this.ctl.qs.updateComplete;
+    await this.ctl.directoryPath.updateComplete;
+    if ( this.ctl.directoryPath.emptyOrRoot ) {
+      this.relationships = [];
+      return;
+    }
 
     const query = {};
     if ( this.ctl.qs.query.partition?.length ) {

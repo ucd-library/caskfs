@@ -13,7 +13,8 @@ export default class CaskfsLdFilterForm extends Mixin(LitElement)
     return {
       value: { type: String },
       filter: { type: String },
-      filters: { state: true }
+      filters: { type: Array },
+      multiple: { state: true }
     }
   }
 
@@ -34,6 +35,7 @@ export default class CaskfsLdFilterForm extends Mixin(LitElement)
       { value: 'graph', label: 'Graph' },
       { value: 'type', label: 'Type' }
     ];
+    this.multiple = false;
 
     this.ctl = {
       qs: new QueryStringController(this),
@@ -52,14 +54,29 @@ export default class CaskfsLdFilterForm extends Mixin(LitElement)
   _onFormSubmit(e) {
     e?.preventDefault?.();
     if ( !this.filter || !this.value ) return;
-    this.ctl.qs.setParam(this.filter, this.value);
+    const filterObj = this.filters.find(f => f.value === this.filter);
+
+    this.ctl.qs.setParam(filterObj.queryParam || filterObj.value, this.value);
     this.ctl.qs.setParam('page', 1);
     this.ctl.qs.setLocation();
   }
 
   _onFilterSelect(e){
     this.filter = e.target.value || '';
-    this.value = this.ctl.qs.query[this.filter] || '';
+    const filterObj = this.filters.find(f => f.value === this.filter);
+    this.multiple = filterObj?.multiple || false;
+    this.value = this.ctl.qs.query[filterObj.queryParam || filterObj.value] || '';
+  }
+
+  _onValueInput(value, index){
+    value = value.replaceAll(',', '');
+    if ( !index ){
+      this.value = value;
+      return;
+    }
+    const values = this.value.split(',');
+    values[index] = value;
+    this.value = values.join(',');
   }
 
 }

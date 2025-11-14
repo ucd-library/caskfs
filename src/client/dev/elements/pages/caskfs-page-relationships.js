@@ -8,12 +8,14 @@ import AppComponentController from '../../controllers/AppComponentController.js'
 
 import '../components/caskfs-file-preview.js';
 
+import appUrlUtils from '../../utils/appUrlUtils.js';
+
 export default class CaskfsPageRelationships extends Mixin(LitElement)
   .with(LitCorkUtils, MainDomElement) {
 
   static get properties() {
     return {
-      metadata: { type: Object }
+      metadata: { type: Object },
     }
   }
 
@@ -39,8 +41,14 @@ export default class CaskfsPageRelationships extends Mixin(LitElement)
     this.getMetadata();
   }
 
+  _onFileSelect(e) {
+    if ( e.detail?.suggestion.isDirectory ) return;
+    this.AppStateModel.setLocation(appUrlUtils.fullLocation(`/rel${e.detail.suggestion.metadata.filepath}`));
+  }
+
   async getMetadata() {
     this.metadata = {};
+    if ( this.ctl.directoryPath.emptyOrRoot ) return;
     const res = await this.FsModel.getMetadata(this.ctl.directoryPath.pathname);
     if ( res.state === 'loaded' ) {
       this.metadata = res.payload;

@@ -33,6 +33,10 @@ export default class DirectoryPathController {
     return this.breadcrumbs[this.breadcrumbs.length - 2];
   }
 
+  get emptyOrRoot(){
+    return this.path.length <= 1;
+  }
+
   /**
    * @description Move up one level in the directory path. Sets app state location.
    * @returns 
@@ -110,6 +114,17 @@ export default class DirectoryPathController {
     return true;
   }
 
+  syncState(e){
+    if ( !e ) e = this.AppStateModel.store.data;
+    const pathStartIndex = (this.getMatchingPathPrefix(e.location.path) || []).length;
+    this.path = ['/', ...e.location.path.slice(pathStartIndex).filter(Boolean)];
+    this.breadcrumbs = this.path.map((part, index) => ({
+      name: part === '/' ? 'root' : part,
+      url: this._getLocation(this.path.slice(1, index + 1), 'directory'),
+      currentPage: index === this.path.length - 1
+    }));
+  }
+
   async _onAppStateUpdate(e) {
 
     let resolveUpdateComplete;
@@ -120,17 +135,7 @@ export default class DirectoryPathController {
       if ( !this.appComponentController.isOnActivePage ) {
         return;
       }
-
-
-      const pathStartIndex = (this.getMatchingPathPrefix(e.location.path) || []).length;
-      this.path = ['/', ...e.location.path.slice(pathStartIndex).filter(Boolean)];
-      this.breadcrumbs = this.path.map((part, index) => ({
-        name: part === '/' ? 'root' : part,
-        //url: '/' + [ ...this.pathPrefix.directory, ...this.path.slice(1, index + 1) ].join('/'),
-        url: this._getLocation(this.path.slice(1, index + 1), 'directory'),
-        currentPage: index === this.path.length - 1
-      }));
-
+      this.syncState(e);
       this.host.requestUpdate();
 
     } finally {

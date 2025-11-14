@@ -2,6 +2,8 @@ import { html, css } from 'lit';
 import '../components/caskfs-directory-controls.js';
 import '../components/caskfs-directory-list.js';
 
+import appUrlUtils from '../../utils/appUrlUtils.js';
+
 export function styles() {
   const elementStyles = css`
     caskfs-page-directory {
@@ -38,6 +40,11 @@ export function styles() {
 export function render() { 
 return html`
   <div>
+    <div><h1 class="page-title">Directory</h1></div>
+    <ol class="breadcrumbs">
+      <li><a href="${appUrlUtils.fullLocation()}">Home</a></li>
+      <li>Directory</li>
+    </ol>
     <div class="l-container u-space-mt--large">
       <div class='content'>
         <caskfs-directory-controls></caskfs-directory-controls>

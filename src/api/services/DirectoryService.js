@@ -15,13 +15,27 @@ class DirectoryService extends BaseService {
     return `${appUrlUtils.basePath}/api/dir`;
   }
 
-  async list(path){
+  async list(path, modelAppStateOptions={}) {
     let ido = {path};
     let id = payload.getKey(ido);
     const store = this.store.data.list;
 
     const appStateOptions = {
       errorSettings: {message: 'Unable to list directory contents'}
+    }
+
+    if ( modelAppStateOptions.errorSettings ) {
+      appStateOptions.errorSettings = {
+        ...appStateOptions.errorSettings,
+        ...modelAppStateOptions.errorSettings
+      };
+    }
+
+    if ( modelAppStateOptions.loaderSettings ){
+      appStateOptions.loaderSettings = {
+        ...appStateOptions.loaderSettings,
+        ...modelAppStateOptions.loaderSettings
+      };
     }
 
     await this.checkRequesting(

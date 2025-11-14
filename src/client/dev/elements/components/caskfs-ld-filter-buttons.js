@@ -11,7 +11,7 @@ export default class CaskfsLdFilterButtons extends Mixin(LitElement)
 
   static get properties() {
     return {
-      filters: { state: true },
+      filters: { type: Array },
       appliedFilters: { state: true },
       hasFilters: { type: Boolean, attribute: 'has-filters', reflect: true }
     }
@@ -48,7 +48,7 @@ export default class CaskfsLdFilterButtons extends Mixin(LitElement)
     await this.ctl.qs.updateComplete;
     const appliedFilters = [];
     for ( const filter of this.filters ) {
-      const value = this.ctl.qs.query[filter.value];
+      const value = this.ctl.qs.query[filter.queryParam || filter.value];
       if ( value ) {
         appliedFilters.push({
           filter,
@@ -66,7 +66,7 @@ export default class CaskfsLdFilterButtons extends Mixin(LitElement)
   }
 
   _onFilterClick(filter){
-    this.ctl.qs.deleteParam(filter.filter.value);
+    this.ctl.qs.deleteParam(filter.filter.queryParam || filter.filter.value);
     this.ctl.qs.setParam('page', 1);
     this.ctl.qs.setLocation();
   }

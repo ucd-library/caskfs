@@ -70,6 +70,9 @@ function renderHeader(){
           <li><a href=${appUrlUtils.fullLocation('/directory')}>Directory</a></li>
           <li><a href=${appUrlUtils.fullLocation('/file-search')}>File Search</a></li>
         </ul>
+        <ul link-text="Linked Data">
+          <li><a href=${appUrlUtils.fullLocation('/rel')}>Relationships</a></li>
+        </ul>
         <ul link-text='Config'>
           <li><a href=${appUrlUtils.fullLocation('/config/partitions')}>Partitions</a></li>
         </ul>
