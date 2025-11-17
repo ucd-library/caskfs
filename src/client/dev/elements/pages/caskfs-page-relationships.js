@@ -58,6 +58,7 @@ export default class CaskfsPageRelationships extends Mixin(LitElement)
   _onDisplayFileClick(){
     this.AppStateModel.showDialogModal({
       title: this.metadata.filename,
+      actions: [{text: 'Close', value: 'dismiss', invert: true, color: 'secondary'}],
       fullWidth: true,
       content: () => html`
         <caskfs-file-preview

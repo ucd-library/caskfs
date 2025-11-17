@@ -30,6 +30,7 @@ export function styles() {
       background-color: transparent;
       border-radius: 50%;
       width: 1.5rem;
+      min-width: 1.5rem;
       height: 1.5rem;
       display: flex;
       align-items: center;
@@ -50,6 +51,7 @@ export function styles() {
     .label .filter-value {
       font-size: .875rem;
       font-weight: 700;
+      word-break: break-all;
     }
     .filter:hover .icon-wrapper, .filter:focus .icon-wrapper {
       background-color: var(--ucd-blue-80, #13639E);

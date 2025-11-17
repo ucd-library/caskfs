@@ -25,14 +25,20 @@ export function styles() {
     .predicate-ns {
       font-size: .875rem;
       color: var(--ucd-black-60, #666);
-      margin-bottom: .5rem;
       word-break: break-all;
       overflow-wrap: anywhere;
       line-break: anywhere;
     }
     .predicate-details {
-      padding: 0 1rem;
+      padding: 0 1rem 1rem;
       border-bottom: 2px dotted var(--ucd-gold, #ffbf00);
+    }
+    .predicate-actions {
+      display: flex;
+      align-items: center;
+      gap: .25rem;
+      margin-top: .25rem;
+      --cork-icon-button-size: 1.5rem;
     }
     .node-container {
       padding: .5rem 1rem;
@@ -67,6 +73,12 @@ export function styles() {
       margin-top: .25rem;
       --cork-icon-button-size: 1.5rem;
     }
+    caskfs-ld-filter-buttons {
+      margin-bottom: 1rem;
+    }
+    caskfs-ld-filter-buttons[has-filters] {
+      margin-top: 1rem;
+    }
   `;
 
   return [
@@ -97,7 +109,17 @@ export function render() {
             <div class='predicate-details'>
               <div class='predicate-text'>${predicate.lastSegment}</div>
               <div class='predicate-ns' ?hidden=${!predicate.ns}>${predicate.ns}</div>
+              <div class='predicate-actions'>
+                <cork-icon-button
+                  icon="fas.copy"
+                  color="medium"
+                  title="Copy Predicate to Clipboard"
+                  aria-label="Copy Predicate to Clipboard"
+                  @click=${() => this._onCopyPredicateClick(predicate)}
+                ></cork-icon-button>
             </div>
+            </div>
+
             <div>
               ${nodes.map(node => html`
                 <div class='node-container'>

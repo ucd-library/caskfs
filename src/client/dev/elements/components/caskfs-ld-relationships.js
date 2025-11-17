@@ -50,7 +50,7 @@ export default class CaskfsLdRelationships extends Mixin(LitElement)
       this.filters = [
         { value: 'subject', label: 'Subject', queryParam: `${this.inbound ? 'inbound' : 'outbound'}-subject` },
         { value: 'predicate', label: 'Predicate', multiple: true, queryParam: `${this.inbound ? 'inbound' : 'outbound'}-predicate` },
-        { value: 'ignore-predicate', label: 'Ignore Predicate', multiple: true, queryParam: `${this.inbound ? 'inbound' : 'outbound'}-ignore-predicate` },
+        { value: 'ignorePredicate', label: 'Ignore Predicate', multiple: true, queryParam: `${this.inbound ? 'inbound' : 'outbound'}-ignore-predicate` },
         { value: 'graph', label: 'Graph', queryParam: `${this.inbound ? 'inbound' : 'outbound'}-graph` }
       ];
     }
@@ -67,6 +67,16 @@ export default class CaskfsLdRelationships extends Mixin(LitElement)
     const query = {};
     if ( this.ctl.qs.query.partition?.length ) {
       query.partitionKeys = this.ctl.qs.query.partition;
+    }
+
+    for ( const filter of this.filters ) {
+      let value = this.ctl.qs.query[filter.queryParam || filter.value];
+      if ( !value ) continue;
+      if ( filter.multiple ) {
+        query[filter.value] = value.split(',');
+      } else {
+        query[filter.value] = value;
+      }
     }
     
     const r = await this.LdModel.rel(
@@ -105,6 +115,11 @@ export default class CaskfsLdRelationships extends Mixin(LitElement)
   _onCopyFilePathClick(node) {
     navigator.clipboard.writeText(node.uri);
     this.AppStateModel.showToast({text: 'File path copied to clipboard', type: 'success'});
+  }
+
+  _onCopyPredicateClick(predicate) {
+    navigator.clipboard.writeText(predicate.uri);
+    this.AppStateModel.showToast({text: 'Predicate copied to clipboard', type: 'success'});
   }
 
 }

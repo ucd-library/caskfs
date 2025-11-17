@@ -532,7 +532,7 @@ class Rdf {
 
     let predicateFilter = '';
     if( predicate ) {
-      predicateFilter = ` AND predicate_uri_id = caskfs.get_uri_id($${args.length + 1}) `;
+      predicateFilter = ` AND predicate = caskfs.get_uri_id($${args.length + 1}) `;
       args.push(predicate);
     }
 

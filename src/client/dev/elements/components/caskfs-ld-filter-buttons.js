@@ -6,6 +6,18 @@ import { LitCorkUtils, Mixin } from '@ucd-lib/cork-app-utils';
 import QueryStringController from '../../controllers/QueryStringController.js';
 import AppComponentController from '../../controllers/AppComponentController.js';
 
+/**
+ * @typedef {Object} FilterDefinition
+ * @property {String} value - The filter value (e.g. 'subject', 'predicate', etc.)
+ * @property {String} label - The human readable label for the filter
+ * @property {Boolean} [multiple] - Whether the filter supports multiple values
+ * @property {String} [queryParam] - The query param to use instead of the value
+ */
+
+/**
+ * @description Component for displaying applied Linked Data filters as buttons that can be removed
+ * @param {FilterDefinition[]} filters - Array of filter definitions
+ */
 export default class CaskfsLdFilterButtons extends Mixin(LitElement)
   .with(LitCorkUtils) {
 
@@ -43,16 +55,23 @@ export default class CaskfsLdFilterButtons extends Mixin(LitElement)
     this._injectModel('AppStateModel');
   }
 
-  async _onAppStateUpdate(e) {
+  /**
+   * @description Update applied filters when app state changes
+   */
+  async _onAppStateUpdate() {
     if ( !this.ctl.appComponent.isOnActivePage ) return;
     await this.ctl.qs.updateComplete;
     const appliedFilters = [];
     for ( const filter of this.filters ) {
-      const value = this.ctl.qs.query[filter.queryParam || filter.value];
-      if ( value ) {
+      let value = this.ctl.qs.query[filter.queryParam || filter.value];
+      if (!value) continue;
+      const values = filter.multiple ? value.split(',') : [value];
+      for ( const [i, v] of values.entries() ) {
         appliedFilters.push({
           filter,
-          value
+          value: v,
+          values: values,
+          index: i
         });
       }
     }
@@ -65,8 +84,20 @@ export default class CaskfsLdFilterButtons extends Mixin(LitElement)
     }
   }
 
+  /**
+   * @description Handle filter button clicks. Removes the filter from the query string.
+   * @param {Object} filter - Object from this.appliedFilters array
+   */
   _onFilterClick(filter){
-    this.ctl.qs.deleteParam(filter.filter.queryParam || filter.filter.value);
+    const queryParam = filter.filter.queryParam || filter.filter.value;
+    if ( filter.filter.multiple ) {
+      const existingValues = this.ctl.qs.query[queryParam];
+      const values = existingValues ? existingValues.split(',') : [];
+      values.splice(values.indexOf(filter.value), 1);
+      this.ctl.qs.setParam(queryParam, values.join(','));
+    } else {
+      this.ctl.qs.deleteParam(queryParam);
+    }
     this.ctl.qs.setParam('page', 1);
     this.ctl.qs.setLocation();
   }
