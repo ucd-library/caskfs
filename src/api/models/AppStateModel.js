@@ -95,6 +95,7 @@ class AppStateModelImpl extends AppStateModel {
    * @returns
    */
   addErrorRequest(req) {
+    if ( req.errorSettings?.suppressError ) return;
     this.errorRequests.push(req);
     if ( this._errorVisible || this._showErrorTimer ) return;
 
