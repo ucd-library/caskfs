@@ -74,7 +74,7 @@ export function styles() {
       --cork-icon-button-size: 1.5rem;
     }
     caskfs-ld-filter-buttons {
-      margin-bottom: 1rem;
+      margin-bottom: 2rem;
     }
     caskfs-ld-filter-buttons[has-filters] {
       margin-top: 1rem;

@@ -1,5 +1,4 @@
 import { html, css } from 'lit';
-import { styleMap } from 'lit/directives/style-map.js';
 import formStyles from '@ucd-lib/theme-sass/1_base_html/_forms.css.js';
 
 export function styles() {
@@ -52,9 +51,6 @@ export function styles() {
       border: 1px solid var(--ucd-black-30);
       overflow-y: auto;
       background-color: var(--ucd-white, #fff);
-      position: absolute;
-      width: 100%;
-      z-index: 10;
       box-sizing: border-box;
     }
   `;
@@ -67,7 +63,7 @@ export function styles() {
 
 export function render() { 
 return html`
-  <div @focusout=${this._onElementFocusOut}>
+  <div>
     <input
       id="value-input"
       type="text"
@@ -77,7 +73,7 @@ return html`
       @focus=${this._onValueFocus}
       autocomplete="off"
     />
-    <div class="suggestions" ?hidden=${!this.showSuggestions} style=${styleMap(this.suggestionContainerStyles)}>
+    <div class="suggestions" style=${this.ctl.dropdown.dropdownStyleMap}>
       <div ?hidden=${!this.fetchError} class="error">Error fetching suggestions</div>
       <div ?hidden=${this.fetchError || !this.suggestions.length} class="suggestion-list">
         <div>
@@ -96,6 +92,4 @@ return html`
       <div ?hidden=${this.fetchError || this.suggestions.length} class="no-suggestions">No suggestions found</div>
     </div>
   </div>
-
-
 `;}

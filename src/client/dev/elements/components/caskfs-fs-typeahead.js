@@ -3,6 +3,7 @@ import {render, styles} from "./caskfs-fs-typeahead.tpl.js";
 import { LitCorkUtils, Mixin } from '@ucd-lib/cork-app-utils';
 
 import QueryStringController from '../../controllers/QueryStringController.js';
+import DropdownController from '../../controllers/DropdownController.js';
 import FsDisplayUtils from '../../utils/FsDisplayUtils.js';
 
 /**
@@ -23,7 +24,6 @@ export default class CaskfsFsTypeahead extends Mixin(LitElement)
       _value: { state: true },
       suggestions: { type: Array },
       suggestionLimit: { type: Number, attribute: 'suggestion-limit' },
-      showSuggestions: { state: true },
       totalSuggestions: { state: true },
       fetchError: { state: true },
       suggestionContainerStyles: { state: true }
@@ -40,31 +40,16 @@ export default class CaskfsFsTypeahead extends Mixin(LitElement)
     this.value = '';
     this.suggestions = [];
     this.suggestionLimit = 20;
-    this.showSuggestions = false;
     this.fetchError = false;
     this.totalSuggestions = 0;
     this.suggestionContainerStyles = {};
 
     this.ctl = {
-      qs: new QueryStringController(this, { types: { partition: 'array'}})
+      qs: new QueryStringController(this, { types: { partition: 'array'}}),
+      dropdown: new DropdownController(this, {defaultMaxHeight: 190, belowCustomStyles: { borderTop: 'none' } })
     };
 
     this._injectModel('DirectoryModel', 'AppStateModel');
-  }
-
-  connectedCallback() {
-    super.connectedCallback();
-    this._onWindowResize = this._onWindowResize.bind(this);
-    window.addEventListener('resize', this._onWindowResize);
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    window.removeEventListener('resize', this._onWindowResize);
-  }
-
-  _onWindowResize(){
-    this.showSuggestions = false;
   }
 
   willUpdate(props){
@@ -87,39 +72,12 @@ export default class CaskfsFsTypeahead extends Mixin(LitElement)
       }
       this._value = { dir, search };
     }
-
-    if ( props.has( 'showSuggestions') && this.showSuggestions ) {
-      this.setSuggestionsContainerStyles();
-    }
   }
 
   _onAppStateUpdate() {
     this.value = '';
     this.suggestions = [];
-    this.showSuggestions = false;
-  }
-
-  /**
-   * @description Set size/position styles for suggestion container based on available viewport space
-   */
-  setSuggestionsContainerStyles(){
-    const eleRect = this.getBoundingClientRect();
-    const defaultMaxHeight = 190;
-    const styles = {
-      maxWidth: `${eleRect.width}px`
-    };
-
-    const availableHeightBelow = Math.round(window.innerHeight - eleRect.bottom - 20);
-    if ( availableHeightBelow > 100 ) {
-      styles.maxHeight = availableHeightBelow < defaultMaxHeight ? `${availableHeightBelow}px` : `${defaultMaxHeight}px`;
-      styles.borderTop = 'none';
-    } else {
-      const availableHeightAbove = eleRect.top - 20;
-      styles.bottom = `${eleRect.height}px`;
-      styles.maxHeight = availableHeightAbove < defaultMaxHeight ? `${availableHeightAbove}px` : `${defaultMaxHeight}px`;
-    }
-
-    this.suggestionContainerStyles = styles;
+    this.ctl.dropdown.open = false;
   }
 
   async _onValueInput(e){
@@ -128,17 +86,17 @@ export default class CaskfsFsTypeahead extends Mixin(LitElement)
       clearTimeout(this.searchTimeout);
     }
     this.searchTimeout = setTimeout(async () => {
-      this.showSuggestions = false;
+      this.ctl.dropdown.open = false;
       await this.getSuggestions();
-      this.showSuggestions = true;
+      this.ctl.dropdown.open = true;
     }, 300);
 
   }
 
   async _onValueFocus(){
-    this.showSuggestions = false;
+    this.ctl.dropdown.open = false;
     await this.getSuggestions();
-    this.showSuggestions = true;
+    this.ctl.dropdown.open = true;
   }
 
   async getSuggestions(){
@@ -181,18 +139,9 @@ export default class CaskfsFsTypeahead extends Mixin(LitElement)
       this.getSuggestions();
       return;
     }
-    this.showSuggestions = false;
-  }
-
-  _onElementFocusOut(){
-    setTimeout(() => {
-      if ( !this.renderRoot.activeElement ) {
-        this.showSuggestions = false;
-      }
-    }, 100);
+    this.ctl.dropdown.open = false;
   }
 
 }
-
 
 customElements.define('caskfs-fs-typeahead', CaskfsFsTypeahead);
