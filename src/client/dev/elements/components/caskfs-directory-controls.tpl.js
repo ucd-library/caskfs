@@ -44,8 +44,8 @@ return html`
     <cork-icon-button
       icon='fas.turn-up'
       title='Up One Level'
-      ?disabled=${this.directoryPathCtl.path.length <= 1}
-      @click=${() => this.directoryPathCtl.moveUp()}
+      ?disabled=${this.ctl.directoryPath.path.length <= 1}
+      @click=${() => this.ctl.directoryPath.moveUp()}
       link-aria-label='Up One Level'>
     </cork-icon-button>
     <cork-icon-button 
@@ -64,7 +64,7 @@ return html`
       icon='fas.trash'
       color='medium'
       title='Delete Selected Items'
-      ?hidden=${!this.itemSelectCtl.selected.length}
+      ?hidden=${!this.ctl.select.selected.length}
       @click=${this._onBulkDeleteClick}
       link-aria-label='Delete Selected Items'>
     </cork-icon-button>

@@ -39,15 +39,17 @@ export default class CaskfsDirectoryControls extends Mixin(LitElement)
     this.sortValue = '';
     this.sortIsDesc = false;
 
-    this.directoryPathCtl = new DirectoryPathController(this);
-    this.itemSelectCtl = new DirectoryItemSelectController(this);
+    this.ctl = {
+      directoryPath: new DirectoryPathController(this),
+      select: new DirectoryItemSelectController(this)
+    };
 
     this._injectModel('AppStateModel');
   }
 
   _onBulkDeleteClick(){
     this.AppStateModel.showDialogModal({
-      content: () => html`<caskfs-delete-form .items=${this.itemSelectCtl.selected}></caskfs-delete-form>`,
+      content: () => html`<caskfs-delete-form .items=${this.ctl.select.selected}></caskfs-delete-form>`,
     });
   }
 
@@ -69,7 +71,7 @@ export default class CaskfsDirectoryControls extends Mixin(LitElement)
   }
 
   _onCopyPathClick() {
-    navigator.clipboard.writeText(this.directoryPathCtl.pathname);
+    navigator.clipboard.writeText(this.ctl.directoryPath.pathname);
     this.AppStateModel.showToast({text: 'Directory path copied to clipboard', type: 'success'});
   }
 

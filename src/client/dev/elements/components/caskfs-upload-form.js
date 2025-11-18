@@ -19,7 +19,9 @@ export default class CaskfsUploadForm extends Mixin(LitElement)
     super();
     this.render = render.bind(this);
 
-    this.modalCtl = new ModalFormController(this, {title: 'Upload Files', submitText: 'Upload', submitCallback: '_onSubmitClick'});
+    this.ctl = {
+      modal: new ModalFormController(this, {title: 'Upload Files', submitText: 'Upload', submitCallback: '_onSubmitClick'})
+    };
   }
 
   async _onSubmitClick(){
@@ -28,8 +30,8 @@ export default class CaskfsUploadForm extends Mixin(LitElement)
 
   _onSubmit(e){
     e.preventDefault();
-    if ( this.modalCtl.modal ){
-      this.modalCtl.submit();
+    if ( this.ctl.modal.modal ){
+      this.ctl.modal.submit();
     } else {
       this._onSubmitClick();
     }

@@ -22,7 +22,11 @@ export default class CaskfsDeleteForm extends Mixin(LitElement)
   constructor() {
     super();
     this.render = render.bind(this);
-    this.modalCtl = new ModalFormController(this, {title: 'Confirm Deletion', submitText: 'Delete', submitCallback: '_onSubmitClick'});
+    
+    this.ctl = {
+      modal: new ModalFormController(this, {title: 'Confirm Deletion', submitText: 'Delete', submitCallback: '_onSubmitClick'})
+    };
+    
     this.successLocation = '';
 
     this.items = [];
@@ -45,8 +49,8 @@ export default class CaskfsDeleteForm extends Mixin(LitElement)
 
   _onSubmit(e){
     e.preventDefault();
-    if ( this.modalCtl.modal ){
-      this.modalCtl.submit();
+    if ( this.ctl.modal.modal ){
+      this.ctl.modal.submit();
     } else {
       this._onSubmitClick();
     }

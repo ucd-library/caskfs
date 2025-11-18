@@ -29,17 +29,19 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
     this.selectedItems = [];
     this.totalPages = 1;
 
-    this.appComponentCtl = new AppComponentController(this);
-    this.directoryPathCtl = new DirectoryPathController(this);
-    this.qsCtl = new QueryStringController(this, { types: { partition: 'array'}});
-    this.selectCtl = new DirectoryItemSelectController(this);
-    this.scrollCtl = new ScrollController(this);
+    this.ctl = {
+      appComponent: new AppComponentController(this),
+      directoryPath: new DirectoryPathController(this),
+      qs: new QueryStringController(this, { types: { partition: 'array'}}),
+      select: new DirectoryItemSelectController(this),
+      scroll: new ScrollController(this)
+    };
 
     this._injectModel('AppStateModel', 'DirectoryModel');
   }
 
   async _onAppStateUpdate(e) {
-    if ( !this.appComponentCtl.isOnActivePage ) return;
+    if ( !this.ctl.appComponent.isOnActivePage ) return;
     await this.listContents();
 
     if ( this.AppStateModel.store.data.lastLocation.pathname === e.location.pathname ) {
@@ -48,8 +50,8 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
     }
 
     // restore scroll position if returning to this page
-    for ( const h of this.scrollCtl.pageHistory(e.page) ) {
-      if ( this.directoryPathCtl.isAppStatePathEqual(h.location?.path) ) {
+    for ( const h of this.ctl.scroll.pageHistory(e.page) ) {
+      if ( this.ctl.directoryPath.isAppStatePathEqual(h.location?.path) ) {
 
         // give the page a chance to render
         this.requestUpdate();
@@ -64,16 +66,16 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
   async listContents() {
     this.selectedItems = [];
 
-    await this.directoryPathCtl.updateComplete;
-    await this.qsCtl.updateComplete;
+    await this.ctl.directoryPath.updateComplete;
+    await this.ctl.qs.updateComplete;
 
-    const res = await this.DirectoryModel.list(this.directoryPathCtl.pathname);
+    const res = await this.DirectoryModel.list(this.ctl.directoryPath.pathname);
     if ( res.state !== 'loaded' ) {
       this.contents = [];
       return;
     }
     let contents = [];
-    const partitions = this.qsCtl.query.partition;
+    const partitions = this.ctl.qs.query.partition;
     for ( const file of res.payload.files ) {
 
       // filter by partition if applicable
@@ -102,16 +104,16 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
       });
     }
 
-    if ( this.qsCtl.query.sort ) {
-      contents = this.qsCtl.multiSort(contents);
+    if ( this.ctl.qs.query.sort ) {
+      contents = this.ctl.qs.multiSort(contents);
     }
-    this.totalPages = this.qsCtl.maxPages(contents);
-    this.contents = this.qsCtl.paginateData(contents);
+    this.totalPages = this.ctl.qs.maxPages(contents);
+    this.contents = this.ctl.qs.paginateData(contents);
   }
 
   _onPageChange(e){
-    this.qsCtl.setParam('page', e.detail.page);
-    this.qsCtl.setLocation();
+    this.ctl.qs.setParam('page', e.detail.page);
+    this.ctl.qs.setLocation();
   }
 
 }

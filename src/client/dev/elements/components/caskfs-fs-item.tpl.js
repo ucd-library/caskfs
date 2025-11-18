@@ -9,7 +9,7 @@ export function render() {
   const classes = {
     'is-directory': this.fsUtils.isDirectory,
     'is-file': !this.fsUtils.isDirectory,
-    'is-selected': this.selectCtl.hostIsSelected,
+    'is-selected': this.ctl.select.hostIsSelected,
     'select-hidden': this.hideSelect,
     'select-visible': !this.hideSelect,
     'hide-type-icon': this.hideTypeIcon,
@@ -86,8 +86,8 @@ function renderName(){
     <div class='name-container'>
       <input type='checkbox' 
         ?hidden=${this.hideSelect}
-        @input=${() => this.selectCtl.toggle()} 
-        .checked=${this.selectCtl.hostIsSelected} 
+        @input=${() => this.ctl.select.toggle()} 
+        .checked=${this.ctl.select.hostIsSelected} 
         aria-label='Select Item'>
       <div>
         <a class='name-link' href=${this.fsUtils.link}>

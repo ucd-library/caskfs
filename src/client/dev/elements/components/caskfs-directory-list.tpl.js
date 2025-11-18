@@ -58,7 +58,7 @@ export function render() {
     <div>
       <div class='breadcrumbs-container'>
         <caskfs-fs-breadcrumbs></caskfs-fs-breadcrumbs>
-        <div ?hidden=${!this.qsCtl.query.partition?.length} class='double-decker bold'>Partition Applied</div>
+        <div ?hidden=${!this.ctl.qs.query.partition?.length} class='double-decker bold'>Partition Applied</div>
       </div>
       <div>
         <div ?hidden=${!this.contents.length}>
@@ -66,7 +66,7 @@ export function render() {
             <caskfs-fs-items .items=${this.contents.map(item => item.data)}></caskfs-fs-items>
           </div>
           <ucd-theme-pagination
-            current-page=${this.qsCtl.query.page || 1}
+            current-page=${this.ctl.qs.query.page || 1}
             max-pages=${this.totalPages}
             ellipses
             xs-screen
