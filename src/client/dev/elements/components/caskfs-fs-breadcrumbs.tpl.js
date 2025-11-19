@@ -22,6 +22,6 @@ export function styles() {
 export function render() { 
 return html`
   <ol class='breadcrumbs'>
-    ${this.directoryPathCtl.breadcrumbs.map(crumb => crumb.currentPage ? html`<li>${crumb.name}</li>` : html`<li><a href="${crumb.url}">${crumb.name}</a></li>`)}
+    ${this.ctl.directoryPath.breadcrumbs.map(crumb => crumb.currentPage ? html`<li>${crumb.name}</li>` : html`<li><a href="${crumb.url}">${crumb.name}</a></li>`)}
   </ol>
 `;}

@@ -18,6 +18,7 @@ class AppStateModelImpl extends AppStateModel {
     this.loadingRequests = [];
     this._loaderVisible = false;
     this._hideLoaderTimer = null;
+    this._loaderDelayTimer = null;
 
 
     this.errorRequests = [];
@@ -49,7 +50,7 @@ class AppStateModelImpl extends AppStateModel {
    * @param {Object} req.payload - The cork-app-utils payload of the request
    * @param {Object} req.loaderSettings - The loader settings object from the store that initiated the loading state
    */
-  addLoadingRequest(req) {
+  async addLoadingRequest(req) {
     if ( req.loaderSettings?.suppressLoader ) return;
     this.loadingRequests.push(req);
 
@@ -58,8 +59,14 @@ class AppStateModelImpl extends AppStateModel {
       this._hideLoaderTimer = null;
     }
 
-    if (!this._loaderVisible) {
-      this.showLoading();
+    // only show loader if waiting more than 750ms
+    if (!this._loaderVisible && !this._loaderDelayTimer) {
+      this._loaderDelayTimer = setTimeout(() => {
+        this._loaderDelayTimer = null;
+        if (this.loadingRequests.length > 0) {
+          this.showLoading();
+        }
+      }, 750);
     }
   }
 

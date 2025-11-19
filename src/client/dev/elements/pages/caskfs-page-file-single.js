@@ -5,6 +5,7 @@ import { MainDomElement } from "@ucd-lib/theme-elements/utils/mixins/main-dom-el
 
 import DirectoryPathController from '../../controllers/DirectoryPathController.js';
 import AppComponentController from '../../controllers/AppComponentController.js';
+import ScrollController from '../../controllers/ScrollController.js';
 
 import '../components/caskfs-delete-form.js';
 import '../components/caskfs-file-preview.js';
@@ -30,7 +31,8 @@ export default class CaskfsPageFileSingle extends Mixin(LitElement)
 
     this.ctl = {
       appComponent: new AppComponentController(this),
-      directoryPath: new DirectoryPathController(this)
+      directoryPath: new DirectoryPathController(this),
+      scroll: new ScrollController(this)
     };
 
     this._injectModel('AppStateModel', 'FsModel');
@@ -38,7 +40,8 @@ export default class CaskfsPageFileSingle extends Mixin(LitElement)
 
   async _onAppStateUpdate(e) {
     if ( !this.ctl.appComponent.isOnActivePage ) return;
-    this.getMetadata();
+    await this.getMetadata();
+    this.ctl.scroll.scrollToTop();
   }
 
   async getMetadata() {
