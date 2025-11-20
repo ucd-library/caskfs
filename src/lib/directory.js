@@ -14,13 +14,14 @@ class Directory {
    * @method get
    * @description Get a directory by its path.  If no path is provided, the root directory is returned.
    *
-   * @param {String} directory directory path
-   * @param {Object} opts
-   * @param {Object} opts.dbClient Required. database client instance
+   * @param {Object|CaskFSContext} context query options
+   * @param {String} context.directory directory path
+   * @param {Object} context.dbClient Required. database client instance
    * @returns {Promise<Directory>} Directory instance
    */
-  async get(directory, opts={}) {
-    return opts.dbClient.getDirectory(directory || '/');
+  async get(context={}) {
+    let {dbClient, directory} = context.data
+    return dbClient.getDirectory(directory || '/');
   }
 
   /**
@@ -30,11 +31,14 @@ class Directory {
    * @param {String} directory directory path
    * @param {Object} opts
    * @param {Object} opts.dbClient Required. database client instance
+   * @param {Number} opts.limit number of child directories to return, defaults to 100
+   * @param {Number} opts.offset offset for return set
    *
    * @returns {Promise<Array>} array of child directory objects
    */
-  async getChildren(directory, opts={}) {
-    return opts.dbClient.getChildDirectories(directory, opts);
+  async getChildren(context={}) {
+    let {dbClient, directory, limit, offset, requestor, query} = context.data;
+    return dbClient.getChildDirectories(directory, {limit, offset, requestor, query});
   }
 
   /**

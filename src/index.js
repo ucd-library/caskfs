@@ -640,6 +640,9 @@ class CaskFs {
    *
    * @param {Object|CaskFSContext} context query options
    * @param {String} context.directory directory to list
+   * @param {Object} context.query text to filter directory and file names
+   * @param {Object} context.limit pagination limit options
+   * @param {Object} context.offset pagination offset options
    *
    * @returns {Object} result object with query and files array
    */
@@ -658,22 +661,42 @@ class CaskFs {
 
     await this.checkPermissions(context, {permission: 'read'})
 
-    let dir = await this.directory.get(context.data.directory, {dbClient: context.data.dbClient});
+    if( !context.data.limit ) context.update({limit: 100});
+    if( !context.data.offset ) context.update({offset: 0});
 
-    // TODO: this needs to check if user can read the directory
-    let childDirs = await this.directory.getChildren(context.data.directory, {dbClient: context.data.dbClient});
+    let combinedLimit = context.data.limit;
+    let combinedOffset = context.data.offset;
 
-    let res = await context.data.dbClient.query(`
-      SELECT * FROM ${this.schema}.file_view WHERE directory_id = $1 ORDER BY directory, filename
-    `, [dir.directory_id]);
+    let childDirs = await this.directory.getChildren(context);
 
-    res.rows.map(row => {
-      row.fullPath = this.cas.diskPath(row.hash_value);
-    });
+    let fileQueryLimit = context.data.limit - childDirs.results.length;
+    if( fileQueryLimit < 0 ) fileQueryLimit = 0;
+
+    // adjust offset for files if offset exceeds child directories
+    let fileQueryOffset = context.data.offset;
+    if( childDirs.totalCount < context.data.offset ) {
+      fileQueryOffset = fileQueryOffset - childDirs.totalCount;
+    }
+
+    let childFiles = await context.data.dbClient.getChildFiles(
+      context.data.directory,
+      {
+        limit: fileQueryLimit,
+        offset: fileQueryOffset,
+        query: context.data.query
+      }
+    )
 
     return {
-      files : res.rows,
-      directories: childDirs
+      files : childFiles.results,
+      directories: childDirs.results,
+      totalCount: childDirs.totalCount + childFiles.totalCount,
+      limit: combinedLimit,
+      offset: combinedOffset,
+      fileRange : {
+        limit: fileQueryLimit,
+        offset: fileQueryOffset
+      }
     }
   }
 
