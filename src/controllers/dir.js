@@ -11,7 +11,9 @@ router.get(/(.*)/, async (req, res) => {
     const directoryPath = req.params[0] || '/';
     const resp = await caskFs.ls({
       directory: directoryPath,
-      corkTraceId: req.corkTraceId
+      offset: req.query.offset,
+      limit: req.query.limit,
+      query: req.query.query
     });
     res.status(200).json(resp);
   } catch (e) {
