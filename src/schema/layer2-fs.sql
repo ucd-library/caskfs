@@ -55,13 +55,14 @@ CREATE TABLE IF NOT EXISTS caskfs.directory (
     fullname        VARCHAR(256) NOT NULL UNIQUE,
     name            VARCHAR(256) GENERATED ALWAYS AS (
       CASE WHEN fullname = '/' THEN '/'
-      ELSE REGEXP_REPLACE(TRIM(fullname), '/$', '') END
+      ELSE REGEXP_REPLACE(TRIM(fullname), '.*/', '') END
     ) STORED,
     parent_id      UUID REFERENCES caskfs.directory(directory_id),
     created        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     modified       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_directory_name ON caskfs.directory(name);
+CREATE INDEX IF NOT EXISTS idx_directory_fullname ON caskfs.directory(fullname);
+CREATE INDEX IF NOT EXISTS idx_directory_name ON caskfs.directory USING GIN (name gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_directory_parent_id ON caskfs.directory(parent_id);
 
 CREATE OR REPLACE FUNCTION caskfs.get_directory_id(p_fullname VARCHAR(256))
@@ -280,6 +281,7 @@ CREATE TABLE IF NOT EXISTS caskfs.file (
 CREATE INDEX IF NOT EXISTS idx_file_hash_id ON caskfs.file(hash_id);
 CREATE INDEX IF NOT EXISTS idx_file_directory ON caskfs.file(directory_id);
 CREATE INDEX IF NOT EXISTS idx_file_name ON caskfs.file(name);
+CREATE INDEX IF NOT EXISTS idx_file_name_gin_trgm ON caskfs.file USING GIN (name gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_file_directory_name ON caskfs.file(directory_id, name);
 
 CREATE TABLE IF NOT EXISTS caskfs.file_partition_key (

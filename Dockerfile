@@ -5,7 +5,10 @@ WORKDIR /opt/caskfs
 
 COPY package.json package-lock.json ./
 RUN npm install --production
-RUN npm install -g
-RUN npm link
 
 COPY src ./src
+
+RUN npm install -g .
+RUN npm link
+
+CMD ["cask", "serve"]

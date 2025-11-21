@@ -1,5 +1,6 @@
 CREATE SCHEMA IF NOT EXISTS caskfs;
 SET search_path TO caskfs;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 ---
 -- Layer 2: RDF in graph form of nodes and links
@@ -113,6 +114,39 @@ CREATE TABLE IF NOT EXISTS caskfs.ld_literal (
     UNIQUE(graph, subject, predicate, value, language, datatype)
 );
 CREATE INDEX IF NOT EXISTS idx_ld_literal_subject ON caskfs.ld_literal(subject);
+CREATE INDEX IF NOT EXISTS idx_ld_literal_value ON caskfs.ld_literal USING GIN (value gin_trgm_ops);
+
+CREATE OR REPLACE FUNCTION caskfs.search_ld_literal_by_value(p_search_term VARCHAR(1028), p_limit INT DEFAULT 5)
+RETURNS TABLE (
+    graph VARCHAR(1028),
+    subject VARCHAR(1028),
+    predicate VARCHAR(1028),
+    value TEXT,
+    language VARCHAR(32),
+    datatype VARCHAR(256)
+) AS $$
+BEGIN
+    RETURN QUERY
+    WITH results AS (
+        SELECT * from caskfs.ld_literal ll
+        WHERE ll.value ILIKE '%' || p_search_term || '%'
+        ORDER BY similarity(ll.value, p_search_term) DESC
+        LIMIT p_limit
+    )
+    SELECT
+        gu.uri AS graph,
+        su.uri AS subject,
+        pu.uri AS predicate,
+        ll.value,
+        ll.language,
+        ll.datatype
+    FROM results ll
+    LEFT JOIN caskfs.uri pu ON ll.predicate = pu.uri_id
+    LEFT JOIN caskfs.uri su ON ll.subject = su.uri_id
+    LEFT JOIN caskfs.uri gu ON ll.graph = gu.uri_id;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
 
 CREATE TABLE IF NOT EXISTS caskfs.file_ld_literal (
     file_ld_literal_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

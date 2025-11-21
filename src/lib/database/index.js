@@ -258,32 +258,111 @@ class Database {
 
   /**
    * @method getChildDirectories
-   * @description Get the child directories of a given directory.
+   * @description Get the child directories of a given directory. Assume access to root directory has already been verified.
+   * Will perform ACL checks on child directories.
    *
    * @param {String} directory
    * @param {Object} opts
    * @param {Number} opts.limit limit number of results. Default 100
    * @param {Number} opts.offset offset for results. Default 0
+   * @param {String} opts.requestor user making the request (for ACL checks)
    *
    * @returns {Promise<Array>} array of child directory objects
    */
   async getChildDirectories(directory, opts={}) {
-    if( opts.ignoreAcl ) {
-      this.logger.warn('Ignoring ACL checks. This should only be done for admin users.');
+    let userAclQuery = '';
+    let aclOpts = {
+      requestor: opts.requestor,
+      dbClient : this
+    };
+
+    if( await acl.aclLookupRequired(aclOpts) ) {
+      userAclQuery = '(acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE)';
+      if( opts.requestor ) {
+        let userId = await acl.getUserId({ user: opts.requestor, dbClient: this });
+        if( userId !== null && userId !== undefined ) {
+          userAclQuery = `OR (acl_lookup.user_id = ${userId} AND acl_lookup.can_read = TRUE)`;
+        }
+      }
+      userAclQuery = ' AND (' + userAclQuery + ')';
+    }
+
+    let params = [directory, opts.limit || 100, opts.offset || 0];
+
+    let fileNameQuery = '';
+    if( opts.query ) {
+      fileNameQuery = `AND name ILIKE '%' || $4 || '%'`;
+      params.push(opts.query);
     }
 
     const sql = `
-      with dir as (
-        select directory_id from ${config.database.schema}.directory where fullname = $1
-      )
-      SELECT * FROM ${config.database.schema}.directory
-      WHERE parent_id = (select directory_id from dir)
+      SELECT 
+        d.directory_id,
+        d.fullname,
+        d.name,
+        d.parent_id,
+        d.created,
+        d.modified
+        COUNT(*) OVER() as total_count 
+      FROM ${config.database.schema}.directory d
+      LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = d.directory_id
+      WHERE parent_id = ${config.database.schema}.get_directory_id($1)
+        ${userAclQuery}
+        ${fileNameQuery}
       ORDER BY fullname ASC
       LIMIT $2 OFFSET $3;
     `;
-    let res = await this.client.query(sql, [directory, opts.limit || 100, opts.offset || 0]);
+    let res = await this.client.query(sql, params);
 
-    return res.rows;
+    let totalCount = res.rows.length > 0 ? parseInt(res.rows[0].total_count) : 0;
+    res.rows = res.rows.map(r => { delete r.total_count; return r; });
+
+    return { 
+      totalCount: totalCount, 
+      results: res.rows, 
+      offset: parseInt(opts.offset) || 0, 
+      limit: parseInt(opts.limit) || 100
+    };
+  }
+
+  /**
+   * @method getChildFiles
+   * @description Get the child files of a given directory. Assumes access checks have already been done.
+   * 
+   * @param {String} directory 
+   * @param {Object} opts
+   * @param {Number} opts.limit limit number of results. Default 100
+   * @param {Number} opts.offset offset for results. Default 0 
+   * @param {String} opts.query text to filter file names
+   * @returns 
+   */
+  async getChildFiles(directory, opts={}) {
+    let params = [directory, opts.limit || 100, opts.offset || 0];
+
+    let fileNameQuery = '';
+    if( opts.query ) {
+      fileNameQuery = `AND filename ILIKE '%' || $4 || '%'`;
+      params.push(opts.query);
+    }
+
+    const sql = `
+      SELECT 
+        *,
+        COUNT(*) OVER() as total_count 
+      FROM ${this.schema}.file 
+      WHERE directory_id = ${config.database.schema}.get_directory_id($1) 
+            ${fileNameQuery}
+      ORDER BY directory, filename ASC 
+      LIMIT $2 OFFSET $3;
+    `;
+    let res = await this.client.query(sql, params);
+
+    return { 
+      totalCount: res.rows.length > 0 ? parseInt(res.rows[0].total_count) : 0,
+      results: res.rows.map(r => { delete r.total_count; return r; }),
+      offset: parseInt(opts.offset) || 0,
+      limit: parseInt(opts.limit) || 100
+    };
   }
 
   /**
