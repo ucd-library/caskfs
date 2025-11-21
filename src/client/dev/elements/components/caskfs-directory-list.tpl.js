@@ -58,7 +58,6 @@ export function render() {
     <div>
       <div class='breadcrumbs-container'>
         <caskfs-fs-breadcrumbs></caskfs-fs-breadcrumbs>
-        <div ?hidden=${!this.ctl.qs.query.partition?.length} class='double-decker bold'>Partition Applied</div>
       </div>
       <div>
         <div ?hidden=${!this.contents.length}>

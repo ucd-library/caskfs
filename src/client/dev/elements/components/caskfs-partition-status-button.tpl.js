@@ -66,7 +66,7 @@ export function render() {
       </form>
       <button class="link-button advanced-button" @click=${this.showModalForm} type="button">
         <span ?hidden=${partitionCount <= 1}>+${partitionCount - 1} additional partitions applied</span>
-        <span ?hidden=${partitionCount > 1}>Advanced partition options</span>
+        <span ?hidden=${partitionCount > 1}>Apply Multiple Partitions</span>
       </button>
     </div>
   `;

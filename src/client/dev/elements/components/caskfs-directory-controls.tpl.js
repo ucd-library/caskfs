@@ -48,12 +48,12 @@ return html`
       @click=${() => this.ctl.directoryPath.moveUp()}
       link-aria-label='Up One Level'>
     </cork-icon-button>
-    <cork-icon-button 
+    <!-- <cork-icon-button 
       icon='fas.sort'
       title='Sort Items'
       @click=${this._onSortClick}
       link-aria-label='Sort Items'>
-    </cork-icon-button>
+    </cork-icon-button> -->
     <cork-icon-button
       icon='fas.copy'
       title='Copy Directory Path'

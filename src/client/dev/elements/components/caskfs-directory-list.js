@@ -69,30 +69,20 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
     await this.ctl.directoryPath.updateComplete;
     await this.ctl.qs.updateComplete;
 
-    const res = await this.DirectoryModel.list(this.ctl.directoryPath.pathname);
+    this.ctl.qs.pageSize = this.ctl.qs.query.limit || 20;
+    const query = {
+      offset: this.ctl.qs.pageOffset,
+      limit: this.ctl.qs.pageSize
+    };
+    if ( this.ctl.qs.query.query ){
+      query.query = this.ctl.qs.query.query;
+    }
+    const res = await this.DirectoryModel.list(this.ctl.directoryPath.pathname, query);
     if ( res.state !== 'loaded' ) {
       this.contents = [];
       return;
     }
     let contents = [];
-    const partitions = this.ctl.qs.query.partition;
-    for ( const file of res.payload.files ) {
-
-      // filter by partition if applicable
-      if ( partitions.length ) {
-        const filePartitions = file.partition_keys || [];
-        if ( !partitions.some(p => filePartitions.includes(p)) ) continue;
-      }
-
-      contents.push({
-        data: file,
-        name: file.filename,
-        lastModified: new Date(Math.round(new Date(file.modified).getTime() / 1000) * 1000),
-        size: Number(file.size),
-        kind: file.meta_data?.mimeType || '',
-        modifiedBy: file.last_modified_by || ''
-      });
-    }
     for ( const dir of res.payload.directories ) {
       contents.push({
         data: dir,
@@ -104,11 +94,23 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
       });
     }
 
-    if ( this.ctl.qs.query.sort ) {
-      contents = this.ctl.qs.multiSort(contents);
+    for ( const file of res.payload.files ) {
+      contents.push({
+        data: file,
+        name: file.filename,
+        lastModified: new Date(Math.round(new Date(file.modified).getTime() / 1000) * 1000),
+        size: Number(file.size),
+        kind: file.meta_data?.mimeType || '',
+        modifiedBy: file.last_modified_by || ''
+      });
     }
-    this.totalPages = this.ctl.qs.maxPages(contents);
-    this.contents = this.ctl.qs.paginateData(contents);
+
+
+    // if ( this.ctl.qs.query.sort ) {
+    //   contents = this.ctl.qs.multiSort(contents);
+    // }
+    this.totalPages = this.ctl.qs.maxPages(res.payload.totalCount);
+    this.contents = contents;
   }
 
   _onPageChange(e){

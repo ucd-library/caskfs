@@ -39,7 +39,7 @@ export default class CaskfsFsTypeahead extends Mixin(LitElement)
     this.render = render.bind(this);
     this.value = '';
     this.suggestions = [];
-    this.suggestionLimit = 20;
+    this.suggestionLimit = 10;
     this.fetchError = false;
     this.totalSuggestions = 0;
     this.suggestionContainerStyles = {};
@@ -101,25 +101,20 @@ export default class CaskfsFsTypeahead extends Mixin(LitElement)
 
   async getSuggestions(){
     this.fetchError = false;
-    const req = await this.DirectoryModel.list(this._value.dir, { loaderSettings: {suppressLoader: true}, errorSettings: {suppressError: true} });
+    const query = {
+      limit: this.suggestionLimit
+    }
+    if ( this._value.search ) {
+      query.query = this._value.search;
+    }
+    const req = await this.DirectoryModel.list(this._value.dir, query, { loaderSettings: {suppressLoader: true}, errorSettings: {suppressError: true} });
     if ( req.state === 'error' ){
       this.suggestions = [];
       this.fetchError = req.error.response.status !== 404;
       return;
     }
-    const suggestions = [...req.payload.directories, ...req.payload.files].map(x => new FsDisplayUtils(x)).filter(item => {
-      const hasSearch = item.name.toLowerCase().includes(this._value.search.toLowerCase());
-
-      let hasPartition = true;
-      if ( this.ctl.qs.query.partition?.length && Object.keys(item.metadata).includes('partition_keys') ) {
-        const itemPartitions = item.metadata.partition_keys || [];
-        hasPartition = this.ctl.qs.query.partition.every(p => itemPartitions.includes(p));
-      }
-
-      return hasSearch && hasPartition;
-    });
-    this.totalSuggestions = suggestions.length;
-    this.suggestions = suggestions.slice(0, this.suggestionLimit);
+    this.suggestions = [...req.payload.directories, ...req.payload.files].map(x => new FsDisplayUtils(x));
+    this.totalSuggestions = req.payload.totalCount;
   }
 
   async _onSuggestionClick(suggestion){

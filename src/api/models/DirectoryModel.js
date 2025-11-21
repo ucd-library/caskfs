@@ -14,11 +14,11 @@ class DirectoryModel extends BaseModel {
     this.inject('FsModel');
   }
 
-  list(path, appStateOptions={}) {
+  list(path, opts={}, appStateOptions={}) {
     if ( !path ) {
       path = '/';
     }
-    return this.service.list(path, appStateOptions);
+    return this.service.list(path, opts, appStateOptions);
   }
 
 }

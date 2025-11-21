@@ -66,7 +66,6 @@ export function render() {
 
       <div class='file-lookup-container' ?hidden=${ !this.ctl.directoryPath.emptyOrRoot }>
         <div>Please select a file to view its linked data relationships</div>
-        <caskfs-ld-filter-buttons .filters=${[{value: 'partition', label: 'Partition', multiple: true}]} @caskfs-ld-filter-removed=${this._onPartitionRemoved}></caskfs-ld-filter-buttons>
         <caskfs-fs-typeahead @caskfs-fs-typeahead-select=${this._onFileSelect}></caskfs-fs-typeahead>
       </div>
 
