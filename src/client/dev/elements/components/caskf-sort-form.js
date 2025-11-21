@@ -30,17 +30,20 @@ export default class CaskfSortForm extends Mixin(LitElement)
     this.options = [];
     this.selected = [];
 
-    this.qsCtl = new QueryStringController(this);
-    this.modalCtl = new ModalFormController(this, {title: this.modalTitle, submitText: this.submitText, submitCallback: '_onSubmitClick'});
+    this.ctl = {
+      qs: new QueryStringController(this),
+      modal: new ModalFormController(this, {title: this.modalTitle, submitText: this.submitText, submitCallback: '_onSubmitClick'})
+    }
+
     this._injectModel('AppStateModel');
   }
 
   willUpdate(props){
     if ( props.has('modalTitle') ) {
-      this.modalCtl.setModalTitle(this.modalTitle);
+      this.ctl.modal.setModalTitle(this.modalTitle);
     }
     if ( props.has('submitText') ) {
-      this.modalCtl.setModalSubmitButton(this.submitText);
+      this.ctl.modal.setModalSubmitButton(this.submitText);
     }
     if ( props.has('options') ) {
       this.resetState();
@@ -48,8 +51,8 @@ export default class CaskfSortForm extends Mixin(LitElement)
   }
 
   resetState(){
-    this.qsCtl.syncState();
-    const sort = this.qsCtl.sort;
+    this.ctl.qs.syncState();
+    const sort = this.ctl.qs.sort;
     const selected = [];
       this._options = this.options.map(opt => {
       const out = {
@@ -73,7 +76,7 @@ export default class CaskfSortForm extends Mixin(LitElement)
   }
 
   _onAppDialogOpen(){
-    if ( this.modalCtl.modal ) {
+    if ( this.ctl.modal.modal ) {
       this.resetState();
     }
   }
@@ -84,17 +87,17 @@ export default class CaskfSortForm extends Mixin(LitElement)
 
   _onSubmit(e){
     e.preventDefault();
-    if ( this.modalCtl.modal ){
-      this.modalCtl.submit();
+    if ( this.ctl.modal.modal ){
+      this.ctl.modal.submit();
     } else {
       this._onSubmitClick();
     }
   }
 
   async submit(){
-    this.qsCtl.sort = this.selected.filter(s => s.field);
-    this.qsCtl.setParam('page', 1);
-    this.qsCtl.setLocation();
+    this.ctl.qs.sort = this.selected.filter(s => s.field);
+    this.ctl.qs.setParam('page', 1);
+    this.ctl.qs.setLocation();
   }
 
   _onAddClick(){

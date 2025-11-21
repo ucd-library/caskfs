@@ -57,17 +57,19 @@ export default class CaskfsPartitionApplyForm extends Mixin(LitElement)
   }
 
   async _onSubmitClick(){
+    this.AppStateModel.showToast({ 
+      text: 'Partition list updated',
+      type: 'success' 
+    });
     this.ctl.qs.deleteParam('page');
     this.ctl.qs.setLocation();
   }
 
   _onAutoPathClick(){
-
     if ( this.ctl.modal.modal ){
       this.ctl.modal.closeModal();
     }
     this.AppStateModel.setLocation(appUrlUtils.fullPath('config/partitions'));
-    
   }
 
 }

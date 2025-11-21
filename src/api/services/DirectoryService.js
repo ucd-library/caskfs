@@ -15,8 +15,8 @@ class DirectoryService extends BaseService {
     return `${appUrlUtils.basePath}/api/dir`;
   }
 
-  async list(path, modelAppStateOptions={}) {
-    let ido = {path};
+  async list(path, opts={}, modelAppStateOptions={}) {
+    let ido = {path, ...opts};
     let id = payload.getKey(ido);
     const store = this.store.data.list;
 
@@ -42,6 +42,7 @@ class DirectoryService extends BaseService {
       id, store,
       () => this.request({
         url : `${this.baseUrl}${path}`,
+        qs: opts,
         checkCached : () => store.get(id),
         onUpdate : resp => this.store.set(
           payload.generate(ido, resp),

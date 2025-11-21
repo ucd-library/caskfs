@@ -9,6 +9,9 @@ export function styles() {
     :host {
       display: block;
     }
+    [hidden] {
+      display: none !important;
+    }
     .predicate-container {
       margin-bottom: 1.5rem;
       padding: 1rem 0;
@@ -74,7 +77,7 @@ export function styles() {
       --cork-icon-button-size: 1.5rem;
     }
     caskfs-ld-filter-buttons {
-      margin-bottom: 1rem;
+      margin-bottom: 2rem;
     }
     caskfs-ld-filter-buttons[has-filters] {
       margin-top: 1rem;
@@ -98,8 +101,10 @@ export function render() {
         hide-separator
         heading-style='panel'>
       </caskfs-section-header>
-      <caskfs-ld-filter-form .filters=${this.filters}></caskfs-ld-filter-form>
-      <caskfs-ld-filter-buttons .filters=${this.filters}></caskfs-ld-filter-buttons>
+      <div ?hidden=${this.hideFilterControls}>
+        <caskfs-ld-filter-form .filters=${this.filters}></caskfs-ld-filter-form>
+        <caskfs-ld-filter-buttons .filters=${this.filters}></caskfs-ld-filter-buttons>
+      </div>
       <div ?hidden=${this.relationships.length}>
         <div>No relationships found</div>
       </div>

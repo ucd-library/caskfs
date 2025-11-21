@@ -27,6 +27,7 @@ export function styles() {
       }
       .branding-bar caskfs-partition-status-button {
         margin-bottom: 0;
+        width: 250px;
       }
     }
   `;

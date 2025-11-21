@@ -71,7 +71,7 @@ export default class DirectoryPathController {
     if ( !path ){
       path = this.path.slice(1);
     }
-    const newPath = appUrlUtils.fullLocation('/' + [  ...this.pathPrefix[prefixKey], ...path ].join('/'));
+    const newPath = '/' + [  ...this.pathPrefix[prefixKey], ...path ].join('/');
     return newPath;
   }
 

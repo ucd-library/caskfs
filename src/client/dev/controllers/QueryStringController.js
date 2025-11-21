@@ -20,6 +20,14 @@ export default class QueryStringController {
   }
 
   /**
+   * @description Get unmodified query string parameters from application state merged with controller defaults
+   * @returns {Object} - the original query string parameters
+   */
+  get originalQuery(){
+    return this.syncState(null, {});
+  }
+
+  /**
    * @description Set a query string parameter
    * @param {String} key - the query string parameter key
    * @param {*} value - the query string parameter value
@@ -253,48 +261,51 @@ export default class QueryStringController {
     this.AppStateModel.setLocation(`${this.AppStateModel.store.data.location.pathname}${qs ? '?'+qs : ''}`);
   }
 
-
-  /**
-   * @description Reset query to default values based on types
-   */
-  resetQuery(){
-    const q = {};
-    for ( const key of Object.keys(this.types) ) {
-      if ( this.types[key] === 'array' ) {
-        q[key] = [];
-      } else if ( this.types[key] === 'boolean' ) {
-        q[key] = false;
-      } else {
-        q[key] = '';
-      }
-    }
-    this.query = q;
-  }
-
   /**
    * @description Sync internal query state from application state
    * @param {Object} e - Application state event data. Defaults to current app state if not provided
    */
-  syncState(e){
+  syncState(e, syncTo){
     if ( !e ) e = this.AppStateModel.store.data;
     const q = e?.location?.query || {};
-    this.resetQuery();
-    for ( const key of Object.keys(q) ) {
+
+    let query;
+    if ( syncTo ) {
+      query = syncTo;
+    } else {
+      this.query = {};
+      query = this.query;
+    }
+
+    for ( const key of Object.keys(this.types) ) {
       if ( this.types[key] === 'array' ) {
-        this.query[key] = q[key] ? q[key].split(',') : [];
+        query[key] = [];
       } else if ( this.types[key] === 'boolean' ) {
-        this.query[key] = q[key] === 'false' ? false : true;
-      } else if ( key === 'pageSize' ) {
-        const ps = parseInt(q[key]);
-        this.query[key] = isNaN(ps) ? this.pageSize : ps;
-      } else if ( key === 'page' ) {
-        const p = parseInt(q[key]);
-        this.query[key] = isNaN(p) ? 1 : p;
+        query[key] = false;
       } else {
-        this.query[key] = q[key];
+        query[key] = '';
       }
     }
-    this.host.requestUpdate();
+
+    for ( const key of Object.keys(q) ) {
+      if ( this.types[key] === 'array' ) {
+        query[key] = q[key] ? q[key].split(',') : [];
+      } else if ( this.types[key] === 'boolean' ) {
+        query[key] = q[key] === 'false' ? false : true;
+      } else if ( key === 'pageSize' ) {
+        const ps = parseInt(q[key]);
+        query[key] = isNaN(ps) ? this.pageSize : ps;
+      } else if ( key === 'page' ) {
+        const p = parseInt(q[key]);
+        query[key] = isNaN(p) ? 1 : p;
+      } else {
+        query[key] = q[key];
+      }
+    }
+    if ( !syncTo ) {
+      this.host.requestUpdate();
+    }
+    return query;
   }
 
   async _onAppStateUpdate(e) {

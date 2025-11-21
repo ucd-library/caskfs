@@ -1,5 +1,6 @@
 CREATE SCHEMA IF NOT EXISTS caskfs;
 SET search_path TO caskfs;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 ---
 -- Layer 2: Filesystem with directories and ACLs

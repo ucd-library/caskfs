@@ -302,8 +302,8 @@ class Database {
         d.name,
         d.parent_id,
         d.created,
-        d.modified
-        COUNT(*) OVER() as total_count 
+        d.modified,
+        COUNT(*) OVER() as total_count
       FROM ${config.database.schema}.directory d
       LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = d.directory_id
       WHERE parent_id = ${config.database.schema}.get_directory_id($1)
@@ -349,7 +349,7 @@ class Database {
       SELECT 
         *,
         COUNT(*) OVER() as total_count 
-      FROM ${this.schema}.file 
+      FROM ${this.schema}.file_view 
       WHERE directory_id = ${config.database.schema}.get_directory_id($1) 
             ${fileNameQuery}
       ORDER BY directory, filename ASC 
