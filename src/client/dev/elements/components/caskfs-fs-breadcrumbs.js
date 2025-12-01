@@ -19,7 +19,9 @@ export default class CaskfsFsBreadcrumbs extends LitElement {
     super();
     this.render = render.bind(this);
 
-    this.directoryPathCtl = new DirectoryPathController(this);
+    this.ctl = {
+      directoryPath: new DirectoryPathController(this)
+    };
   }
 
 }

@@ -31,6 +31,14 @@ export default class CaskfsPartitionStatusButton extends Mixin(LitElement)
     this._injectModel('AppStateModel');
   }
 
+  _onSubmit(e){
+    e?.preventDefault();
+    const toastMsg = this.ctl.qs.query.partition?.[0] ? 'Partition applied' : 'Partition removed';
+    this.AppStateModel.showToast({ text: toastMsg, type: 'success' });
+    this.ctl.qs.deleteParam('page');
+    this.ctl.qs.setLocation();
+  }
+
   showModalForm(){
     this.AppStateModel.showDialogModal({
       content: () => html`<caskfs-partition-apply-form></caskfs-partition-apply-form>`

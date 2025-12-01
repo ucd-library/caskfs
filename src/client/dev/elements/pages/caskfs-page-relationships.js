@@ -16,6 +16,7 @@ export default class CaskfsPageRelationships extends Mixin(LitElement)
   static get properties() {
     return {
       metadata: { type: Object },
+      filters: { type: Array }
     }
   }
 
@@ -27,6 +28,12 @@ export default class CaskfsPageRelationships extends Mixin(LitElement)
     super();
     this.render = render.bind(this);
     this.metadata = {};
+    this.filters = [
+      { value: 'subject', label: 'Subject' },
+      { value: 'predicate', label: 'Predicate', multiple: true },
+      { value: 'ignorePredicate', label: 'Ignore Predicate', multiple: true },
+      { value: 'graph', label: 'Graph' }
+    ];
 
     this.ctl = {
       appComponent: new AppComponentController(this),
@@ -70,6 +77,10 @@ export default class CaskfsPageRelationships extends Mixin(LitElement)
   _onCopyPathClick() {
     navigator.clipboard.writeText(this.ctl.directoryPath.pathname);
     this.AppStateModel.showToast({text: 'File system path copied to clipboard', type: 'success'});
+  }
+
+  _onPartitionRemoved(){
+    this.AppStateModel.showToast({text: 'Partition removed', type: 'success'});
   }
 
 }

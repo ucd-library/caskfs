@@ -100,6 +100,12 @@ export default class CaskfsLdFilterButtons extends Mixin(LitElement)
     }
     this.ctl.qs.setParam('page', 1);
     this.ctl.qs.setLocation();
+
+    this.dispatchEvent(new CustomEvent('caskfs-ld-filter-removed', {
+      detail: { filter },
+      bubbles: true,
+      composed: true
+    }));
   }
 
 }

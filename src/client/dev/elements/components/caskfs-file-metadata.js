@@ -33,8 +33,10 @@ export default class CaskfsFileMetadata extends Mixin(LitElement)
     this.highlightedData = '';
     this.showRaw = false;
 
-    this.appComponentCtl = new AppComponentController(this);
-    this.directoryPathCtl = new DirectoryPathController(this);
+    this.ctl = {
+      appComponent: new AppComponentController(this),
+      directoryPath: new DirectoryPathController(this)
+    }
 
     this._injectModel('AppStateModel', 'FsModel');
   }
@@ -55,13 +57,13 @@ export default class CaskfsFileMetadata extends Mixin(LitElement)
   }
 
   async _onAppStateUpdate(e) {
-    if ( !this.appComponentCtl.isOnActivePage ) return;
+    if ( !this.ctl.appComponent.isOnActivePage ) return;
     this.getMetadata();
   }
 
   async getMetadata() {
     this.data = {};
-    const res = await this.FsModel.getMetadata(this.directoryPathCtl.pathname);
+    const res = await this.FsModel.getMetadata(this.ctl.directoryPath.pathname);
     if ( res.state === 'loaded' ) {
       this.data = res.payload;
     }

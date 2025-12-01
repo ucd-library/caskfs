@@ -2,6 +2,8 @@ import { html, css, unsafeCSS } from 'lit';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import prismStyles from 'prismjs/themes/prism.css';
 
+import './caskfs-partition-toggle.js';
+
 export function styles() {
   const elementStyles = css`
     :host {
@@ -93,7 +95,10 @@ return html`
         </div>
         <div>
           <div class='prop-label'>Partitions</div>
-          <div>${this.fsUtils.partitions}</div>
+          <div>
+            <caskfs-partition-toggle .partitions=${this.data?.partition_keys || []}></caskfs-partition-toggle>
+            <div ?hidden=${(this.data?.partition_keys || []).length}>--</div>
+          </div>
         </div>
       </div>
     </div>

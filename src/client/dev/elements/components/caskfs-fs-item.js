@@ -27,7 +27,10 @@ export default class CaskfsFsItem extends Mixin(LitElement)
     this.hideSelect = false;
     this.showDirectoryLink = false;
     this.hideTypeIcon = false;
-    this.selectCtl = new DirectoryItemSelectController(this, {hostDataProperty: 'data'});
+    
+    this.ctl = {
+      select: new DirectoryItemSelectController(this, {hostDataProperty: 'data'})
+    };
 
     this._injectModel('AppStateModel');
   }

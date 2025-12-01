@@ -12,6 +12,8 @@ export default class CaskfsLdRelationships extends Mixin(LitElement)
   static get properties() {
     return {
       inbound: { type: Boolean },
+      hideFilterControls: { type: Boolean, attribute: 'hide-filter-controls' },
+      bidirectionalFiltering: { type: Boolean, attribute: 'bidirectional-filtering' },
       relationships: { type: Array },
       brandColor: { type: String, attribute: 'brand-color' },
       filters: { type: Array },
@@ -26,6 +28,8 @@ export default class CaskfsLdRelationships extends Mixin(LitElement)
     super();
     this.render = render.bind(this);
     this.inbound = false;
+    this.hideFilterControls = false;
+    this.bidirectionalFiltering = false;
     this.relationships = [];
     this.brandColor = 'ucd-gold';
 
@@ -48,11 +52,18 @@ export default class CaskfsLdRelationships extends Mixin(LitElement)
   willUpdate(props){
     if ( props.has('inbound') ) {
       this.filters = [
-        { value: 'subject', label: 'Subject', queryParam: `${this.inbound ? 'inbound' : 'outbound'}-subject` },
-        { value: 'predicate', label: 'Predicate', multiple: true, queryParam: `${this.inbound ? 'inbound' : 'outbound'}-predicate` },
-        { value: 'ignorePredicate', label: 'Ignore Predicate', multiple: true, queryParam: `${this.inbound ? 'inbound' : 'outbound'}-ignore-predicate` },
-        { value: 'graph', label: 'Graph', queryParam: `${this.inbound ? 'inbound' : 'outbound'}-graph` }
-      ];
+        { value: 'subject', label: 'Subject' },
+        { value: 'predicate', label: 'Predicate', multiple: true },
+        { value: 'ignorePredicate', label: 'Ignore Predicate', multiple: true },
+        { value: 'graph', label: 'Graph' }
+      ].map(f => {
+        if ( this.bidirectionalFiltering ) {
+          f.queryParam = f.value;
+        } else {
+          f.queryParam = `${this.inbound ? 'inbound' : 'outbound'}-${f.value}`;
+        }
+        return f;
+      });
     }
   }
 
