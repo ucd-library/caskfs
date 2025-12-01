@@ -37,6 +37,9 @@ export function styles() {
     caskfs-directory-list .breadcrumbs-container caskfs-fs-breadcrumbs {
       flex-grow: 1;
     }
+    caskfs-directory-list caskfs-fs-typeahead {
+      width: 100%;
+    }
     @container (min-width: 775px) {
       caskfs-directory-list .table-header .desktop-view {
         display: grid;
@@ -46,6 +49,11 @@ export function styles() {
       }
       caskfs-directory-list .table-header .mobile-view {
         display: none;
+      }
+    }
+    @container (min-width: 500px) {
+      caskfs-directory-list caskfs-fs-typeahead {
+        width: 300px;
       }
     }
   `;
@@ -58,6 +66,12 @@ export function render() {
     <div>
       <div class='breadcrumbs-container'>
         <caskfs-fs-breadcrumbs></caskfs-fs-breadcrumbs>
+        <caskfs-fs-typeahead 
+          placeholder="Search this directory"
+          .directory=${this.ctl.directoryPath.pathname}
+          focus-first
+          @caskfs-fs-typeahead-select=${this._onSearchSelect}>
+        </caskfs-fs-typeahead>
       </div>
       <div>
         <div ?hidden=${!this.contents.length}>

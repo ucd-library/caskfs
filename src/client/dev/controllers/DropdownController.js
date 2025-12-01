@@ -13,8 +13,8 @@ import { styleMap } from 'lit/directives/style-map.js';
 /**
  * @description Controller to manage custom dropdown positioning and visibility
  * @property {Boolean} open - Whether the dropdown is open
- * @property {Object} dropdownStyles - The computed styles for the dropdown based on its open state and position
- * @property {Object} dropdownStyleMap - The styleMap directive for the dropdown styles
+ * @property {Object} styles - The computed styles for the dropdown based on its open state and position
+ * @property {Object} styleMap - The styleMap directive for the dropdown styles
  * @param {LitElement} host The host element the controller is attached to
  * @param {DropdownControllerOptions} opts Options for configuring the dropdown behavior
  */
@@ -51,7 +51,7 @@ export default class DropdownController {
     return this._open;
   }
 
-  get dropdownStyles() {
+  get styles() {
     if ( !this.open ) return { display: 'none' };
     const hostRect = this.host.getBoundingClientRect();
     let styles = {
@@ -78,8 +78,8 @@ export default class DropdownController {
     return styles;
   }
 
-  get dropdownStyleMap() {
-    return styleMap( this.dropdownStyles );
+  get styleMap() {
+    return styleMap( this.styles );
   }
 
   _onWindowResize(){
