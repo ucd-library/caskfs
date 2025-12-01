@@ -67,13 +67,13 @@ return html`
     <input
       id="value-input"
       type="text"
-      placeholder="Search for a file..."
+      placeholder=${this.placeholder}
       .value=${this.value}
       @input=${this._onValueInput}
       @focus=${this._onValueFocus}
       autocomplete="off"
     />
-    <div class="suggestions" style=${this.ctl.dropdown.dropdownStyleMap}>
+    <div class="suggestions" style=${this.ctl.dropdown.styleMap}>
       <div ?hidden=${!this.fetchError} class="error">Error fetching suggestions</div>
       <div ?hidden=${this.fetchError || !this.suggestions.length} class="suggestion-list">
         <div>

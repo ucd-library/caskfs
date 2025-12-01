@@ -9,6 +9,7 @@ import DirectoryPathController from '../../controllers/DirectoryPathController.j
 import QueryStringController from '../../controllers/QueryStringController.js';
 import DirectoryItemSelectController from '../../controllers/DirectoryItemSelectController.js';
 import ScrollController from '../../controllers/ScrollController.js';
+import appUrlUtils from '../../utils/appUrlUtils.js';
 
 export default class CaskfsDirectoryList extends Mixin(LitElement)
   .with(LitCorkUtils, MainDomElement) {
@@ -116,6 +117,19 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
   _onPageChange(e){
     this.ctl.qs.setParam('page', e.detail.page);
     this.ctl.qs.setLocation();
+  }
+
+  /**
+   * @description Handle selection from typeahead search of directory contents
+   * @param {*} e 
+   */
+  _onSearchSelect(e) {
+    if ( e.detail?.suggestion.isDirectory ) {
+      this.AppStateModel.setLocation(appUrlUtils.fullLocation(`/directory${e.detail.suggestion.metadata.fullname}`));
+    } else {
+      this.AppStateModel.setLocation(appUrlUtils.fullLocation(`/file${e.detail.suggestion.metadata.filepath}`));
+    }
+    
   }
 
 }

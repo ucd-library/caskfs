@@ -88,7 +88,6 @@ export function styles() {
     caskfs-fs-item .name-link {
       text-decoration: none;
       display: flex;
-      align-items: center;
       gap: .5rem;
       font-weight: 700;
       color: var(--ucd-blue-80, #13639e);
