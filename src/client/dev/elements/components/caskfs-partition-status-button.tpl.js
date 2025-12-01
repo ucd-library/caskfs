@@ -38,7 +38,11 @@ export function styles() {
       margin-top: .25rem;
       width: 100%;
       display: block;
-      text-align: right;
+    }
+    @media (min-width: 768px) {
+      .advanced-button {
+        text-align: right;
+      }
     }
   `;
 
