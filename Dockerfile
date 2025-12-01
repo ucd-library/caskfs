@@ -8,6 +8,7 @@ RUN npm install --production
 
 COPY src ./src
 
+RUN npm run client-build-dist
 RUN npm install -g .
 RUN npm link
 
