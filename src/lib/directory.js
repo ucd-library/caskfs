@@ -75,7 +75,7 @@ class Directory {
     for (let part of parts) {
       let fullPath = path.posix.join(currentPath, part);
 
-      let res = await opts.dbClient.query(`select * from get_directory_id($1)`, [fullPath]);
+      let res = await opts.dbClient.query(`select get_directory_id($1) as directory_id`, [fullPath]);
       if( res.rows.length > 0 ) {
         // directory already exists, move to next
         parentId = res.rows[0].directory_id;
