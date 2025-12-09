@@ -146,6 +146,11 @@ class CaskFs {
     try {
       await dbClient.query('BEGIN');
 
+      // we have some hangs, this is partially a debugging step to see if we can catch them
+      // however, setting lock and statement timeouts is also a good idea to prevent
+      await dbClient.query(`SET lock_timeout TO '${config.postgres.lockTimeout}s'`);
+      await dbClient.query(`SET statement_timeout TO '${config.postgres.statementTimeout}s'`);
+
       context.update({
         fileExists: await dbClient.fileExists(filePath)
       });
