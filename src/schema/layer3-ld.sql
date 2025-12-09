@@ -53,17 +53,16 @@ CREATE TABLE IF NOT EXISTS caskfs.ld_filter (
 CREATE INDEX IF NOT EXISTS idx_ld_filter_type_uri ON caskfs.ld_filter(type, uri_id);
 
 CREATE TABLE IF NOT EXISTS caskfs.file_ld_filter (
-    file_ld_filter_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     file_id UUID NOT NULL REFERENCES caskfs.file(file_id) ON DELETE CASCADE,
     ld_filter_id UUID NOT NULL REFERENCES caskfs.ld_filter(ld_filter_id),
-    UNIQUE(file_id, ld_filter_id)
+    PRIMARY KEY (file_id, ld_filter_id)
 );
-CREATE INDEX IF NOT EXISTS idx_file_ld_filter_file_id ON caskfs.file_ld_filter(file_id);
+-- the file_id index can be leveraged from the PK index
+-- CREATE INDEX IF NOT EXISTS idx_file_ld_filter_file_id ON caskfs.file_ld_filter(file_id);
 CREATE INDEX IF NOT EXISTS idx_file_ld_filter_ld_filter_id ON caskfs.file_ld_filter(ld_filter_id);
 
 CREATE OR REPLACE VIEW caskfs.file_ld_filter_view AS
 SELECT
-    flf.file_ld_filter_id,
     fv.filepath,
     ldf.type,
     u.uri
@@ -82,14 +81,14 @@ CREATE INDEX IF NOT EXISTS idx_ld_link_predicate ON caskfs.ld_link(predicate);
 CREATE INDEX IF NOT EXISTS idx_ld_link_object ON caskfs.ld_link(object);
 
 CREATE TABLE IF NOT EXISTS caskfs.file_ld_link (
-    file_ld_link_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     file_id UUID NOT NULL REFERENCES caskfs.file(file_id) ON DELETE CASCADE,
     ld_link_id UUID NOT NULL REFERENCES caskfs.ld_link(ld_link_id),
-    UNIQUE(file_id, ld_link_id)
+    PRIMARY KEY (file_id, ld_link_id)
 );
 CREATE INDEX IF NOT EXISTS idx_file_ld_link_ld_link_file_id ON caskfs.file_ld_link (ld_link_id, file_id);
-CREATE INDEX IF NOT EXISTS idx_file_ld_link_file_id ON caskfs.file_ld_link(file_id);
-CREATE INDEX IF NOT EXISTS idx_file_ld_link_ld_link_id ON caskfs.file_ld_link(ld_link_id);
+-- the file_id index can be leveraged from the PK index
+-- CREATE INDEX IF NOT EXISTS idx_file_ld_link_file_id ON caskfs.file_ld_link(file_id);
+-- CREATE INDEX IF NOT EXISTS idx_file_ld_link_ld_link_id ON caskfs.file_ld_link(ld_link_id);
 
 CREATE OR REPLACE VIEW caskfs.file_ld_link_view AS
 SELECT
