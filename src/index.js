@@ -123,7 +123,7 @@ class CaskFs {
     
     let dbClient;
     if( this.isPooled ) {
-      dbClient = await this.dbClient.connect();
+      dbClient = await this.dbClient.getPoolClient();
     } else {
       dbClient = new Database({
         type: context.data.dbType || config.database.client
