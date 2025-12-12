@@ -303,10 +303,17 @@ class Rdf {
         // handle empty @id values by assigning blank cask:/ IDs
         this._setEmptyIds(data);
 
-        fileQuads = await jsonld.canonize(data, {
-          algorithm: 'URDNA2015',
+        data = await jsonld.expand(data);
+
+        // fileQuads = await jsonld.canonize(data, {
+        //   algorithm: 'URDNA2015',
+        //   format: this.nquadsMimeType,
+        //   safe: true,
+        //   documentLoader: customLoader,
+        //   logger: ldlogger
+        // });
+         fileQuads = await jsonld.toRDF(data, {
           format: this.nquadsMimeType,
-          safe: true,
           documentLoader: customLoader
         });
 
@@ -363,8 +370,12 @@ class Rdf {
     }
 
     let caskQuads = this.quadsParser.parse(
-      await jsonld.canonize(caskFileNode, {
-        algorithm: 'URDNA2015',
+      // await jsonld.canonize(caskFileNode, {
+      //   algorithm: 'URDNA2015',
+      //   format: 'application/n-quads',
+      //   safe: true
+      // });
+      await jsonld.toRDF(caskFileNode, {
         format: 'application/n-quads',
         safe: true
       })

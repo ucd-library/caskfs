@@ -721,14 +721,14 @@ class CaskFs {
     let dirPath = context.data.directory;
     let softDelete = context.data.softDelete || false;
 
-    if( !context.data.rootDir ) {
+    if( !context.data.casFilePaths ) {
       let dbClient = new Database({
         type: context.data.dbType || config.database.client
       });
 
       context.update({
-        rootDir: dirPath,
         casFilePaths: [],
+        rootDir: dirPath,
         dbClient
       });
 
@@ -741,7 +741,7 @@ class CaskFs {
 
     let ls = await this.ls(context);
     for( let file of ls.files ) {
-      context.data.casFilePaths.push(file.fullPath);
+      context.data.casFilePaths.push(file.hash_value);
       await this.deleteFile({
         filePath: file.filepath, 
         dbClient: context.data.dbClient, 
@@ -755,8 +755,7 @@ class CaskFs {
     for( let dir of ls.directories ) {
       await this.deleteDirectory(
         createContext({
-          directory: dir.name,
-          rootDir : context.data.rootDir,
+          directory: dir.fullname,
           requestor: context.data.requestor,
           casFilePaths: context.data.casFilePaths,
           dbClient: context.data.dbClient
@@ -777,7 +776,7 @@ class CaskFs {
       if( softDelete !== true ) {
         for( let casFilePath of context.data.casFilePaths ) {
           try {
-            await fs.unlink(casFilePath);
+            await fs.unlink(this.cas.diskPath(casFilePath));
           } catch (err) {
             this.logger.error(`Error deleting CAS file: ${casFilePath}`, {error: err.message});
           }
