@@ -4,7 +4,7 @@ SELECT
     (SELECT COUNT(*) FROM caskfs.unused_hashes) AS unused_hashes,
     (SELECT COUNT(*) FROM caskfs.file) AS total_files,
     (SELECT COUNT(*) FROM caskfs.directory) AS total_directories,
-    (SELECT COUNT(*) FROM caskfs.file_partition_key) AS total_file_partition_keys,
+    (SELECT COUNT(*) FROM caskfs.partition_key) AS total_partition_keys,
     (SELECT COUNT(*) FROM caskfs.acl_user) AS total_acl_users,
     (SELECT COUNT(*) FROM caskfs.acl_role) AS total_acl_roles,
     (SELECT COUNT(*) FROM caskfs.ld_filter WHERE type = 'subject') AS total_ld_subject_filters,
