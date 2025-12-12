@@ -11,6 +11,7 @@ class PgClient {
     this.opts = opts;
 
     if( opts.pool ) {
+      this.isPool = true;
       this.client = new Pool({
         host: config.postgres.host,
         port: config.postgres.port,
@@ -38,6 +39,10 @@ class PgClient {
   }
 
   async connect(cb) {
+    if (this.isPool) {
+      return; // Pool does not require explicit connect
+    }
+
     if (this.connected) {
       return; // Already connected
     }
@@ -108,6 +113,13 @@ class PgClient {
 
   async end() {
     await this.client.end();
+  }
+
+  release() {
+    if ( !this.isPool ) {
+      throw new Error('Cannot release a non-pooled client');
+    }
+    this.client.release();
   }
 
 }

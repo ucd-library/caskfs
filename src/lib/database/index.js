@@ -41,6 +41,19 @@ class Database {
     }
   }
 
+  async getPoolClient() {
+    if( !this.client.isPool ) {
+      throw new Error('Database client is not a pool');
+    }
+    return new Database({
+      client: await this.client.client.connect()
+    });
+  }
+
+  release() {
+    return this.client.release();
+  }
+
   connect() {
     return this.client.connect();
   }
