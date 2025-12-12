@@ -23,6 +23,7 @@ class CaskFs {
       type: opts.dbType || config.database.client,
       pool: !!opts.dbPool
     });
+    this.isPooled = !!opts.dbPool;
 
     // override config options with opts
     if( opts.rootDir ) {
@@ -119,17 +120,22 @@ class CaskFs {
     await this.canWriteFile(context);
 
     // open single connection to postgres and start a transaction
-    let dbClient = new Database({
-      type: context.data.dbType || config.database.client
-    });
-    await dbClient.connect();
+    
+    let dbClient;
+    if( this.isPooled ) {
+      dbClient = await this.dbClient.connect();
+    } else {
+      dbClient = new Database({
+        type: context.data.dbType || config.database.client
+      });
+      await dbClient.connect();
+    }
 
     context.update({
       dbClient,
       metadata: {},
       fileExists: false,
       primaryDigest: config.digests[0],
-      dbClient,
       actions : {
         replacedFile : false,
         detectedLd : false,
@@ -342,7 +348,13 @@ class CaskFs {
         await this.cas.abortWrite(context.stagedFile.tmpFile);
       }
 
-      await dbClient.end();
+      // close or releasethe pg client socket connection
+      if( this.isPooled ) {
+        dbClient.release();
+      } else {
+        await dbClient.end();
+      }
+
       return context;
     }
 
@@ -356,8 +368,12 @@ class CaskFs {
       context.data.actions.deletedOldHashFile = deleteResp.fileDeleted;
     }
 
-    // close the pg client socket connection
-    await dbClient.end();
+    // close or releasethe pg client socket connection
+    if( this.isPooled ) {
+      dbClient.release();
+    } else {
+      await dbClient.end();
+    }
 
     return context;
   }

@@ -226,6 +226,7 @@ class Cas {
       files: []
     };
     
+    // JM - TODO: can we should have all this info 
     let files = await this.dbClient.query(`
       select * from ${config.database.schema}.file_view where hash_value = $1
     `, [hash]);
