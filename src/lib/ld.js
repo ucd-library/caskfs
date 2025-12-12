@@ -303,7 +303,9 @@ class Rdf {
         // handle empty @id values by assigning blank cask:/ IDs
         this._setEmptyIds(data);
 
-        data = await jsonld.expand(data);
+        // data = await jsonld.expand(data, {
+        //   documentLoader: customLoader
+        // });
 
         // fileQuads = await jsonld.canonize(data, {
         //   algorithm: 'URDNA2015',

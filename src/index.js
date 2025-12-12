@@ -739,6 +739,8 @@ class CaskFs {
       throw new Error('Cannot delete root directory');
     }
 
+    // TODO: need to fix this, perhaps loop by 100s
+    context.data.limit = 100000;
     let ls = await this.ls(context);
     for( let file of ls.files ) {
       context.data.casFilePaths.push(file.hash_value);
