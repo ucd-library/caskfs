@@ -192,7 +192,6 @@ BEGIN
     FROM caskfs.ld_filter WHERE type = p_type AND uri_id = v_uri_id;
 
     IF v_ld_filter_id IS NULL THEN
-        RAISE WARNING '2 Did not find existing ld_filter_id % for type % and uri_id %', v_ld_filter_id, p_type, v_uri_id;
         INSERT INTO caskfs.ld_filter (type, uri_id)
         VALUES (p_type, v_uri_id)
         ON CONFLICT (type, uri_id) DO UPDATE SET type = EXCLUDED.type
