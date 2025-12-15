@@ -33,7 +33,7 @@ BEGIN
 
     INSERT INTO caskfs.uri (uri)
     VALUES (p_uri)
-    ON CONFLICT (uri) DO NOTHING
+    ON CONFLICT (uri) DO UPDATE SET uri = EXCLUDED.uri
     RETURNING uri_id INTO v_uri_id;
 
     RETURN v_uri_id;
@@ -184,12 +184,20 @@ CREATE OR REPLACE FUNCTION caskfs.insert_file_ld_filter(
 RETURNS VOID AS $$
 DECLARE
     v_uri_id UUID;
+    v_ld_filter_id UUID;
 BEGIN
     v_uri_id := caskfs.upsert_uri(p_uri);
 
-    INSERT INTO caskfs.ld_filter (type, uri_id)
-    VALUES (p_type, v_uri_id)
-    ON CONFLICT (type, uri_id) DO NOTHING;
+    SELECT ld_filter_id INTO v_ld_filter_id 
+    FROM caskfs.ld_filter WHERE type = p_type AND uri_id = v_uri_id;
+
+    IF v_ld_filter_id IS NULL THEN
+        RAISE WARNING '2 Did not find existing ld_filter_id % for type % and uri_id %', v_ld_filter_id, p_type, v_uri_id;
+        INSERT INTO caskfs.ld_filter (type, uri_id)
+        VALUES (p_type, v_uri_id)
+        ON CONFLICT (type, uri_id) DO UPDATE SET type = EXCLUDED.type
+        RETURNING ld_filter_id INTO v_ld_filter_id;
+    END IF;
 
     INSERT INTO caskfs.file_ld_filter (file_id, ld_filter_id)
     VALUES (
@@ -226,12 +234,20 @@ CREATE OR REPLACE FUNCTION caskfs.insert_file_ld_link(
 DECLARE
     v_predicate_uri_id UUID;
     v_object_uri_id UUID;
+    v_ld_link_id UUID;
 BEGIN
     v_predicate_uri_id := caskfs.upsert_uri(p_predicate);
     v_object_uri_id := caskfs.upsert_uri(p_object); 
-    INSERT INTO caskfs.ld_link (predicate, object)
-    VALUES (v_predicate_uri_id, v_object_uri_id)
-    ON CONFLICT (predicate, object) DO NOTHING;
+
+    SELECT ld_link_id INTO v_ld_link_id 
+    FROM caskfs.ld_link WHERE predicate = v_predicate_uri_id AND object = v_object_uri_id;
+
+    IF v_ld_link_id IS NULL THEN
+        INSERT INTO caskfs.ld_link (predicate, object)
+        VALUES (v_predicate_uri_id, v_object_uri_id)
+        ON CONFLICT (predicate, object) DO UPDATE SET predicate = EXCLUDED.predicate
+        RETURNING ld_link_id INTO v_ld_link_id;
+    END IF;
 
     INSERT INTO caskfs.file_ld_link (file_id, ld_link_id)
     VALUES (
