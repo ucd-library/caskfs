@@ -201,7 +201,7 @@ BEGIN
     INSERT INTO caskfs.file_ld_filter (file_id, ld_filter_id)
     VALUES (
         p_file_id,
-        (SELECT ld_filter_id FROM caskfs.ld_filter WHERE type = p_type AND uri_id = v_uri_id)
+        v_ld_filter_id
     )
     ON CONFLICT (file_id, ld_filter_id) DO NOTHING;
 END;
@@ -251,7 +251,7 @@ BEGIN
     INSERT INTO caskfs.file_ld_link (file_id, ld_link_id)
     VALUES (
         p_file_id,
-        (SELECT ld_link_id FROM caskfs.ld_link WHERE predicate = v_predicate_uri_id AND object = v_object_uri_id)
+        v_ld_link_id
     )
     ON CONFLICT (file_id, ld_link_id) DO NOTHING;
 END;

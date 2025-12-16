@@ -60,7 +60,7 @@ const config = {
     password : env.CASKFS_PG_PASSWORD || 'postgres',
     database : env.CASKFS_PG_DATABASE || 'postgres',
     lockTimeout : parseInt(env.CASKFS_PG_LOCK_TIMEOUT) || 10, // seconds
-    statementTimeout : parseInt(env.CASKFS_PG_STATEMENT_TIMEOUT) || 5 // seconds
+    statementTimeout : parseInt(env.CASKFS_PG_STATEMENT_TIMEOUT) || 10 // seconds
   },
 
   webapp : {
