@@ -382,7 +382,12 @@ SELECT
     h.value AS hash_value,
     h.digests AS digests,
     f.metadata,
-    fpk.partition_keys AS partition_keys,
+    (
+        SELECT array_agg(pk.value)
+        FROM caskfs.file_partition_key fpk
+        JOIN caskfs.partition_key pk ON fpk.partition_key_id = pk.partition_key_id
+        WHERE fpk.file_id = f.file_id
+    ) AS partition_keys,
     f.created,
     f.modified,
     f.last_modified_by,
@@ -390,8 +395,7 @@ SELECT
     h.bucket AS bucket
 FROM caskfs.file f
 JOIN caskfs.hash h ON f.hash_id = h.hash_id
-LEFT JOIN caskfs.directory d ON f.directory_id = d.directory_id
-LEFT JOIN caskfs.file_partition_keys fpk ON f.file_id = fpk.file_id;
+LEFT JOIN caskfs.directory d ON f.directory_id = d.directory_id;
 
 CREATE OR REPLACE VIEW caskfs.simple_file_view AS
 SELECT

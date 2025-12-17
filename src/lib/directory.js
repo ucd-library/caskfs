@@ -74,7 +74,16 @@ class Directory {
 
     for (let part of parts) {
       let fullPath = path.posix.join(currentPath, part);
-      let res = await opts.dbClient.query(
+
+      let res = await opts.dbClient.query(`select ${config.database.schema}.get_directory_id($1) as directory_id`, [fullPath]);
+      if( res.rows.length > 0 && res.rows[0].directory_id ) {
+        // directory already exists, move to next
+        parentId = res.rows[0].directory_id;
+        currentPath = fullPath;
+        continue;
+      }
+
+      res = await opts.dbClient.query(
         `INSERT INTO ${config.database.schema}.directory (fullname, parent_id)
          VALUES ($1, $2)
          ON CONFLICT (fullname) DO UPDATE SET fullname = EXCLUDED.fullname

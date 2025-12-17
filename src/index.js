@@ -23,6 +23,7 @@ class CaskFs {
       type: opts.dbType || config.database.client,
       pool: !!opts.dbPool
     });
+    this.isPooled = !!opts.dbPool;
 
     // override config options with opts
     if( opts.rootDir ) {
@@ -119,17 +120,22 @@ class CaskFs {
     await this.canWriteFile(context);
 
     // open single connection to postgres and start a transaction
-    let dbClient = new Database({
-      type: context.data.dbType || config.database.client
-    });
-    await dbClient.connect();
+    
+    let dbClient;
+    if( this.isPooled ) {
+      dbClient = await this.dbClient.getPoolClient();
+    } else {
+      dbClient = new Database({
+        type: context.data.dbType || config.database.client
+      });
+      await dbClient.connect();
+    }
 
     context.update({
       dbClient,
       metadata: {},
       fileExists: false,
       primaryDigest: config.digests[0],
-      dbClient,
       actions : {
         replacedFile : false,
         detectedLd : false,
@@ -145,6 +151,11 @@ class CaskFs {
     //any operations that fail should rollback the transaction and delete the temp file
     try {
       await dbClient.query('BEGIN');
+
+      // we have some hangs, this is partially a debugging step to see if we can catch them
+      // however, setting lock and statement timeouts is also a good idea to prevent
+      await dbClient.query(`SET lock_timeout TO '${config.postgres.lockTimeout}s'`);
+      await dbClient.query(`SET statement_timeout TO '${config.postgres.statementTimeout}s'`);
 
       context.update({
         fileExists: await dbClient.fileExists(filePath)
@@ -337,7 +348,13 @@ class CaskFs {
         await this.cas.abortWrite(context.stagedFile.tmpFile);
       }
 
-      await dbClient.end();
+      // close or releasethe pg client socket connection
+      if( this.isPooled ) {
+        dbClient.release();
+      } else {
+        await dbClient.end();
+      }
+
       return context;
     }
 
@@ -351,8 +368,12 @@ class CaskFs {
       context.data.actions.deletedOldHashFile = deleteResp.fileDeleted;
     }
 
-    // close the pg client socket connection
-    await dbClient.end();
+    // close or releasethe pg client socket connection
+    if( this.isPooled ) {
+      dbClient.release();
+    } else {
+      await dbClient.end();
+    }
 
     return context;
   }
@@ -716,14 +737,14 @@ class CaskFs {
     let dirPath = context.data.directory;
     let softDelete = context.data.softDelete || false;
 
-    if( !context.data.rootDir ) {
+    if( !context.data.casFilePaths ) {
       let dbClient = new Database({
         type: context.data.dbType || config.database.client
       });
 
       context.update({
-        rootDir: dirPath,
         casFilePaths: [],
+        rootDir: dirPath,
         dbClient
       });
 
@@ -734,9 +755,11 @@ class CaskFs {
       throw new Error('Cannot delete root directory');
     }
 
+    // TODO: need to fix this, perhaps loop by 100s
+    context.data.limit = 100000;
     let ls = await this.ls(context);
     for( let file of ls.files ) {
-      context.data.casFilePaths.push(file.fullPath);
+      context.data.casFilePaths.push(file.hash_value);
       await this.deleteFile({
         filePath: file.filepath, 
         dbClient: context.data.dbClient, 
@@ -750,8 +773,7 @@ class CaskFs {
     for( let dir of ls.directories ) {
       await this.deleteDirectory(
         createContext({
-          directory: dir.name,
-          rootDir : context.data.rootDir,
+          directory: dir.fullname,
           requestor: context.data.requestor,
           casFilePaths: context.data.casFilePaths,
           dbClient: context.data.dbClient
@@ -772,7 +794,7 @@ class CaskFs {
       if( softDelete !== true ) {
         for( let casFilePath of context.data.casFilePaths ) {
           try {
-            await fs.unlink(casFilePath);
+            await fs.unlink(this.cas.diskPath(casFilePath));
           } catch (err) {
             this.logger.error(`Error deleting CAS file: ${casFilePath}`, {error: err.message});
           }
