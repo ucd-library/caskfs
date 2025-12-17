@@ -106,10 +106,6 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
       });
     }
 
-
-    // if ( this.ctl.qs.query.sort ) {
-    //   contents = this.ctl.qs.multiSort(contents);
-    // }
     this.totalPages = this.ctl.qs.maxPages(res.payload.totalCount);
     this.contents = contents;
   }
@@ -119,17 +115,21 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
     this.ctl.qs.setLocation();
   }
 
+  _onSearchSubmit(e) {
+    let path = e.detail.value;
+    if ( !path.startsWith('/') ) {
+      path = '/' + path;
+    }
+    this.AppStateModel.setLocation(appUrlUtils.fullLocation(`/directory${path}`));
+  }
+
   /**
    * @description Handle selection from typeahead search of directory contents
    * @param {*} e 
    */
   _onSearchSelect(e) {
-    if ( e.detail?.suggestion.isDirectory ) {
-      this.AppStateModel.setLocation(appUrlUtils.fullLocation(`/directory${e.detail.suggestion.metadata.fullname}`));
-    } else {
-      this.AppStateModel.setLocation(appUrlUtils.fullLocation(`/file${e.detail.suggestion.metadata.filepath}`));
-    }
-    
+    if ( e.detail?.suggestion.isDirectory ) return;
+    this.AppStateModel.setLocation(appUrlUtils.fullLocation(`/file${e.detail.suggestion.metadata.filepath}`));
   }
 
 }

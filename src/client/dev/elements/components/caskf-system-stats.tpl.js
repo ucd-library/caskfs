@@ -78,7 +78,7 @@ export function render() {
                 <cork-icon icon="fas.layer-group"></cork-icon>
               </div>
               <div class="factoid__body">
-                <h2 class="factoid__big-text">${this.stats.total_file_partition_keys || 0}</h2>
+                <h2 class="factoid__big-text">${this.stats.total_partition_keys || 0}</h2>
                 <h3 class="factoid__small-text">
                   <div class='no-wrap'>Partition Keys</div>
                 </h3>

@@ -67,9 +67,10 @@ export function render() {
       <div class='breadcrumbs-container'>
         <caskfs-fs-breadcrumbs></caskfs-fs-breadcrumbs>
         <caskfs-fs-typeahead 
-          placeholder="Search this directory"
-          .directory=${this.ctl.directoryPath.pathname}
+          placeholder="Search the file system"
           focus-first
+          show-submit-button
+          @caskfs-fs-typeahead-submit=${this._onSearchSubmit}
           @caskfs-fs-typeahead-select=${this._onSearchSelect}>
         </caskfs-fs-typeahead>
       </div>
