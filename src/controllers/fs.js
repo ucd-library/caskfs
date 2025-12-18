@@ -2,6 +2,7 @@ import { Router, json } from 'express';
 import handleError from './handleError.js';
 import caskFs from './caskFs.js';
 import { pipeline } from 'stream/promises';
+import { Validator } from './validate.js';
 
 const router = Router();
 
@@ -82,10 +83,21 @@ router.patch(/(.*)/, (req, res) => {
 router.delete(/(.*)/, json(), async (req, res) => {
   try {
     const filePath = req.params[0] || '/';
-    const options = {
-      softDelete: req.body?.softDelete === true || req.query?.softDelete === 'true'
-    };
-    const result = await caskFs.delete({filePath, corkTraceId: req.corkTraceId}, options);
+    const validator = new Validator({
+      softDelete: { type: 'boolean' },
+      directory: { type: 'boolean' }
+    });
+    const options = validator.validate({...req.query, ...(req.body || {}) });
+    let result;
+    if( options.directory ) {
+      options.directory = filePath;
+      await caskFs.deleteDirectory(options);
+      // directory delete does not return anything.
+      result = { success: true };
+    } else {
+      options.filePath = filePath;
+      result = await caskFs.deleteFile(options);
+    }
     res.status(200).json(result);
   } catch (e) {
     return handleError(res, req, e);

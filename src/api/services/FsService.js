@@ -21,7 +21,7 @@ class FsService extends BaseService {
     const store = this.store.data.delete;
 
     const appStateOptions = {
-      errorSettings: {message: 'Unable to delete file'},
+      errorSettings: {message: `Unable to delete ${options.directory ? 'directory' : 'file'}`},
       loaderSettings: {suppressLoader: true}
     };
 
