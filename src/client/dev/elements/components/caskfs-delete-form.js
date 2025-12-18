@@ -37,14 +37,27 @@ export default class CaskfsDeleteForm extends Mixin(LitElement)
 
   willUpdate(props){
     if ( props.has('items') ) {
-      if ( !this.items ) this.items = [];
-      if ( !Array.isArray(this.items) ) this.items = [this.items];
-      if ( this.items.length === 1 ) {
-        this.isSingleFile = !!this.items[0]?.filepath;
-        this.isSingleDirectory = !this.items[0]?.filepath;
-      }
-      this.reqOptions = {};
+      this.updateState();
     }
+  }
+
+  _onAppDialogOpen(){
+    if ( this.ctl.modal.modal ){
+      this.updateState();
+    }
+  }
+
+  updateState(){
+    if ( !this.items ) this.items = [];
+    if ( !Array.isArray(this.items) ) this.items = [this.items];
+    if ( this.items.length === 1 ) {
+      this.isSingleFile = !!this.items[0]?.filepath;
+      this.isSingleDirectory = !this.items[0]?.filepath;
+    } else {
+      this.isSingleFile = false;
+      this.isSingleDirectory = false;
+    }
+    this.reqOptions = {};
   }
 
   _onSubmit(e){
@@ -58,15 +71,18 @@ export default class CaskfsDeleteForm extends Mixin(LitElement)
 
   async submit(){
     let r;
-    if ( this.isSingleFile ){
+    if ( this.isSingleFile ) {
       r = await this.FsModel.delete(this.items[0].filepath, this.reqOptions);
+    } else if ( this.isSingleDirectory ){
+      this.reqOptions.directory = true;
+      r = await this.FsModel.delete(this.items[0].fullname, this.reqOptions);
     }
-
+    console.log('delete result', r);
     return r;
   }
 
   async _onSubmitClick(){
-    if ( !this.isSingleFile ){
+    if ( !this.isSingleFile && !this.isSingleDirectory ) {
       console.warn('Bulk delete not implemented yet');
       return;
     }

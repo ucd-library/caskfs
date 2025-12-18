@@ -26,7 +26,6 @@ return html`
       <div ?hidden=${!this.isSingleDirectory}>
         <div class='double-decker bold u-space-mb'>Are you sure you want to delete this directory and all its contents?</div>
         <ul class='list--arrow'>
-          <li>TODO: delete directory not wired up. also, maybe do a quick ls call to see how many files/directories are in here</li>
           <li>${this.items[0]?.name}</li>
         </ul>
       </div>

@@ -53,6 +53,21 @@ export function styles() {
       background-color: var(--ucd-white, #fff);
       box-sizing: border-box;
     }
+    form {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+    .typeahead-container {
+      position: relative;
+      width: 100%;
+    }
+    .typeahead-container input {
+      width: 100%;
+    }
+    cork-icon-button {
+      --cork-icon-button-size: 2rem;
+    }
   `;
 
   return [
@@ -63,33 +78,42 @@ export function styles() {
 
 export function render() { 
 return html`
-  <div>
-    <input
-      id="value-input"
-      type="text"
-      placeholder=${this.placeholder}
-      .value=${this.value}
-      @input=${this._onValueInput}
-      @focus=${this._onValueFocus}
-      autocomplete="off"
-    />
-    <div class="suggestions" style=${this.ctl.dropdown.styleMap}>
-      <div ?hidden=${!this.fetchError} class="error">Error fetching suggestions</div>
-      <div ?hidden=${this.fetchError || !this.suggestions.length} class="suggestion-list">
-        <div>
-          ${this.suggestions.map(suggestion => html`
-            <button
-              type="button"
-              class="suggestion-item is-${suggestion.isDirectory ? 'directory' : 'file'}"
-              @click=${()=> this._onSuggestionClick(suggestion)}>
-              <cork-icon icon=${suggestion.isDirectory ? 'fas.folder' : 'fas.file'}></cork-icon>
-              <div>${suggestion.name}</div>
-            </button>
-          `)}
+  <form @submit=${this._onSubmit}>
+    <div class="typeahead-container">
+      <input
+        id="value-input"
+        type="text"
+        placeholder=${this.placeholder}
+        .value=${this.value}
+        @input=${this._onValueInput}
+        @focus=${this._onValueFocus}
+        autocomplete="off"
+      />
+      <div class="suggestions" style=${this.ctl.dropdown.styleMap}>
+        <div ?hidden=${!this.fetchError} class="error">Error fetching suggestions</div>
+        <div ?hidden=${this.fetchError || !this.suggestions.length} class="suggestion-list">
+          <div>
+            ${this.suggestions.map(suggestion => html`
+              <button
+                type="button"
+                class="suggestion-item is-${suggestion.isDirectory ? 'directory' : 'file'}"
+                @click=${()=> this._onSuggestionClick(suggestion)}>
+                <cork-icon icon=${suggestion.isDirectory ? 'fas.folder' : 'fas.file'}></cork-icon>
+                <div>${suggestion.name}</div>
+              </button>
+            `)}
+          </div>
+          <div ?hidden=${this.totalSuggestions <= this.suggestionLimit} class="more-suggestions">${this.totalSuggestions - this.suggestionLimit} more suggestions available. Please refine your search.</div>
         </div>
-        <div ?hidden=${this.totalSuggestions <= this.suggestionLimit} class="more-suggestions">${this.totalSuggestions - this.suggestionLimit} more suggestions available. Please refine your search.</div>
+        <div ?hidden=${this.fetchError || this.suggestions.length} class="no-suggestions">No suggestions found</div>
       </div>
-      <div ?hidden=${this.fetchError || this.suggestions.length} class="no-suggestions">No suggestions found</div>
     </div>
-  </div>
+    <cork-icon-button
+      ?hidden=${!this.showSubmitButton}
+      icon="fas.arrow-right"
+      title="Go To Directory"
+      link-aria-label="Go To Directory"
+      @click=${() => this._onSubmit()}
+    ></cork-icon-button>
+  </form>
 `;}
