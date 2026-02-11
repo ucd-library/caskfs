@@ -555,12 +555,21 @@ class Database {
 
     if( opts.partitionKeys ) {
       withClauses.push(`partition_match AS (
-        SELECT partition_key_id FROM ${config.database.schema}.partition_key pk
+        SELECT partition_key_id, value FROM ${config.database.schema}.partition_key pk
         WHERE pk.value = ANY($${args.length + 1}::VARCHAR(256)[])
       ),
+      file_partition_keys_match AS (
+        SELECT  
+          f.file_id,
+          ARRAY_AGG(pm.value) AS partition_keys
+        FROM 
+          partition_match pm
+        JOIN ${config.database.schema}.file_partition_key f ON pm.partition_key_id = f.partition_key_id
+        GROUP BY f.file_id
+      ),
       partition_file_match AS (
-        SELECT DISTINCT f.file_id FROM ${config.database.schema}.file_partition_key f
-        JOIN partition_match pm ON pm.partition_key_id = f.partition_key_id
+        SELECT fpkm.file_id FROM file_partition_keys_match fpkm
+        WHERE fpkm.partition_keys @> $${args.length + 1}::VARCHAR(256)[]
       )  
       `);
       intersectClauses.push(`SELECT file_id FROM partition_file_match`);

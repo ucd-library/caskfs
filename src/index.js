@@ -7,7 +7,7 @@ import Cas from "./lib/cas.js";
 import Rdf from "./lib/ld.js";
 import Directory from "./lib/directory.js";
 import acl from "./lib/acl.js";
-import { getLogger } from "./lib/logger.js";
+import { getLogger, setLogLevel } from "./lib/logger.js";
 import { createContext, CaskFSContext } from "./lib/context.js";
 import AutoPathBucket from "./lib/auto-path/bucket.js";
 import AutoPathPartition from "./lib/auto-path/partition.js";
@@ -67,6 +67,11 @@ class CaskFs {
     };
 
     this.acl = acl;
+
+    this.setLogLevel = setLogLevel;
+    if( opts.logLevel ) {
+      setLogLevel(opts.logLevel);
+    }
   }
 
   /**
