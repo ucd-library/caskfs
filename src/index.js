@@ -295,12 +295,12 @@ class CaskFs {
       // TODO: if the hash exists but the file does not, we just need to copy the file-
       // specific relation table entries from another file with the same hash rather
       // than re-parsing all the RDF
-      if( !context.data.stagedFile.hashExists || !context.data.fileExists ) {
+      if( !context.data.fileExists ) {
         // if replacing an existing file, delete old triples first
         this.logger.info('Replacing existing RDF file, deleting old triples', context.logSignal);
         await this.rdf.delete(context.data.file, {dbClient, ignoreAcl: true});
 
-        let readFile = context.data.stagedFile.hashExists ? context.data.stagedFile.hashFile : context.data.stagedFile.tmpFile;
+        let readFile = context.data.stagedFile.tmpFile;
 
         this.logger.info('Inserting RDF triples for file', context.logSignal);
         let insertResp = await this.rdf.insert(context.data.file.file_id, 
@@ -340,7 +340,6 @@ class CaskFs {
       // finally commit the transaction
       await dbClient.query('COMMIT');
     } catch (err) {
-      console.error(err)
       context.update({error: err});
       this.logger.error('Error writing file, rolling back transaction',
         {error: err.message, stack: err.stack, ...context.logSignal}
@@ -793,18 +792,18 @@ class CaskFs {
 
     if( dirPath === context.data.rootDir ) {
       await context.data.dbClient.query('COMMIT');
-      await context.data.dbClient.end();
-
       // now that the transaction is committed, delete the cas files
       if( softDelete !== true ) {
         for( let casFilePath of context.data.casFilePaths ) {
           try {
-            await fs.unlink(this.cas.diskPath(casFilePath));
+            await this.cas.delete(casFilePath, {dbClient: context.data.dbClient});
           } catch (err) {
             this.logger.error(`Error deleting CAS file: ${casFilePath}`, {error: err.message});
           }
         }
       }
+
+      await context.data.dbClient.end();
 
       this.logger.info(`Completed delete of root directory: ${dirPath}`);
     }

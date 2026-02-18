@@ -64,28 +64,18 @@ class Cas {
 
     // get file last modified time, created time and size
     // if the hash exists, we can use the cas file otherwise use the tmp file
-    let statsFile;
     let primaryHash = config.digests[0];
     let hashFile = this.diskPath(digests[primaryHash]);
-    let fileExists = false;
-
-    if( fs.existsSync(hashFile) ) {
-      statsFile = hashFile;
-      fileExists = true;
-    } else {
-      statsFile = tmpFile;
-    }
 
     // get file stats
-    let stats = await fsp.stat(statsFile);
+    let stats = await fsp.stat(tmpFile);
 
     let stagedFile = { 
       hash_value: digests[primaryHash],
       digests, 
       tmpFile,
       size: stats.size,
-      hashFile, 
-      hashExists: fileExists 
+      hashFile
     };
 
     context.update({ stagedFile });
@@ -307,12 +297,16 @@ class Cas {
 
     // check if any other files reference this hash
     let res = await dbClient.query(`
-      SELECT COUNT(*) AS count FROM ${config.database.schema}.file_view WHERE hash_value = $1
+      SELECT COUNT(*) AS count
+      FROM ${config.database.schema}.file f
+      JOIN ${config.database.schema}.hash h ON h.hash_id = f.hash_id
+      WHERE h.value = $1
     `, [hash]);
 
     if( opts.softDelete === true ) {
       return {
         fileDeleted: false,
+        softDelete: true,
         referencesRemaining: parseInt(res.rows[0].count)
       }
     }
@@ -365,7 +359,7 @@ class Cas {
       throw new Error('Powerwash is not supported for cloud storage backends');
     }
     let dir = path.resolve(config.rootDir);
-    console.log('Powerwashing CASKFS root directory:', dir);
+    logger.warn('Powerwashing CASKFS root directory:', dir);
     
     // Remove contents of directory but keep the directory itself
     const items = fs.readdirSync(dir);
@@ -373,7 +367,7 @@ class Cas {
       const itemPath = path.join(dir, item);
       fs.rmSync(itemPath, { recursive: true, force: true });
     }
-    console.log('CASKFS root directory contents removed from:', dir);
+    logger.warn('CASKFS root directory contents removed from:', dir);
   }
 
   /**

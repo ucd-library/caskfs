@@ -32,6 +32,14 @@ class CaskFSContext {
     this.update(obj);
   }
 
+  hasError() {
+    return !!this.data.error;
+  }
+
+  getError() {
+    return this.data.error;
+  }
+
   update(obj={}) {
     Object.keys(obj).forEach(k => {
       this.data[k] = obj[k];
