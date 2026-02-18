@@ -554,26 +554,29 @@ class Database {
     }
 
     if( opts.partitionKeys ) {
-      withClauses.push(`partition_match AS (
-        SELECT partition_key_id, value FROM ${config.database.schema}.partition_key pk
-        WHERE pk.value = ANY($${args.length + 1}::VARCHAR(256)[])
-      ),
-      file_partition_keys_match AS (
-        SELECT  
-          f.file_id,
-          ARRAY_AGG(pm.value) AS partition_keys
-        FROM 
-          partition_match pm
-        JOIN ${config.database.schema}.file_partition_key f ON pm.partition_key_id = f.partition_key_id
-        GROUP BY f.file_id
-      ),
-      partition_file_match AS (
-        SELECT fpkm.file_id FROM file_partition_keys_match fpkm
-        WHERE fpkm.partition_keys @> $${args.length + 1}::VARCHAR(256)[]
-      )  
-      `);
+      if( !Array.isArray(opts.partitionKeys) ) {
+        opts.partitionKeys = [opts.partitionKeys];
+      }
+      let joinClauses = [`SELECT f0.file_id
+        FROM ${config.database.schema}.file_partition_key f0
+        JOIN ${config.database.schema}.partition_key pk0 
+        ON f0.partition_key_id = pk0.partition_key_id
+        AND pk0.value = $${args.length + 1}`];
+      args.push(opts.partitionKeys[0]);
+
+      for( let i = 1; i < opts.partitionKeys.length; i++ ) {
+        joinClauses.push(`JOIN ${config.database.schema}.file_partition_key f${i}
+          ON f${i}.file_id = f0.file_id
+          JOIN ${config.database.schema}.partition_key pk${i} 
+          ON f${i}.partition_key_id = pk${i}.partition_key_id
+          AND pk${i}.value = $${args.length + 1}`);
+        args.push(opts.partitionKeys[i]);
+      }
+
+      withClauses.push(`partition_file_match AS (
+        ${joinClauses.join('\n')}
+      )`);
       intersectClauses.push(`SELECT file_id FROM partition_file_match`);
-      args.push(opts.partitionKeys);
     }
  
     if( intersectClauses.length > 0 ) {
