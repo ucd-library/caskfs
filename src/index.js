@@ -739,20 +739,16 @@ class CaskFs {
   async deleteDirectory(context={}) {
     context = createContext(context);
     let dirPath = context.data.directory;
-    let softDelete = context.data.softDelete || false;
 
-    if( !context.data.casFilePaths ) {
+    if( !context.data.rootDir ) {
       let dbClient = new Database({
         type: context.data.dbType || config.database.client
       });
 
       context.update({
-        casFilePaths: [],
         rootDir: dirPath,
         dbClient
       });
-
-      await dbClient.query('BEGIN');
     }
 
     if( dirPath === '/' ) {
@@ -763,12 +759,11 @@ class CaskFs {
     context.data.limit = 100000;
     let ls = await this.ls(context);
     for( let file of ls.files ) {
-      context.data.casFilePaths.push(file.hash_value);
       await this.deleteFile({
         filePath: file.filepath, 
-        dbClient: context.data.dbClient, 
-        ignoreAcl: true,
-        softDelete: true
+        dbClient: context.data.dbClient,
+        softDelete: context.data.softDelete,
+        ignoreAcl: true
       });
       this.logger.info(`Deleted file: ${file.filepath}`, context.logSignal);
     }
@@ -779,8 +774,9 @@ class CaskFs {
         createContext({
           directory: dir.fullname,
           requestor: context.data.requestor,
-          casFilePaths: context.data.casFilePaths,
-          dbClient: context.data.dbClient
+          rootDir: context.data.rootDir,
+          dbClient: context.data.dbClient,
+          softDelete: context.data.softDelete
         })
       );
     }
@@ -791,20 +787,7 @@ class CaskFs {
     this.logger.info(`Directory deleted: ${dirPath}`, context.logSignal);
 
     if( dirPath === context.data.rootDir ) {
-      await context.data.dbClient.query('COMMIT');
-      // now that the transaction is committed, delete the cas files
-      if( softDelete !== true ) {
-        for( let casFilePath of context.data.casFilePaths ) {
-          try {
-            await this.cas.delete(casFilePath, {dbClient: context.data.dbClient});
-          } catch (err) {
-            this.logger.error(`Error deleting CAS file: ${casFilePath}`, {error: err.message});
-          }
-        }
-      }
-
       await context.data.dbClient.end();
-
       this.logger.info(`Completed delete of root directory: ${dirPath}`);
     }
   }
@@ -826,20 +809,32 @@ class CaskFs {
 
     await this.canWriteFile(context);
 
-    let metadata = await this.metadata(context);
+    let casResp, metadata;
 
-    // remove RDF triples first
-    await this.rdf.delete(metadata);
+    try {
+      await context.data.dbClient.query('BEGIN');
+      metadata = await this.metadata(context);
 
-    // remove the file record
-    await context.data.dbClient.query(`
-      DELETE FROM ${this.schema}.file WHERE file_id = $1
-    `, [metadata.file_id]);
+      // remove RDF triples first
+      await this.rdf.delete(metadata, {dbClient: context.data.dbClient});
 
-    let casResp = await this.cas.delete(metadata.hash_value, {
-      softDelete: context.data.softDelete || false,
-      dbClient: context.data.dbClient
-    });
+      // remove the file record
+      await context.data.dbClient.query(`
+        DELETE FROM ${this.schema}.file WHERE file_id = $1
+      `, [metadata.file_id]);
+
+      casResp = await this.cas.delete(metadata.hash_value, {
+        softDelete: context.data.softDelete || false,
+        dbClient: context.data.dbClient
+      });
+
+      await context.data.dbClient.query('COMMIT');
+
+    } catch (err) {
+      await context.data.dbClient.query('ROLLBACK');
+      this.logger.error('Error deleting file', {error: err.message, stack: err.stack, ...context.logSignal});
+      throw err;
+    }
 
     return {
       metadata,
