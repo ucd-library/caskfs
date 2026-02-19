@@ -553,41 +553,49 @@ class Database {
       args.push(opts.target.fileId);
     }
 
-    if( opts.partitionKeys ) {
-      if( !Array.isArray(opts.partitionKeys) ) {
-        opts.partitionKeys = [opts.partitionKeys];
-      }
-      let joinClauses = [`SELECT f0.file_id
-        FROM ${config.database.schema}.file_partition_key f0
-        JOIN ${config.database.schema}.partition_key pk0 
-        ON f0.partition_key_id = pk0.partition_key_id
-        AND pk0.value = $${args.length + 1}`];
-      args.push(opts.partitionKeys[0]);
+    let cteFileName = opts.partitionKeys ? `filtered_matches` : `files`;
 
-      for( let i = 1; i < opts.partitionKeys.length; i++ ) {
-        joinClauses.push(`JOIN ${config.database.schema}.file_partition_key f${i}
-          ON f${i}.file_id = f0.file_id
-          JOIN ${config.database.schema}.partition_key pk${i} 
-          ON f${i}.partition_key_id = pk${i}.partition_key_id
-          AND pk${i}.value = $${args.length + 1}`);
-        args.push(opts.partitionKeys[i]);
-      }
-
-      withClauses.push(`partition_file_match AS (
-        ${joinClauses.join('\n')}
-      )`);
-      intersectClauses.push(`SELECT file_id FROM partition_file_match`);
-    }
- 
     if( intersectClauses.length > 0 ) {
-      withClauses.push(`files AS (
+      withClauses.push(`${cteFileName} AS (
         ${intersectClauses.join('\nINTERSECT\n')}
       )`);
     } else {
-      withClauses.push(`files AS (
+      withClauses.push(`${cteFileName} AS (
         SELECT file_id FROM ${config.database.schema}.file
       )`);
     }
+
+    if( !opts.partitionKeys ) {
+      return withClauses.join(', ');
+    }
+
+    if( !Array.isArray(opts.partitionKeys) ) {
+      opts.partitionKeys = [opts.partitionKeys];
+    }
+    let joinClauses = [`SELECT f0.file_id
+      FROM ${cteFileName} fm
+      JOIN ${config.database.schema}.file_partition_key f0
+        ON f0.file_id = fm.file_id
+      JOIN ${config.database.schema}.partition_key pk0 
+        ON f0.partition_key_id = pk0.partition_key_id
+        AND pk0.value = $${args.length + 1}`];
+    args.push(opts.partitionKeys[0]);
+
+    for( let i = 1; i < opts.partitionKeys.length; i++ ) {
+      joinClauses.push(`JOIN ${config.database.schema}.file_partition_key f${i}
+          ON f${i}.file_id = f0.file_id
+        JOIN ${config.database.schema}.partition_key pk${i} 
+          ON f${i}.partition_key_id = pk${i}.partition_key_id
+          AND pk${i}.value = $${args.length + 1}`);
+      args.push(opts.partitionKeys[i]);
+    }
+
+    withClauses.push(`partition_file_match AS (
+      ${joinClauses.join('\n')}
+    )`);
+    withClauses.push(`files AS (
+      SELECT file_id FROM partition_file_match
+    )`);
 
     return withClauses.join(', ');
   }
