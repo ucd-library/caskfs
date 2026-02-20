@@ -340,13 +340,13 @@ class CaskFs {
       // finally commit the transaction
       await dbClient.query('COMMIT');
     } catch (err) {
+      // if any error, rollback the transaction and delete the temp file
+      await dbClient.query('ROLLBACK');
+
       context.update({error: err});
       this.logger.error('Error writing file, rolling back transaction',
         {error: err.message, stack: err.stack, ...context.logSignal}
       );
-
-      // if any error, rollback the transaction and delete the temp file
-      await dbClient.query('ROLLBACK');
 
       if( context?.stagedFile?.tmpFile ) {
         await this.cas.abortWrite(context.stagedFile.tmpFile);
