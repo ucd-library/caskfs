@@ -81,6 +81,8 @@ class Cas {
     context.update({ stagedFile });
   }
 
+  
+
 
   /**
    * @method finalizeWrite

@@ -3,6 +3,7 @@ import path from "path";
 import fs from "fs/promises";
 import config from "./lib/config.js";
 import mime from "mime";
+import crypto from "crypto"
 import Cas from "./lib/cas.js";
 import Rdf from "./lib/ld.js";
 import Directory from "./lib/directory.js";
@@ -161,6 +162,11 @@ class CaskFs {
       // however, setting lock and statement timeouts is also a good idea to prevent
       await dbClient.query(`SET lock_timeout TO '${config.postgres.lockTimeout}s'`);
       await dbClient.query(`SET statement_timeout TO '${config.postgres.statementTimeout}s'`);
+
+      // wait to acquire an advisory lock for the file path to prevent multiple concurrent writes to the same file path.
+      // this will automatically release when the transaction is committed or rolled back, so we don't have to worry about manually releasing it.
+      let lockKey = this._lockKeyFromString(filePath);
+      await dbClient.query(`SELECT pg_advisory_xact_lock($1)`, [lockKey]);
 
       context.update({
         fileExists: await dbClient.fileExists(filePath)
@@ -380,6 +386,16 @@ class CaskFs {
     }
 
     return context;
+  }
+
+  _lockKeyFromString(str) {
+    const hash = crypto
+      .createHash("sha256")
+      .update(str)
+      .digest();
+
+    // Take first 8 bytes as signed 64-bit BigInt
+    return hash.readBigInt64BE(0);
   }
 
   /**
