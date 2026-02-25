@@ -18,8 +18,10 @@ CREATE TABLE IF NOT EXISTS caskfs.uri (
   uri_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   uri VARCHAR(1028) NOT NULL UNIQUE
 );
-CREATE INDEX IF NOT EXISTS idx_uri_value ON caskfs.uri(uri);
-CREATE INDEX IF NOT EXISTS idx_uri_value_hash ON caskfs.uri USING hash(uri);
+-- This index is redundant because the UNIQUE constraint on uri already creates a btree index for lookups.
+-- CREATE INDEX IF NOT EXISTS idx_uri_value ON caskfs.uri(uri);
+-- This index is redundant because the UNIQUE btree index on uri already supports equality lookups.
+-- CREATE INDEX IF NOT EXISTS idx_uri_value_hash ON caskfs.uri USING hash(uri);
 
 CREATE OR REPLACE FUNCTION caskfs.upsert_uri(p_uri VARCHAR(1028)) RETURNS UUID AS $$
 DECLARE
@@ -50,20 +52,21 @@ CREATE TABLE IF NOT EXISTS caskfs.ld_filter (
   uri_id UUID NOT NULL,
   UNIQUE(type, uri_id)
 );
-CREATE INDEX IF NOT EXISTS idx_ld_filter_type_uri ON caskfs.ld_filter(type, uri_id);
+-- This index is redundant because it duplicates the index created by the UNIQUE constraint on (type, uri_id).
+-- CREATE INDEX IF NOT EXISTS idx_ld_filter_type_uri ON caskfs.ld_filter(type, uri_id);
 
 CREATE TABLE IF NOT EXISTS caskfs.file_ld_filter (
-    file_ld_filter_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    -- file_ld_filter_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     file_id UUID NOT NULL REFERENCES caskfs.file(file_id) ON DELETE CASCADE,
     ld_filter_id UUID NOT NULL REFERENCES caskfs.ld_filter(ld_filter_id),
-    UNIQUE(file_id, ld_filter_id)
+    PRIMARY KEY (file_id, ld_filter_id)
 );
-CREATE INDEX IF NOT EXISTS idx_file_ld_filter_file_id ON caskfs.file_ld_filter(file_id);
-CREATE INDEX IF NOT EXISTS idx_file_ld_filter_ld_filter_id ON caskfs.file_ld_filter(ld_filter_id);
+-- Note: the below indexes are not needed because the UNIQUE constraint on (file_id, ld_filter_id) covers file_id
+-- CREATE INDEX IF NOT EXISTS idx_file_ld_filter_file_id ON caskfs.file_ld_filter(file_id);
+CREATE INDEX IF NOT EXISTS idx_file_ld_filter_ld_filter_id ON caskfs.file_ld_filter(ld_filter_id, file_id);
 
 CREATE OR REPLACE VIEW caskfs.file_ld_filter_view AS
 SELECT
-    flf.file_ld_filter_id,
     fv.filepath,
     ldf.type,
     u.uri
@@ -78,22 +81,25 @@ CREATE TABLE IF NOT EXISTS caskfs.ld_link (
     object UUID NOT NULL,
     UNIQUE(predicate, object)
 );
-CREATE INDEX IF NOT EXISTS idx_ld_link_predicate ON caskfs.ld_link(predicate);
+-- This index is redundant because the UNIQUE constraint on (predicate, object) already covers predicate as the leftmost key.
+-- CREATE INDEX IF NOT EXISTS idx_ld_link_predicate ON caskfs.ld_link(predicate);
 CREATE INDEX IF NOT EXISTS idx_ld_link_object ON caskfs.ld_link(object);
 
 CREATE TABLE IF NOT EXISTS caskfs.file_ld_link (
-    file_ld_link_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    -- file_ld_link_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     file_id UUID NOT NULL REFERENCES caskfs.file(file_id) ON DELETE CASCADE,
     ld_link_id UUID NOT NULL REFERENCES caskfs.ld_link(ld_link_id),
-    UNIQUE(file_id, ld_link_id)
+    PRIMARY KEY (file_id, ld_link_id)
 );
 CREATE INDEX IF NOT EXISTS idx_file_ld_link_ld_link_file_id ON caskfs.file_ld_link (ld_link_id, file_id);
-CREATE INDEX IF NOT EXISTS idx_file_ld_link_file_id ON caskfs.file_ld_link(file_id);
-CREATE INDEX IF NOT EXISTS idx_file_ld_link_ld_link_id ON caskfs.file_ld_link(ld_link_id);
+-- Note: the below indexes are not needed because the UNIQUE constraint on (file_id, ld_link_id) as well
+-- the idx_file_ld_link_ld_link_file_id index already covers queries filtering by file_id or ld_link_id due to the order of columns in the index.
+-- CREATE INDEX IF NOT EXISTS idx_file_ld_link_file_id ON caskfs.file_ld_link(file_id);
+-- CREATE INDEX IF NOT EXISTS idx_file_ld_link_ld_link_id ON caskfs.file_ld_link(ld_link_id);
 
 CREATE OR REPLACE VIEW caskfs.file_ld_link_view AS
 SELECT
-    fll.file_ld_link_id,
+    -- fll.file_ld_link_id,
     fv.filepath,
     pu.uri AS predicate,
     ou.uri AS object
@@ -149,17 +155,18 @@ $$ LANGUAGE plpgsql STABLE;
 
 
 CREATE TABLE IF NOT EXISTS caskfs.file_ld_literal (
-    file_ld_literal_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    -- file_ld_literal_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     file_id UUID NOT NULL REFERENCES caskfs.file(file_id) ON DELETE CASCADE,
     ld_literal_id UUID NOT NULL REFERENCES caskfs.ld_literal(ld_literal_id),
-    UNIQUE(file_id, ld_literal_id)
+    PRIMARY KEY (file_id, ld_literal_id)
 );
-CREATE INDEX IF NOT EXISTS idx_file_ld_literal_file_id ON caskfs.file_ld_literal(file_id);
+-- This index is redundant because the UNIQUE constraint on (file_id, ld_literal_id) already covers file_id as the leftmost key.
+-- CREATE INDEX IF NOT EXISTS idx_file_ld_literal_file_id ON caskfs.file_ld_literal(file_id);
 CREATE INDEX IF NOT EXISTS idx_file_ld_literal_ld_literal_id ON caskfs.file_ld_literal(ld_literal_id);
 
 CREATE OR REPLACE VIEW caskfs.file_ld_literal_view AS
 SELECT
-    fll.file_ld_literal_id,
+    -- fll.file_ld_literal_id,
     fv.file_id,
     fv.filepath,
     gu.uri AS graph,

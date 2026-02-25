@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS caskfs.acl_role (
   name       VARCHAR(256) NOT NULL UNIQUE,
   created    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_role_name ON caskfs.acl_role(name);
+-- This index is redundant because the UNIQUE constraint on name already creates an index.
+-- CREATE INDEX IF NOT EXISTS idx_role_name ON caskfs.acl_role(name);
 
 ----------------
 -- acl_user
@@ -31,7 +32,8 @@ CREATE TABLE IF NOT EXISTS caskfs.acl_user (
   name      VARCHAR(256) NOT NULL UNIQUE,
   created   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_user_name ON caskfs.acl_user(name);
+-- This index is redundant because the UNIQUE constraint on name already creates an index.
+-- CREATE INDEX IF NOT EXISTS idx_user_name ON caskfs.acl_user(name);
 
 ----------------
 -- acl_role_user
@@ -45,7 +47,8 @@ CREATE TABLE IF NOT EXISTS caskfs.acl_role_user (
   expires         TIMESTAMPTZ,
   UNIQUE(role_id, user_id)
 );
-CREATE INDEX IF NOT EXISTS idx_acl_role_user_userrole_id ON caskfs.acl_role_user(role_id, user_id);
+-- This index is redundant because the UNIQUE constraint on (role_id, user_id) already creates an index.
+-- CREATE INDEX IF NOT EXISTS idx_acl_role_user_userrole_id ON caskfs.acl_role_user(role_id, user_id);
 
 
 ----------------
@@ -62,7 +65,8 @@ CREATE TABLE IF NOT EXISTS caskfs.directory (
     created        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     modified       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_directory_fullname ON caskfs.directory(fullname);
+-- This index is redundant because the UNIQUE constraint on fullname already creates an index.
+-- CREATE INDEX IF NOT EXISTS idx_directory_fullname ON caskfs.directory(fullname);
 CREATE INDEX IF NOT EXISTS idx_directory_name ON caskfs.directory USING GIN (name gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_directory_parent_id ON caskfs.directory(parent_id);
 
@@ -80,7 +84,8 @@ CREATE TABLE IF NOT EXISTS caskfs.root_directory_acl (
     public               BOOLEAN NOT NULL DEFAULT FALSE,
     modified             TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_root_directory_acl_directory_id ON caskfs.root_directory_acl(directory_id);
+-- This index is redundant because the UNIQUE constraint on directory_id already creates an index.
+-- CREATE INDEX IF NOT EXISTS idx_root_directory_acl_directory_id ON caskfs.root_directory_acl(directory_id);
 
 ----------------
 -- directory_acl
@@ -91,7 +96,8 @@ CREATE TABLE IF NOT EXISTS caskfs.directory_acl (
     root_directory_acl_id UUID REFERENCES caskfs.root_directory_acl(root_directory_acl_id) ON DELETE CASCADE,
     modified              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_directory_acl_directory_id ON caskfs.directory_acl(directory_id, root_directory_acl_id);
+-- This index is redundant because directory_id is UNIQUE, so indexing (directory_id, root_directory_acl_id) adds no lookup benefit.
+-- CREATE INDEX IF NOT EXISTS idx_directory_acl_directory_id ON caskfs.directory_acl(directory_id, root_directory_acl_id);
 
 ----------------
 -- acl_permission
@@ -105,8 +111,10 @@ CREATE TABLE IF NOT EXISTS caskfs.acl_permission (
     modified          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(root_directory_acl_id, permission, role_id)
 );
-CREATE INDEX IF NOT EXISTS idx_acl_permission_role_id ON caskfs.acl_permission(role_id);
-CREATE INDEX IF NOT EXISTS idx_acl_permission_root_directory_acl_id ON caskfs.acl_permission(root_directory_acl_id);
+-- This index is redundant because the composite index on (role_id, permission) already covers role_id-only lookups.
+-- CREATE INDEX IF NOT EXISTS idx_acl_permission_role_id ON caskfs.acl_permission(role_id);
+-- This index is redundant because the UNIQUE constraint starting with root_directory_acl_id already covers this lookup.
+-- CREATE INDEX IF NOT EXISTS idx_acl_permission_root_directory_acl_id ON caskfs.acl_permission(root_directory_acl_id);
 CREATE INDEX IF NOT EXISTS idx_acl_permission_role_id_permission ON caskfs.acl_permission(role_id, permission);
 
 ----------------
@@ -186,8 +194,9 @@ GROUP BY directory_id, user_id;
 -- Create indexes for the materialized view
 CREATE UNIQUE INDEX IF NOT EXISTS idx_directory_user_permissions_lookup_unique 
     ON caskfs.directory_user_permissions_lookup(directory_id, user_id);
-CREATE INDEX IF NOT EXISTS idx_directory_user_permissions_lookup_directory_id 
-    ON caskfs.directory_user_permissions_lookup(directory_id);
+-- This index is redundant because the unique index on (directory_id, user_id) already covers directory_id as the leftmost key.
+-- CREATE INDEX IF NOT EXISTS idx_directory_user_permissions_lookup_directory_id 
+--     ON caskfs.directory_user_permissions_lookup(directory_id);
 CREATE INDEX IF NOT EXISTS idx_directory_user_permissions_lookup_user_id 
     ON caskfs.directory_user_permissions_lookup(user_id);
 
@@ -262,7 +271,8 @@ CREATE TABLE IF NOT EXISTS caskfs.partition_key (
     auto_path_partition_id UUID REFERENCES caskfs.auto_path_partition(auto_path_partition_id) ON DELETE CASCADE,
     created TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_partition_key_value ON caskfs.partition_key(value);
+-- This index is redundant because the UNIQUE constraint on value already creates an index.
+-- CREATE INDEX IF NOT EXISTS idx_partition_key_value ON caskfs.partition_key(value);
 
 ----------------
 -- file
@@ -280,10 +290,12 @@ CREATE TABLE IF NOT EXISTS caskfs.file (
     UNIQUE(directory_id, name)
 );
 CREATE INDEX IF NOT EXISTS idx_file_hash_id ON caskfs.file(hash_id);
-CREATE INDEX IF NOT EXISTS idx_file_directory ON caskfs.file(directory_id);
+-- This index is redundant because the UNIQUE constraint on (directory_id, name) already covers directory_id as the leftmost key.
+-- CREATE INDEX IF NOT EXISTS idx_file_directory ON caskfs.file(directory_id);
 CREATE INDEX IF NOT EXISTS idx_file_name ON caskfs.file(name);
 CREATE INDEX IF NOT EXISTS idx_file_name_gin_trgm ON caskfs.file USING GIN (name gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS idx_file_directory_name ON caskfs.file(directory_id, name);
+-- This index is redundant because it duplicates the index created by the UNIQUE constraint on (directory_id, name).
+-- CREATE INDEX IF NOT EXISTS idx_file_directory_name ON caskfs.file(directory_id, name);
 
 CREATE TABLE IF NOT EXISTS caskfs.file_partition_key (
     file_partition_key_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -291,7 +303,8 @@ CREATE TABLE IF NOT EXISTS caskfs.file_partition_key (
     partition_key_id UUID NOT NULL REFERENCES caskfs.partition_key(partition_key_id) ON DELETE CASCADE,
     UNIQUE(file_id, partition_key_id)
 );
-CREATE INDEX IF NOT EXISTS idx_file_partition_key_file_id ON caskfs.file_partition_key(file_id);
+-- This index is redundant because the UNIQUE constraint on (file_id, partition_key_id) already covers file_id as the leftmost key.
+-- CREATE INDEX IF NOT EXISTS idx_file_partition_key_file_id ON caskfs.file_partition_key(file_id);
 CREATE INDEX IF NOT EXISTS idx_file_partition_key_partition_key_id ON caskfs.file_partition_key(partition_key_id);
 
 CREATE OR REPLACE VIEW caskfs.file_partition_keys AS

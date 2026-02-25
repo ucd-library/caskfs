@@ -9,4 +9,5 @@ CREATE TABLE IF NOT EXISTS caskfs.hash (
   created       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   nquads        TEXT NOT NULL DEFAULT ''
 );
-CREATE INDEX IF NOT EXISTS idx_hash_value ON caskfs.hash(value);
+-- Unique constraint on value is already defined in the table definition, so no need for a separate index.
+-- CREATE INDEX IF NOT EXISTS idx_hash_value ON caskfs.hash(value);
