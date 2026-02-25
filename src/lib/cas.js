@@ -329,6 +329,10 @@ class Cas {
         await this.storage.unlink(fullPath + '.json');
       }
 
+      await dbClient.query(`
+        DELETE FROM ${config.database.schema}.hash WHERE value = $1
+      `, [hash]);
+
       // Should we look to cleanup dirs for fs storage backend?
 
       fileDeleted = true;
