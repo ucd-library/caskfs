@@ -317,7 +317,9 @@ class Cas {
     if( res.rows[0].count === '0' ) {
       let fullPath = this.diskPath(hash);
 
-      this.logger.info(`Deleting unreferenced file with hash ${hash} at path ${fullPath}`);
+      if( !opts.silent ) {
+        this.logger.info(`Deleting unreferenced file with hash ${hash} at path ${fullPath}`);
+      }
 
       if( await this.storage.exists(fullPath) ) {
         await this.storage.unlink(fullPath);
@@ -326,6 +328,9 @@ class Cas {
       if( await this.storage.exists(fullPath + '.json') ) {
         await this.storage.unlink(fullPath + '.json');
       }
+
+      // Should we look to cleanup dirs for fs storage backend?
+
       fileDeleted = true;
     } else {
       await this.writeMetadata(hash);
@@ -356,12 +361,16 @@ class Cas {
     return path.join(config.rootDir, this.rootSubPath, this._getHashFilePath(hash));
   }
 
+  /**
+   * @method powerWash
+   * @description Remove all files from the CaskFs root directory. This is a destructive operation and should be used with caution.
+   */
   powerWash() {
     if( this.cloudStorageEnabled ) {
       throw new Error('Powerwash is not supported for cloud storage backends');
     }
     let dir = path.resolve(config.rootDir);
-    logger.warn('Powerwashing CASKFS root directory:', dir);
+    logger.warn('Powerwashing CaskFs root directory:', dir);
     
     // Remove contents of directory but keep the directory itself
     const items = fs.readdirSync(dir);
@@ -369,7 +378,72 @@ class Cas {
       const itemPath = path.join(dir, item);
       fs.rmSync(itemPath, { recursive: true, force: true });
     }
-    logger.warn('CASKFS root directory contents removed from:', dir);
+    logger.warn('CaskFs root directory contents removed from:', dir);
+  }
+
+  /**
+   * @method getUnusedHashCount
+   * @description Get the count of unused hashes in the database. This can be used to monitor for 
+   * orphaned files via soft deletes that may need to be cleaned up.
+   * 
+   * @returns {Promise<Number>} resolves with the count of unused hashes
+   */
+  async getUnusedHashCount() {
+    let res = await this.dbClient.query(`SELECT COUNT(*) AS count FROM ${config.database.schema}.unused_hashes`);
+    return parseInt(res.rows[0].count);
+  }
+
+  /**
+   * @method deleteUnusedHashes
+   * @description Delete unused hashes from the database and their corresponding files from storage. 
+   * This can be used to clean up orphaned files via soft deletes. You can specify a list of hashes 
+   * to delete or a limit for how many to delete in batch.
+   * 
+   * 
+   * @param {Object} opts options object
+   * @param {dbClient} opts.dbClient optional postgres client to use
+   * @param {Array<String>} opts.hashList list of hash values to delete, if not provided will delete based on limit
+   * @param {Number} opts.limit number of unused hashes to delete if hashList is not provided
+   * 
+   * @returns {Promise}
+   */
+  async deleteUnusedHashes(opts={}) {
+    let dbClient = opts.dbClient || this.dbClient;
+    let limit = opts.limit || 100;
+    let hashList = opts.hashList || [];
+
+    if( !hashList && !limit ) {
+      throw new Error('Either hashList or limit must be provided to deleteUnusedHashes');
+    }
+
+    if( hashList && hashList.length > 0 ) {
+      await dbClient.query(`
+        DELETE FROM ${config.database.schema}.unused_hashes WHERE value = ANY($1)
+      `, [hashList]);
+    } else if( limit ) {
+      let resp = await dbClient.query(`
+        WITH to_delete AS (
+          SELECT value
+          FROM ${config.database.schema}.unused_hashes
+          LIMIT $1
+        )
+        DELETE FROM ${config.database.schema}.hash u
+        USING to_delete d
+        WHERE u.value = d.value
+        RETURNING u.value
+      `, [limit]);
+      hashList = resp.rows.map(row => row.value);
+    }
+
+    for( let hash of hashList ) {
+      await this.delete(hash, { 
+        dbClient, 
+        softDelete: false,
+        silent: true
+      });
+    }
+
+    return hashList;
   }
 
   /**
@@ -377,7 +451,7 @@ class Cas {
    * @description Calculate the hash values for a given data buffer.
    * 
    * @param {Buffer} data 
-   * @returns 
+   * @returns {Object} object containing the digests for each algorithm
    */
   _hashData(data) {
     let digests = {};
