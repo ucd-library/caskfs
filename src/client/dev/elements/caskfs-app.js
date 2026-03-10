@@ -21,7 +21,7 @@ import './pages/caskfs-page-relationships.js';
 
 // app global components
 import './components/cork-app-error.js';
-import './components/cork-app-loader.js';
+import './components/cork-app-loader-bar.js';
 import './components/cork-app-toast.js';
 import './components/cork-app-dialog-modal.js';
 import './components/cork-toggle-switch.js';

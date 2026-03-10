@@ -38,7 +38,7 @@ export function styles() {
 export function render() { 
 return html`
   ${renderHeader()}
-  <cork-app-loader></cork-app-loader>
+  <cork-app-loader-bar></cork-app-loader-bar>
   <cork-app-error></cork-app-error>
   <cork-app-toast></cork-app-toast>
   <cork-app-dialog-modal></cork-app-dialog-modal>
