@@ -18,6 +18,7 @@ import './pages/caskfs-page-file-search.js';
 import './pages/caskfs-page-partitions.js';
 import './pages/caskfs-page-file-single.js';
 import './pages/caskfs-page-relationships.js';
+import './pages/caskfs-page-statistics.js';
 
 // app global components
 import './components/cork-app-error.js';

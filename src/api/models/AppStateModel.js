@@ -28,10 +28,18 @@ class AppStateModelImpl extends AppStateModel {
 
   set(update) {
     if( update.location ) {
-      update.lastPage = this.store.data.page;
-      update.lastLocation = JSON.parse(JSON.stringify(this.store.data.location));
       const relativePath = appUrlUtils.relativePath(update.location.pathname, { returnArray: true });
       let page = relativePath?.[0] ? relativePath[0] : 'home';
+
+      // if navigating to the root path, redirect to the directory page, the defacto home page
+      if ( page === 'home' ){
+        this.setLocation(appUrlUtils.fullLocation(`/directory`));
+        return;
+      }
+
+      update.lastPage = this.store.data.page;
+      update.lastLocation = JSON.parse(JSON.stringify(this.store.data.location));
+
 
       if ( page === 'config' && relativePath?.[1] ) {
         page = relativePath[1];
@@ -66,7 +74,7 @@ class AppStateModelImpl extends AppStateModel {
         if (this.loadingRequests.length > 0) {
           this.showLoading();
         }
-      }, 750);
+      }, 500);
     }
   }
 

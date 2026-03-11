@@ -51,6 +51,7 @@ return html`
     <caskfs-page-partitions page-id='partitions'></caskfs-page-partitions>
     <caskfs-page-file-single page-id='file'></caskfs-page-file-single>
     <caskfs-page-relationships page-id='rel'></caskfs-page-relationships>
+    <caskfs-page-statistics page-id='statistics'></caskfs-page-statistics>
   </ucdlib-pages>
 `;}
 
@@ -77,6 +78,7 @@ function renderHeader(){
         <ul link-text='Config'>
           <li><a href=${appUrlUtils.fullLocation('/config/partitions')}>Partitions</a></li>
         </ul>
+        <a href=${appUrlUtils.fullLocation('/statistics')}>Statistics</a>
       </ucd-theme-primary-nav>
     </ucd-theme-header>
   `;

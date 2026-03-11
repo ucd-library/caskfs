@@ -24,7 +24,7 @@ export default (app) => {
     logger.warn(`Unable to read version from package.json: ${e.message}`);
   }
 
-  const routes = ['directory', 'file-search', 'config', 'file', 'rel'];
+  const routes = ['directory', 'file-search', 'config', 'file', 'rel', 'statistics'];
   const appTitle = 'CaskFs';
 
   spaMiddleware({
