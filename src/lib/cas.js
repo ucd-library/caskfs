@@ -374,7 +374,7 @@ class Cas {
       throw new Error('Powerwash is not supported for cloud storage backends');
     }
     let dir = path.resolve(config.rootDir);
-    logger.warn('Powerwashing CaskFs root directory:', dir);
+    this.logger.warn('Powerwashing CaskFs root directory:', dir);
     
     // Remove contents of directory but keep the directory itself
     const items = fs.readdirSync(dir);
@@ -382,7 +382,7 @@ class Cas {
       const itemPath = path.join(dir, item);
       fs.rmSync(itemPath, { recursive: true, force: true });
     }
-    logger.warn('CaskFs root directory contents removed from:', dir);
+    this.logger.warn('CaskFs root directory contents removed from:', dir);
   }
 
   /**

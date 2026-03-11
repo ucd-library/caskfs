@@ -7,6 +7,7 @@ import QueryStringController from '../../controllers/QueryStringController.js';
 import DropdownController from '../../controllers/DropdownController.js';
 import FsDisplayUtils from '../../utils/FsDisplayUtils.js';
 import AppComponentController from '../../controllers/AppComponentController.js';
+import DirectoryPathController from '../../controllers/DirectoryPathController.js';
 
 /**
  * @description A typeahead input for searching the file system
@@ -20,6 +21,7 @@ import AppComponentController from '../../controllers/AppComponentController.js'
  * @param {Object} suggestionContainerStyles - Styles to apply to the suggestion container for positioning
  * @param {String} placeholder - Placeholder text for the input
  * @param {Boolean} keepFocusOnAppStateUpdate - Keep focus on input when app state updates
+ * @param {Boolean} startWithCurrentDirectory - Start the typeahead with the current directory as the value
  */
 export default class CaskfsFsTypeahead extends Mixin(LitElement)
   .with(LitCorkUtils) {
@@ -38,7 +40,8 @@ export default class CaskfsFsTypeahead extends Mixin(LitElement)
       fetchError: { state: true },
       suggestionContainerStyles: { state: true },
       placeholder: { type: String },
-      keepFocusOnAppStateUpdate: { type: Boolean, attribute: 'keep-focus-on-app-state-update' }
+      keepFocusOnAppStateUpdate: { type: Boolean, attribute: 'keep-focus-on-app-state-update' },
+      startWithCurrentDirectory: { type: Boolean, attribute: 'start-with-current-directory' }
     }
   }
 
@@ -60,12 +63,14 @@ export default class CaskfsFsTypeahead extends Mixin(LitElement)
     this.showSubmitButton = false;
     this.selectedSuggestion = null;
     this.keepFocusOnAppStateUpdate = false;
+    this.startWithCurrentDirectory = false;
 
     this.ctl = {
       appComponent: new AppComponentController(this),
       qs: new QueryStringController(this, { types: { partition: 'array'}}),
       dropdown: new DropdownController(this, {defaultMaxHeight: 190, belowCustomStyles: { borderTop: 'none' } }),
-      wait: new WaitController(this)
+      wait: new WaitController(this),
+      directoryPath: new DirectoryPathController(this)
     };
 
     this._injectModel('DirectoryModel', 'AppStateModel');
@@ -109,6 +114,17 @@ export default class CaskfsFsTypeahead extends Mixin(LitElement)
   _onKeyDown(e) {
     this.redirectFocus(e);
     this.focusOnArrowKey(e);
+    this.blurOnEscape(e);
+  }
+
+  /**
+   * @description Blur the input and close the dropdown on escape key press
+   */
+  blurOnEscape(e){
+    if ( e.key === 'Escape' && this.ctl.dropdown.open ) {
+      this.ctl.dropdown.open = false;
+      this.renderRoot.getElementById('value-input').blur();
+    }
   }
 
   /**
@@ -175,6 +191,13 @@ export default class CaskfsFsTypeahead extends Mixin(LitElement)
   }
 
   async _onValueFocus(){
+    if ( this.startWithCurrentDirectory && !this.value && this.ctl.directoryPath.pathname ) {
+      this.value = this.ctl.directoryPath.pathname + (this.ctl.directoryPath.pathname.endsWith('/') ? '' : '/');
+      await this.ctl.wait.waitForUpdate();
+      await this.ctl.wait.waitForFrames(3);
+      const el = this.renderRoot.getElementById('value-input');
+      el.setSelectionRange(this.value.length, this.value.length);
+    }
     this.ctl.dropdown.open = false;
     await this.getSuggestions();
     this.ctl.dropdown.open = true;

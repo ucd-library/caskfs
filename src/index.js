@@ -684,6 +684,7 @@ class CaskFs {
    * @param {Object} context.query text to filter directory and file names
    * @param {Object} context.limit pagination limit options
    * @param {Object} context.offset pagination offset options
+   * @param {Object} context.checkDirectoryExists Throws an error if the directory does not exist.
    *
    * @returns {Object} result object with query and files array
    */
@@ -701,6 +702,10 @@ class CaskFs {
     }
 
     await this.checkPermissions(context, {permission: 'read'})
+
+    if ( context.data.checkDirectoryExists && context.data.directory ) {
+      await this.directory.get(context);
+    }
 
     if( !context.data.limit ) context.update({limit: 100});
     if( !context.data.offset ) context.update({offset: 0});

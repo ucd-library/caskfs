@@ -18,10 +18,11 @@ import './pages/caskfs-page-file-search.js';
 import './pages/caskfs-page-partitions.js';
 import './pages/caskfs-page-file-single.js';
 import './pages/caskfs-page-relationships.js';
+import './pages/caskfs-page-statistics.js';
 
 // app global components
 import './components/cork-app-error.js';
-import './components/cork-app-loader.js';
+import './components/cork-app-loader-bar.js';
 import './components/cork-app-toast.js';
 import './components/cork-app-dialog-modal.js';
 import './components/cork-toggle-switch.js';
