@@ -45,7 +45,13 @@ export function styles() {
 
 export function render() { 
 return html`
-  <div class="container" ?hidden="${!this.isDisplayed}">
+  <div 
+    class="container" 
+    ?hidden="${!this.isDisplayed}"
+    role="progressbar"
+    aria-label="Loading"
+    aria-valuetext="Loading"
+    >
     <div class="sliding-segment"></div>
   </div>
 `;}

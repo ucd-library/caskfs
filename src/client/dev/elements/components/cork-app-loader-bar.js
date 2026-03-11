@@ -34,10 +34,18 @@ export default class CorkAppLoaderBar extends Mixin(LitElement)
 
   show() {
     this.isDisplayed = true;
+    const main = this.closest('main');
+    if ( main ) {
+      main.setAttribute('aria-busy', 'true');
+    }
   }
 
   hide() {
     this.isDisplayed = false;
+    const main = this.closest('main');
+    if ( main ) {
+      main.removeAttribute('aria-busy');
+    }
   }
 
 }
