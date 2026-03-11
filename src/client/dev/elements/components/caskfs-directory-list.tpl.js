@@ -70,6 +70,7 @@ export function render() {
           placeholder="Search the file system"
           focus-first
           show-submit-button
+          start-with-current-directory
           @caskfs-fs-typeahead-submit=${this._onSearchSubmit}
           @caskfs-fs-typeahead-select=${this._onSearchSelect}>
         </caskfs-fs-typeahead>
