@@ -3,6 +3,7 @@ import handleError from './handleError.js';
 import caskFs from './caskFs.js';
 import { pipeline } from 'stream/promises';
 import { Validator } from './validate.js';
+import { MissingResourceError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -14,9 +15,8 @@ router.get('/', (req, res) => {
 
 // get file content or metadata
 router.get(/(.*)/, async (req, res) => {
+  const filePath = req.params[0] || '/';
   try {
-
-    const filePath = req.params[0] || '/';
     const metadata = await caskFs.metadata({filePath, corkTraceId: req.corkTraceId});
 
     if ( 
@@ -61,6 +61,31 @@ router.get(/(.*)/, async (req, res) => {
     await pipeline(readStream, res);
 
   } catch (e) {
+
+    // If file does not exist, check if a directory exists at that path
+    if ( e instanceof MissingResourceError ) {
+      try {
+        const exists = await caskFs.exists({filePath});
+        if (exists) {
+          const baseUrl = req.baseUrl.split('/').slice(0, -1).join('/') || '';
+          const fileUrl = `${req.protocol}://${req.get('host')}${baseUrl}/dir${filePath}`;
+          res.set('Link', `<${fileUrl}>; rel="describedby"`);
+          return res.status(409).json({
+            message: `This path corresponds to a directory, not a file.`,
+            details: {
+              wrongResourceType: true,
+              requestedResourceType: 'file',
+              path: filePath,
+              link: fileUrl
+            }
+          });
+        }
+
+      } catch (directoryError) {
+        // use original error
+      }
+    }
+
     return handleError(res, req, e);
   }
 });

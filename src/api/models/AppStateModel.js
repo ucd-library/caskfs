@@ -111,7 +111,19 @@ class AppStateModelImpl extends AppStateModel {
    */
   addErrorRequest(req) {
     if ( req.errorSettings?.suppressError ) return;
+
+    // If the error is a 409 with a link to the opposite resource type, redirect to that page instead of showing an error
+    const page = this.store.data.page;
+    const statusCode = req.payload?.error?.response?.status;
+    const payload = req.payload?.error?.payload;
+    if ( statusCode == 409 && ['file', 'directory'].includes(page) ) {
+      const loc = `${payload?.details?.requestedResourceType === 'file' ? 'directory' : 'file'}${payload?.details?.path || ''}`;
+      this.setLocation(appUrlUtils.fullLocation(loc));
+      return;
+    }
+
     this.errorRequests.push(req);
+
     if ( this._errorVisible || this._showErrorTimer ) return;
 
     this._showErrorTimer = setTimeout(() => {
