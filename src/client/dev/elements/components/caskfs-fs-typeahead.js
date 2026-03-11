@@ -192,8 +192,11 @@ export default class CaskfsFsTypeahead extends Mixin(LitElement)
 
   async _onValueFocus(){
     if ( this.startWithCurrentDirectory && !this.value && this.ctl.directoryPath.pathname ) {
-      this.value = this.ctl.directoryPath.pathname + '/';
-      await this.updateComplete;
+      this.value = this.ctl.directoryPath.pathname + (this.ctl.directoryPath.pathname.endsWith('/') ? '' : '/');
+      await this.ctl.wait.waitForUpdate();
+      await this.ctl.wait.waitForFrames(3);
+      const el = this.renderRoot.getElementById('value-input');
+      el.setSelectionRange(this.value.length, this.value.length);
     }
     this.ctl.dropdown.open = false;
     await this.getSuggestions();
