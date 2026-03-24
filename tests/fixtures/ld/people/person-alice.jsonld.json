@@ -1,0 +1,7 @@
+{
+  "@id": "https://example.org/person/alice",
+  "@type": "http://schema.org/Person",
+  "http://schema.org/name": "Alice Smith",
+  "http://schema.org/email": {"@value": "alice@example.org"},
+  "http://schema.org/affiliation": {"@id": "https://example.org/org/ucd"}
+}

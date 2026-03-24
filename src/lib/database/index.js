@@ -289,23 +289,24 @@ class Database {
       dbClient : this
     };
 
+    let params = [directory, opts.limit || 100, opts.offset || 0];
+
     if( await acl.aclLookupRequired(aclOpts) ) {
       userAclQuery = '(acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE)';
       if( opts.requestor ) {
         let userId = await acl.getUserId({ user: opts.requestor, dbClient: this });
         if( userId !== null && userId !== undefined ) {
-          userAclQuery = `OR (acl_lookup.user_id = ${userId} AND acl_lookup.can_read = TRUE)`;
+          params.push(userId);
+          userAclQuery += ` OR (acl_lookup.user_id = $${params.length} AND acl_lookup.can_read = TRUE)`;
         }
       }
       userAclQuery = ' AND (' + userAclQuery + ')';
     }
 
-    let params = [directory, opts.limit || 100, opts.offset || 0];
-
     let fileNameQuery = '';
     if( opts.query ) {
-      fileNameQuery = `AND name ILIKE '%' || $4 || '%'`;
       params.push(opts.query);
+      fileNameQuery = `AND name ILIKE '%' || $${params.length} || '%'`;
     }
 
     const sql = `

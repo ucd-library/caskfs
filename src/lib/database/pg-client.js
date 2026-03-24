@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import config from '../config.js';
 import path from 'path';
 import Cursor from 'pg-cursor';
+import { getLogger } from '../logger.js';
 
 let __dirname = path.dirname(new URL(import.meta.url).pathname);
 
@@ -74,15 +75,16 @@ class PgClient {
   }
 
   async init() {
-    console.log(`Initializing CASKFS schema in PostgreSQL database`);
+    let logger = getLogger('pg-client');
+    logger.info('Initializing CASKFS schema in PostgreSQL database');
 
     for( let file of this.initFiles ) {
       let filePath = path.resolve(__dirname, '..', '..', 'schema', file);
-      console.log(`  - executing ${file}`);
+      logger.info(`  - executing ${file}`);
       await this.queryFromFile(filePath);
     }
 
-    console.log('CASKFS schema initialized');
+    logger.info('CASKFS schema initialized');
   }
 
   async queryFromFile(filePath) {

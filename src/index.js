@@ -1415,7 +1415,7 @@ class CaskFs {
     }
 
     if( opts.noContextUpdate !== true ) {
-      context.update({ignoreAcl: false});
+      context.update({ignoreAcl: true});
     }
     return true;
   }

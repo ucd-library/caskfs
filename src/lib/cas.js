@@ -148,6 +148,9 @@ class Cas {
       const writeStream = fs.createWriteStream(filePath);
       stream.pipe(writeStream);
       writeStream.on('finish', () => {
+        for( let algo of config.digests ) {
+          digests[algo] = digests[algo].digest('hex');
+        }
         resolve(digests);
       });
       writeStream.on('error', (err) => {

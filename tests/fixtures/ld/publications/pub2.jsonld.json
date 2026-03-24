@@ -1,0 +1,11 @@
+{
+  "@id": "https://example.org/pub/2",
+  "@type": "http://schema.org/ScholarlyArticle",
+  "http://schema.org/name": "Knowledge Graphs in Practice",
+  "http://schema.org/author": [
+    {"@id": "https://example.org/person/alice"},
+    {"@id": "https://example.org/person/carol"}
+  ],
+  "http://schema.org/about": {"@id": "https://example.org/topic/knowledge-graphs"},
+  "http://schema.org/datePublished": {"@value": "2024-06-01"}
+}
