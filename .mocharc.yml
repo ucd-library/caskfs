@@ -1,0 +1,3 @@
+spec: tests/**/*.test.js
+timeout: 15000
+require: tests/helpers/env.js
