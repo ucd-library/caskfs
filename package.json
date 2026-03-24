@@ -37,6 +37,7 @@
     "n3": "^1.26.0",
     "pg": "^8.16.3",
     "pg-cursor": "^2.15.3",
+    "tar-stream": "^3.1.7",
     "yaml": "^2.8.1"
   },
   "devDependencies": {

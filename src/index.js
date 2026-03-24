@@ -12,6 +12,7 @@ import { getLogger, setLogLevel } from "./lib/logger.js";
 import { createContext, CaskFSContext } from "./lib/context.js";
 import AutoPathBucket from "./lib/auto-path/bucket.js";
 import AutoPathPartition from "./lib/auto-path/partition.js";
+import Transfer from "./lib/transfer.js";
 import { MissingResourceError, AclAccessError, DuplicateFileError } from "./lib/errors.js";
 
 class CaskFs {
@@ -68,6 +69,16 @@ class CaskFs {
     };
 
     this.acl = acl;
+
+    this.transfer = new Transfer({
+      dbClient: this.dbClient,
+      cas: this.cas,
+      directory: this.directory,
+      rdf: this.rdf,
+      acl: this.acl,
+      autoPath: this.autoPath,
+      schema: this.schema
+    });
 
     this.setLogLevel = setLogLevel;
     if( opts.logLevel ) {
@@ -338,9 +349,10 @@ class CaskFs {
       context.update({copied});
       context.data.actions.fileCopiedToCas = copied;
 
-      // if metadata was updated, write the metadata file to CAS
+      // if metadata was updated, write the metadata file to CAS.
+      // Pass the transaction client so the query sees the uncommitted file record.
       if( context.data.actions.updatedMetadata === true ) {
-        await this.cas.writeMetadata(context.data.file.hash_value);
+        await this.cas.writeMetadata(context.data.file.hash_value, { dbClient });
       }
 
       // finally commit the transaction
@@ -1469,10 +1481,45 @@ class CaskFs {
 
 
   /**
+   * @method export
+   * @description Export all CAS content and optionally ACL / auto-partition data to a
+   * streaming .tar.gz archive.  Each unique hash is written exactly once.
+   *
+   * @param {String} destPath - absolute path to write the .tar.gz archive to
+   * @param {Object} [opts={}]
+   * @param {Boolean} [opts.includeAcl=false] - include ACL data (roles, users, permissions)
+   * @param {Boolean} [opts.includeAutoPartition=false] - include auto-partition rules
+   * @param {Function} [opts.cb] - progress callback `({type, current, total, hash}) => {}`
+   *
+   * @returns {Promise<{hashCount: number, fileCount: number}>} export summary
+   */
+  export(destPath, opts={}) {
+    return this.transfer.export(destPath, opts);
+  }
+
+  /**
+   * @method import
+   * @description Import CAS content and optional ACL / auto-partition data from a .tar.gz
+   * archive produced by export().
+   *
+   * @param {String} srcPath - absolute path to the .tar.gz archive
+   * @param {Object} [opts={}]
+   * @param {Boolean} [opts.overwrite=false] - replace existing file records on conflict
+   * @param {String} [opts.aclConflict='fail'] - 'fail' | 'skip' | 'merge' on ACL conflicts
+   * @param {String} [opts.autoPartitionConflict='fail'] - 'fail' | 'skip' | 'merge' on rule conflicts
+   * @param {Function} [opts.cb] - progress callback
+   *
+   * @returns {Promise<{hashCount: number, fileCount: number, skippedFiles: number}>}
+   */
+  import(srcPath, opts={}) {
+    return this.transfer.import(srcPath, opts);
+  }
+
+  /**
    * @method close
    * @description Close the database client connection.
-   * 
-   * @returns 
+   *
+   * @returns
    */
   close() {
     return this.dbClient.end();
