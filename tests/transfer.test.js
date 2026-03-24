@@ -75,7 +75,7 @@ describe('Transfer – export()', () => {
     await caskFs.write({ filePath: '/b/file3.txt', data: Buffer.from('hello'), requestor: 'test', ignoreAcl: true });
 
     archivePath = path.join(os.tmpdir(), `caskfs-export-${Date.now()}.tar.gz`);
-    await caskFs.export(archivePath);
+    await caskFs.export(archivePath, { rootDir: '/' });
   });
 
   after(async () => {
@@ -121,7 +121,7 @@ describe('Transfer – export()', () => {
     // Re-run export to capture the return value.
     const archivePath2 = path.join(os.tmpdir(), `caskfs-export-sum-${Date.now()}.tar.gz`);
     try {
-      const summary = await caskFs.export(archivePath2);
+      const summary = await caskFs.export(archivePath2, { rootDir: '/' });
       assert.strictEqual(summary.hashCount, 2);
       assert.strictEqual(summary.fileCount, 3); // file1, file2, file3
     } finally {
@@ -133,7 +133,7 @@ describe('Transfer – export()', () => {
     const called = [];
     const archivePath3 = path.join(os.tmpdir(), `caskfs-export-cb-${Date.now()}.tar.gz`);
     try {
-      await caskFs.export(archivePath3, { cb: info => called.push(info) });
+      await caskFs.export(archivePath3, { rootDir: '/', cb: info => called.push(info) });
       const casCallbacks = called.filter(c => c.type === 'cas');
       assert.strictEqual(casCallbacks.length, 2, 'callback should fire once per hash');
       assert.ok(casCallbacks.every(c => c.total === 2));
@@ -148,7 +148,7 @@ describe('Transfer – export()', () => {
 
     const aclArchive = path.join(os.tmpdir(), `caskfs-export-acl-${Date.now()}.tar.gz`);
     try {
-      await caskFs.export(aclArchive, { includeAcl: true });
+      await caskFs.export(aclArchive, { rootDir: '/', includeAcl: true });
       const entries = await listArchiveEntries(aclArchive);
       assert.ok(entries.includes('acl/roles.json'), 'acl/roles.json missing');
       assert.ok(entries.includes('acl/users.json'), 'acl/users.json missing');
@@ -168,7 +168,7 @@ describe('Transfer – export()', () => {
 
     const apArchive = path.join(os.tmpdir(), `caskfs-export-ap-${Date.now()}.tar.gz`);
     try {
-      await caskFs.export(apArchive, { includeAutoPartition: true });
+      await caskFs.export(apArchive, { rootDir: '/', includeAutoPartition: true });
       const entries = await listArchiveEntries(apArchive);
       assert.ok(entries.includes('auto-partition/partitions.json'));
       assert.ok(entries.includes('auto-partition/buckets.json'));
@@ -198,7 +198,7 @@ describe('Transfer – import()', () => {
     await caskFs.write({ filePath: '/dir2/alpha2.txt', data: Buffer.from('alpha'),  requestor: 'test', ignoreAcl: true });
 
     archivePath = path.join(os.tmpdir(), `caskfs-import-src-${Date.now()}.tar.gz`);
-    await caskFs.export(archivePath);
+    await caskFs.export(archivePath, { rootDir: '/' });
   });
 
   after(async () => {
@@ -311,7 +311,7 @@ describe('Transfer – ACL export/import', () => {
     });
 
     archivePath = path.join(os.tmpdir(), `caskfs-acl-${Date.now()}.tar.gz`);
-    await caskFs.export(archivePath, { includeAcl: true });
+    await caskFs.export(archivePath, { rootDir: '/', includeAcl: true });
   });
 
   after(async () => {
@@ -391,7 +391,7 @@ describe('Transfer – ACL export/import', () => {
 
       // Export a merge-specific archive that carries 'write' permission.
       mergeArchivePath = path.join(os.tmpdir(), `caskfs-acl-merge-${Date.now()}.tar.gz`);
-      await caskFs.export(mergeArchivePath, { includeAcl: true });
+      await caskFs.export(mergeArchivePath, { rootDir: '/', includeAcl: true });
 
       // Now reset to only 'read' so the merge has a real permission to add.
       await caskFs.dbClient.powerWash();
@@ -466,7 +466,7 @@ describe('Transfer – auto-partition export/import', () => {
     await caskFs.autoPath.bucket.set({ name: 'dept', index: 2 });
 
     archivePath = path.join(os.tmpdir(), `caskfs-ap-${Date.now()}.tar.gz`);
-    await caskFs.export(archivePath, { includeAutoPartition: true });
+    await caskFs.export(archivePath, { rootDir: '/', includeAutoPartition: true });
   });
 
   after(async () => {

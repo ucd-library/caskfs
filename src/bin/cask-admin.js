@@ -1,37 +1,12 @@
 import { Command } from 'commander';
 import CaskFs from '../index.js';
 import {optsWrapper, handleGlobalOpts} from './opts-wrapper.js';
-import cliProgress from 'cli-progress';
 import path from 'path';
 import os from 'os';
 import config from '../lib/config.js';
 
 const program = new Command();
 optsWrapper(program);
-
-program
-  .command('write-all-metadata')
-  .description('Rewrite metadata for all files in the CaskFS')
-  .action(async () => {
-    handleGlobalOpts({});
-    const caskfs = new CaskFs();
-
-    let pbar;
-
-    await caskfs.rewriteAllMetadataFiles((progress) => {
-      if( !pbar ) {
-        pbar = new cliProgress.Bar(
-          {etaBuffer: 50}, 
-          cliProgress.Presets.shades_classic
-        ); 
-        pbar.start(progress.total, 0);
-      }
-      pbar.update(progress.count);
-    });
-
-    pbar.stop();
-    caskfs.dbClient.end();
-  });
 
 program
   .command('stats')

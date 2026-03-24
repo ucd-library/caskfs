@@ -71,7 +71,8 @@ class Transfer {
    * many CaskFS file paths reference it.
    *
    * @param {String} destPath - absolute path to write the .tar.gz archive to
-   * @param {Object} [opts={}]
+   * @param {Object} opts
+   * @param {String} opts.rootDir - required. only export files under this CaskFS path
    * @param {Boolean} [opts.includeAcl=false] - include ACL data in the export
    * @param {Boolean} [opts.includeAutoPartition=false] - include auto-partition rules
    * @param {Function} [opts.cb] - optional progress callback `({type, current, total, hash}) => {}`
@@ -79,6 +80,8 @@ class Transfer {
    * @returns {Promise<{hashCount: number, fileCount: number}>} export summary
    */
   async export(destPath, opts={}) {
+    if (!opts.rootDir) throw new Error('opts.rootDir is required for export');
+
     const pack = tarStream.pack();
     const gzip = zlib.createGzip();
     const output = fs.createWriteStream(destPath);
@@ -113,13 +116,27 @@ class Transfer {
    * @description Stream all CAS raw files and their metadata JSON into the tar pack.
    * Each hash is processed exactly once.  Metadata is generated fresh from the database
    * rather than read from the on-disk .json so it always reflects the current DB state.
+   * Only hashes with at least one file under opts.rootDir are included; the metadata JSON
+   * likewise only lists file records under that path.
    *
    * @param {Object} pack - tar-stream pack instance
-   * @param {Object} opts - options (passes cb through)
+   * @param {Object} opts - options (rootDir, cb)
    * @returns {Promise<{hashCount: number, fileCount: number}>}
    */
   async _exportCas(pack, opts={}) {
-    // Single query: fetch every hash with all its file records aggregated.
+    // Normalize rootDir: ensure leading slash, strip trailing slash (except root "/").
+    const rootDir = (opts.rootDir || '/').replace(/\/+$/, '') || '/';
+    const dirFilter = rootDir === '/'
+      ? 'TRUE'
+      : `(fv2.directory = $1 OR fv2.directory LIKE $1 || '/%')`;
+
+    const params = rootDir === '/' ? [] : [rootDir];
+    const aggFilter = rootDir === '/'
+      ? 'WHERE fv.file_id IS NOT NULL'
+      : `WHERE fv.file_id IS NOT NULL AND (fv.directory = $1 OR fv.directory LIKE $1 || '/%')`;
+
+    // Fetch only hashes that have at least one file under rootDir.
+    // The json_agg is also restricted to file records under rootDir.
     const result = await this.dbClient.query(`
       SELECT
         h.hash_id,
@@ -133,14 +150,19 @@ class Transfer {
               'metadata',      fv.metadata,
               'partitionKeys', fv.partition_keys
             ) ORDER BY fv.filepath
-          ) FILTER (WHERE fv.file_id IS NOT NULL),
+          ) FILTER (${aggFilter}),
           '[]'::json
         ) AS files
       FROM ${this.schema}.hash h
       LEFT JOIN ${this.schema}.file_view fv ON fv.hash_value = h.value
+      WHERE h.value IN (
+        SELECT DISTINCT fv2.hash_value
+        FROM ${this.schema}.file_view fv2
+        WHERE ${dirFilter}
+      )
       GROUP BY h.hash_id, h.value
       ORDER BY h.value
-    `);
+    `, params);
 
     const rows = result.rows;
     const total = rows.length;
@@ -461,9 +483,6 @@ class Transfer {
       await db.query('ROLLBACK');
       throw err;
     }
-
-    // Regenerate the on-disk .json so it reflects the current DB state.
-    await this.cas.writeMetadata(hash);
 
     return { imported, skipped };
   }
