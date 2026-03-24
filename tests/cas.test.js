@@ -435,31 +435,4 @@ describe('CAS Layer', () => {
     });
   });
 
-  // ── writeMetadata ──────────────────────────────────────────────────────────
-
-  describe('writeMetadata()', () => {
-    it('should write a JSON metadata file alongside the hash file', async () => {
-      const content = Buffer.from('metadata write test ' + Date.now());
-      const writeCtx = await caskFs.write({
-        filePath: '/cas-test/metadata-test.bin',
-        data: content,
-        requestor: TEST_USER,
-        ignoreAcl: true,
-      });
-      const hash = writeCtx.data.file?.hash_value;
-
-      await cas.writeMetadata(hash);
-
-      const metaPath = cas.diskPath(hash) + '.json';
-      assert.ok(fs.existsSync(metaPath), 'metadata JSON file should exist');
-
-      const metaRaw = fs.readFileSync(metaPath, 'utf8');
-      const meta = JSON.parse(metaRaw);
-
-      assert.ok(meta.value === hash, 'metadata value should match hash');
-      assert.ok(Array.isArray(meta.files), 'metadata should have a files array');
-      assert.ok(meta.files.length > 0, 'files array should have at least one entry');
-      assert.ok(meta.files[0].filename === 'metadata-test.bin', 'filename should match');
-    });
-  });
 });

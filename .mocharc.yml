@@ -5,5 +5,6 @@ spec:
   - tests/cas.test.js
   - tests/partitions.test.js
   - tests/ld-operations.test.js
+  - tests/transfer.test.js
 timeout: 15000
 require: tests/helpers/env.js

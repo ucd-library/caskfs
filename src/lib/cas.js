@@ -204,50 +204,6 @@ class Cas {
   }
 
   /**
-   * @function writeMetadata
-   * @description Update the metadata JSON file for a given hash value.
-   * 
-   * @param {String} hash
-   * 
-   * @returns {Promise} 
-   */
-  async writeMetadata(hash) {
-    await this.init();
-
-    let fileMetadata = {
-      hash_id: null,
-      value: null,
-      metadata: null,
-      files: []
-    };
-    
-    // JM - TODO: can we should have all this info 
-    let files = await this.dbClient.query(`
-      select * from ${config.database.schema}.file_view where hash_value = $1
-    `, [hash]);
-    files = files.rows;
-
-
-    if (files.length > 0) {
-      fileMetadata.hash_id = files[0].hash_id;
-      fileMetadata.value = files[0].hash_value;
-      fileMetadata.metadata = files[0].hash_metadata;
-      fileMetadata.files = files.map(row => ({
-        fileId: row.file_id,
-        filename: row.filename,
-        directory: row.directory,
-        metadata: row.metadata,
-        partitionKeys: row.partition_keys
-      }));
-    }
-
-    let metadataFile = this.diskPath(hash)+'.json';
-
-    await this.storage.mkdir(path.dirname(metadataFile), {recursive: true});
-    await this.storage.writeFile(metadataFile, JSON.stringify(fileMetadata, null, 2));
-  }
-
-  /**
    * @method read
    * @description Return the file contents for the given hash value.
    * 
@@ -328,10 +284,6 @@ class Cas {
         await this.storage.unlink(fullPath);
       }
 
-      if( await this.storage.exists(fullPath + '.json') ) {
-        await this.storage.unlink(fullPath + '.json');
-      }
-
       await dbClient.query(`
         DELETE FROM ${config.database.schema}.hash WHERE value = $1
       `, [hash]);
@@ -339,8 +291,6 @@ class Cas {
       // Should we look to cleanup dirs for fs storage backend?
 
       fileDeleted = true;
-    } else {
-      await this.writeMetadata(hash);
     }
 
     return {

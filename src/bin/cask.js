@@ -29,7 +29,7 @@ optsWrapper(program)
 config.acl.defaultRequestor = os.userInfo().username;
 
 program
-  .name('pgfarm')
+  .name('CaskFs')
   // .option('-V, --version', 'show version')
   .action(async () => {
 
@@ -37,7 +37,7 @@ program
     try {
       let latest = await getLatestVersion();
       if( latest !== versionInfo ) {
-        versionInfo = `${versionInfo} (latest: ${colors.green(latest)}. Run '${colors.yellow(`npm install -g @ucd-lib/pgfarm@${latest}`)}' to update)`;
+        versionInfo = `${versionInfo} (latest: ${colors.green(latest)}. Run '${colors.yellow(`npm install -g @ucd-lib/caskfs@${latest}`)}' to update)`;
       } else {
         versionInfo += colors.green(' (latest)');
       }
@@ -453,6 +453,7 @@ program.command('acl', 'Manage ACL rules');
 program.command('auto-path', 'Manage auto-path rules');
 program.command('env', 'Manage cask cli environment');
 program.command('admin', 'CaskFS administrative commands');
+program.command('archive', 'Import and export CaskFS archives');
 
 program
   .command('init-pg')
