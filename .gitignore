@@ -3,7 +3,7 @@ node_modules
 dist
 .env
 .DS_Store
-.claude/workingtrees
+.claude
 /src/client/public/js
 icons.html.js
 service-account.json
