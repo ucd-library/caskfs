@@ -1,0 +1,11 @@
+{
+  "@id": "https://example.org/pub/1",
+  "@type": "http://schema.org/ScholarlyArticle",
+  "http://schema.org/name": "Advances in Content-Addressed Storage",
+  "http://schema.org/author": [
+    {"@id": "https://example.org/person/alice"},
+    {"@id": "https://example.org/person/bob"}
+  ],
+  "http://schema.org/about": {"@id": "https://example.org/topic/storage"},
+  "http://schema.org/datePublished": {"@value": "2024-01-15"}
+}

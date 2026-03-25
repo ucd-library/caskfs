@@ -1,0 +1,6 @@
+{
+  "@id": "https://example.org/person/bob",
+  "@type": "http://schema.org/Person",
+  "http://schema.org/name": "Bob Jones",
+  "http://schema.org/affiliation": {"@id": "https://example.org/org/ucd"}
+}
