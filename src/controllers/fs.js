@@ -115,7 +115,10 @@ router.post(/(.*)/, async (req, res) => {
   try {
     let opts = getWriteOptions(req);
     let result = await caskFs.write(opts);
-    res.status(201).json(result);
+    res.status(201).json({
+      filePath: result.data.filePath,
+      actions: result.data.actions
+    });
   } catch (e) {
     return handleError(res, req, e);
   }
@@ -127,7 +130,10 @@ router.put(/(.*)/, async (req, res) => {
     let opts = getWriteOptions(req);
 
     let result = await caskFs.write(opts);
-    res.status(200).json(result);
+    res.status(201).json({
+      filePath: result.data.filePath,
+      actions: result.data.actions
+    });
   } catch (e) {
     return handleError(res, req, e);
   }

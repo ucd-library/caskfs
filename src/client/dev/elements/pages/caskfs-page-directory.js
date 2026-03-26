@@ -4,6 +4,7 @@ import { LitCorkUtils, Mixin } from '@ucd-lib/cork-app-utils';
 import { MainDomElement } from "@ucd-lib/theme-elements/utils/mixins/main-dom-element.js";
 
 import uploadUtils from '../../utils/uploadUtils.js';
+import DirectoryPathController from '../../controllers/DirectoryPathController.js';
 
 export default class CaskfsPageDirectory extends Mixin(LitElement)
   .with(LitCorkUtils, MainDomElement) {
@@ -24,6 +25,12 @@ export default class CaskfsPageDirectory extends Mixin(LitElement)
     this.render = render.bind(this);
     this.dragging = false;
     this.dragZoneHeight = 200;
+
+    this.ctl = { 
+      directoryPath: new DirectoryPathController(this)
+    }
+
+    this._injectModel('FsModel');
   }
 
   /**
@@ -48,6 +55,19 @@ export default class CaskfsPageDirectory extends Mixin(LitElement)
     this.dragging = false;
     const files = await uploadUtils.getFilesFromDragEvent(e);
     console.log('files to upload', files);
+    this.FsModel.upload(files, this.ctl.directoryPath.pathname);
+  }
+
+  _onFsUploadProgressUpdate(e) {
+    console.log('FS_UPLOAD_PROGRESS_UPDATE', e);
+  }
+
+  _onFsUploadFileEntryUpdate(e) {
+    console.log('_onFsUploadFileEntryUpdate', e);
+  }
+
+  _onFsUploadFileUpdate(e) {
+    console.log('_onFsUploadFileUpdate', e);
   }
 
 }

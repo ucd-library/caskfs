@@ -1,4 +1,4 @@
-import {BaseService} from '@ucd-lib/cork-app-utils';
+import {BaseService, digest} from '@ucd-lib/cork-app-utils';
 import FsStore from '../stores/FsStore.js';
 
 import payload from '../utils/payload.js';
@@ -69,6 +69,86 @@ class FsService extends BaseService {
     );
 
     return store.get(id);
+  }
+
+  async uploadFile(destDir, file, opts = {}) {
+    const store = this.store.data.uploadFile;
+    const filename = file.webkitRelativePath || file.name;
+    const id = await digest({ destDir, filename, ...opts });
+    
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const params = new URLSearchParams();
+      if (opts.mimeType) params.set('mimeType', opts.mimeType);
+      const method = opts.replace ? 'PUT' : 'POST';
+      xhr.open(method, `${this.baseUrl}${destDir}/${filename}?${params.toString()}`);
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+
+      // initialize entry in store
+      const appStateOptions = {
+        errorSettings: {suppressError: true},
+        loaderSettings: {suppressLoader: true}
+      };
+      this.store.set(
+        { id, state: 'loading', destDir, filename, opts, bytesUploaded: 0, bytesTotal: file.size }, 
+        store,
+        null,
+        appStateOptions
+      ); 
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          const entry = store.get(id);
+          if ( entry ) {
+            const entryProgress = Math.round((e.loaded / e.total) * 100);
+            const lastEmittedProgress = Math.round((entry.bytesUploaded / entry.bytesTotal) * 100);
+            entry.bytesUploaded = e.loaded;
+            entry.bytesTotal = e.total;
+            if (entryProgress - lastEmittedProgress >= this.store.uploadProgressThreshold || entryProgress === 100) {
+              this.store.emit(this.store.events.FS_UPLOAD_PROGRESS_UPDATE, { entityType: 'file', entity: entry });
+            }
+          }
+        }
+      };
+
+      xhr.onload = () => {
+        let body = xhr.responseText;
+        const entry = store.get(id);
+        try {
+          body = JSON.parse(body);
+        } catch (e) {
+          // response is not JSON, ignore
+        }
+
+        const badStatus = xhr.status < 200 || xhr.status >= 300;
+        if ( badStatus || body?.error ) {
+          entry.error = {
+            error: true,
+            details: body,
+            message: badStatus ? 'Invalid status code' : 'Application Error'
+          }
+          entry.state = 'error';
+        } else {
+          entry.state = 'loaded';
+          entry.payload = body;
+        }
+        this.store.set(entry, store, null, appStateOptions);
+        resolve(entry);
+      };
+
+      xhr.onerror = () => {
+        const entry = store.get(id);
+        entry.error = {
+          error: true,
+          message: 'Network error'
+        }
+        entry.state = 'error';
+        this.store.set(entry, store, null, appStateOptions);
+        resolve(entry);
+      }
+
+      xhr.send(file); // File object IS a Blob, so this streams it directly
+    });
   }
 
   async getFileContents(path) {
