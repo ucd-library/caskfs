@@ -12,7 +12,8 @@ export default class CaskfsPageDirectory extends Mixin(LitElement)
   static get properties() {
     return {
       dragging: { type: Boolean },
-      dragZoneHeight: { type: Number }
+      dragZoneHeight: { type: Number },
+      dragZonePaddingTop: { type: Number },
     }
   }
 
@@ -25,6 +26,7 @@ export default class CaskfsPageDirectory extends Mixin(LitElement)
     this.render = render.bind(this);
     this.dragging = false;
     this.dragZoneHeight = 200;
+    this.dragZonePaddingTop = 0;
 
     this.ctl = { 
       directoryPath: new DirectoryPathController(this)
@@ -39,7 +41,9 @@ export default class CaskfsPageDirectory extends Mixin(LitElement)
    */
   _onDragOver(e) {
     e.preventDefault();
-    this.dragZoneHeight = Math.round(window.innerHeight - this.getBoundingClientRect().top);
+    const rect = this.getBoundingClientRect();
+    this.dragZoneHeight = Math.round(window.innerHeight - rect.top);
+    this.dragZonePaddingTop = Math.round(Math.max(0, -rect.top));
     this.dragging = true;
   }
 
@@ -58,17 +62,17 @@ export default class CaskfsPageDirectory extends Mixin(LitElement)
     this.FsModel.upload(files, this.ctl.directoryPath.pathname);
   }
 
-  _onFsUploadProgressUpdate(e) {
-    console.log('FS_UPLOAD_PROGRESS_UPDATE', e);
-  }
+  // _onFsUploadProgressUpdate(e) {
+  //   console.log('FS_UPLOAD_PROGRESS_UPDATE', e);
+  // }
 
-  _onFsUploadFileEntryUpdate(e) {
-    console.log('_onFsUploadFileEntryUpdate', e);
-  }
+  // _onFsUploadFileEntryUpdate(e) {
+  //   console.log('_onFsUploadFileEntryUpdate', e);
+  // }
 
-  _onFsUploadFileUpdate(e) {
-    console.log('_onFsUploadFileUpdate', e);
-  }
+  // _onFsUploadFileUpdate(e) {
+  //   console.log('_onFsUploadFileUpdate', e);
+  // }
 
 }
 

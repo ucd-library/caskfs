@@ -39,6 +39,7 @@ export default class CorkAppToast extends Mixin(LitElement)
 
     this.registry = [
       {name: 'basic', icon: null, brandColor: null, isDefault: true},
+      {name: 'warning', icon: 'fas.circle-exclamation', brandColor: 'poppy' },
       {name: 'success', icon: 'fas.check', brandColor: 'quad'},
       {name: 'error', icon: 'fas.xmark', brandColor: 'double-decker'}
     ];

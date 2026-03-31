@@ -83,7 +83,7 @@ return html`
         <caskfs-directory-list></caskfs-directory-list>
       </div>
     </div>
-    <div class="drag-overlay" ?hidden=${!this.dragging} style="height: ${this.dragZoneHeight}px;">
+    <div class="drag-overlay" ?hidden=${!this.dragging} style="height: ${this.dragZoneHeight}px;padding-top: ${this.dragZonePaddingTop}px;">
       <div class="drag-message">
         <cork-icon icon="fas.upload"></cork-icon>
         <div>Drop files here to upload them to this directory.</div>

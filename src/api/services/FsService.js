@@ -3,6 +3,7 @@ import FsStore from '../stores/FsStore.js';
 
 import payload from '../utils/payload.js';
 import appUrlUtils from '../../client/dev/utils/appUrlUtils.js';
+import uploadUtils from '../../client/dev/utils/uploadUtils.js';
 
 class FsService extends BaseService {
 
@@ -81,7 +82,8 @@ class FsService extends BaseService {
       const params = new URLSearchParams();
       if (opts.mimeType) params.set('mimeType', opts.mimeType);
       const method = opts.replace ? 'PUT' : 'POST';
-      xhr.open(method, `${this.baseUrl}${destDir}/${filename}?${params.toString()}`);
+      const url = `${this.baseUrl}${uploadUtils.joinPath([destDir, filename], { leadingSlash: true, normalize: true })}?${params.toString()}`;
+      xhr.open(method, url);
       xhr.setRequestHeader('Content-Type', 'application/octet-stream');
 
       // initialize entry in store
@@ -147,7 +149,7 @@ class FsService extends BaseService {
         resolve(entry);
       }
 
-      xhr.send(file); // File object IS a Blob, so this streams it directly
+      xhr.send(file);
     });
   }
 

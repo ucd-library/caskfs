@@ -45,7 +45,7 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
     if ( !this.ctl.appComponent.isOnActivePage ) return;
     await this.listContents();
 
-    if ( this.AppStateModel.store.data.lastLocation.pathname === e.location.pathname ) {
+    if ( !e.scrollToLastPosition && this.AppStateModel.store.data.lastLocation.pathname === e.location.pathname ) {
       window.scrollTo(0, 0);
       return;
     }

@@ -65,6 +65,9 @@ class FsModel extends BaseModel {
           completedBytes: 0,
           failedFiles: []
         };
+        if ( files.length === 1 && !entry.isDirectory ) {
+          record.fileId = await digest({ destDir, filename: files[0].webkitRelativePath || files[0].name, ...opts });
+        }
         this.store.set(record, store, null, appStateOptions);
         this.emit(this.store.events.FS_UPLOAD_PROGRESS_UPDATE, { entityType: 'entry', entity: record });
         return { record, files };
@@ -92,7 +95,6 @@ class FsModel extends BaseModel {
         record.state = (record.failedFiles.length === record.totalFiles) ? 'error' : 'loaded';
         this.store.set(record, store, null, appStateOptions);
       }
-      
       this.emit(this.store.events.FS_UPLOAD_PROGRESS_UPDATE, { entityType: 'entry', entity: record });
 
       await runNext();
@@ -102,7 +104,11 @@ class FsModel extends BaseModel {
       Array.from({ length: Math.min(this.maxConcurrentUploads, queue.length) }, () => runNext())
     );
 
-    return entryRecords.map(({ record }) => store.get(record.id));
+    const records = entryRecords.map(({ record }) => store.get(record.id));
+    if ( records.some(r => r.state === 'loaded') ) {
+      clearCache();
+    }
+    return records;
   }
 
   /**
@@ -119,6 +125,11 @@ class FsModel extends BaseModel {
       if (result.state !== 'error') return result;
     }
     return result;
+  }
+
+  get uploadInProgress(){
+    const store = this.store.data.uploadFileEntry;
+    return Array.from(store.cache.values()).some(entry => entry.state === 'loading');
   }
 
   async delete(path, options={}) {

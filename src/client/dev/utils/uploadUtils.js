@@ -18,6 +18,32 @@ class UploadUtils {
     return nested;
   }
 
+  normalizeFileName(file){
+    let name = typeof file === 'string' ? file : file.webkitRelativePath || file.name || '';
+
+    // substitute spaces with dashes
+    name = name.replace(/\s/g, '-');
+
+    return name;
+  }
+
+  /**
+   * @description Join path parts into a single path, ensuring proper slashes.
+   * @param {string[]} parts - array of path segments to join
+   * @param {object} options
+   * @param {boolean} options.leadingSlash - whether to ensure a leading slash
+   * @param {boolean} options.trailingSlash - whether to ensure a trailing slash
+   * @param {boolean} options.normalize - whether to normalize the file names
+   * @returns {string}
+   */
+  joinPath(parts, { leadingSlash = false, trailingSlash = false, normalize = false } = {}) {
+    let path = parts.filter(Boolean).map(p => p.replace(/^\/+|\/+$/g, '')).join('/');
+    if (leadingSlash && !path.startsWith('/')) path = '/' + path;
+    if (trailingSlash && !path.endsWith('/')) path = path + '/';
+    if ( normalize) path = this.normalizeFileName(path);
+    return path;
+  }
+
   /**
    * Recursively collect all files from a FileSystemEntry.
    * @param {FileSystemEntry} entry
