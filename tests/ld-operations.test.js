@@ -24,8 +24,18 @@ const BOB_PATH = '/people/person-bob.jsonld.json';
 const PUB1_PATH = '/publications/pub1.jsonld.json';
 const PUB2_PATH = '/publications/pub2.jsonld.json';
 
+// Partitioned LD fixtures for literal partition-key filter tests
+const PARTA_PATH = '/partitioned/part-a.jsonld.json';
+const PARTB_PATH = '/partitioned/part-b.jsonld.json';
+const PARTA_URI  = 'https://example.org/part/a';
+const PARTB_URI  = 'https://example.org/part/b';
+const PART_KEY   = 'partition-x';
+
 // Helper to get sorted filepaths from a find result
 const filepaths = (result) => result.results.map(r => r.filepath).sort();
+
+// Helper to extract literal values from a getLiteralValues result
+const literalValues = (result) => result.results.map(r => r.object).sort();
 
 describe('Linked Data Operations', () => {
   let caskFs;
@@ -42,6 +52,34 @@ describe('Linked Data Operations', () => {
     ];
 
     for (const f of fixtures) {
+      const ctx = await caskFs.write({ ...f, requestor: TEST_USER, ignoreAcl: true });
+      assert.ok(!ctx.data.error, `Failed to write ${f.filePath}: ${ctx.data.error?.message}`);
+      assert.ok(ctx.data.actions.detectedLd, `${f.filePath} should be detected as RDF`);
+    }
+
+    // Partitioned LD files — used by the literal partition-key tests
+    const partFixtures = [
+      {
+        filePath: PARTA_PATH,
+        data: Buffer.from(JSON.stringify({
+          '@id': PARTA_URI,
+          '@type': 'http://schema.org/Thing',
+          'http://schema.org/name': 'Part A'
+        })),
+        partitionKeys: [PART_KEY]
+      },
+      {
+        filePath: PARTB_PATH,
+        data: Buffer.from(JSON.stringify({
+          '@id': PARTB_URI,
+          '@type': 'http://schema.org/Thing',
+          'http://schema.org/name': 'Part B'
+        })),
+        partitionKeys: [PART_KEY]
+      }
+    ];
+
+    for (const f of partFixtures) {
       const ctx = await caskFs.write({ ...f, requestor: TEST_USER, ignoreAcl: true });
       assert.ok(!ctx.data.error, `Failed to write ${f.filePath}: ${ctx.data.error?.message}`);
       assert.ok(ctx.data.actions.detectedLd, `${f.filePath} should be detected as RDF`);
@@ -217,6 +255,183 @@ describe('Linked Data Operations', () => {
       assert.strictEqual(rel.source.file, PUB1_PATH);
       assert.strictEqual(rel.source.resourceType, 'rdf');
       assert.strictEqual(rel.source.mimeType, 'application/ld+json');
+    });
+  });
+
+  // ─── rdf.literal() / getLiteralValues() ────────────────────────────────────
+  // 4 people/pub fixtures + 2 partitioned fixtures = 6 schema:name literals total.
+
+  describe('literal() — no filter', () => {
+    it('should return all literals when no filter is specified', async () => {
+      const result = await caskFs.dbClient.getLiteralValues({ ignoreAcl: true });
+      assert.strictEqual(result.totalCount, 6);
+      assert.strictEqual(result.results.length, 6);
+    });
+
+    it('should respect limit and return correct totalCount', async () => {
+      const result = await caskFs.dbClient.getLiteralValues({ limit: 2, ignoreAcl: true });
+      assert.strictEqual(result.totalCount, 6);
+      assert.strictEqual(result.results.length, 2);
+      assert.strictEqual(result.limit, 2);
+    });
+
+    it('should respect offset for pagination', async () => {
+      const all    = await caskFs.dbClient.getLiteralValues({ limit: 100, ignoreAcl: true });
+      const paged  = await caskFs.dbClient.getLiteralValues({ limit: 2, offset: 2, ignoreAcl: true });
+      assert.strictEqual(paged.results.length, 2);
+      // the two paged values should differ from the first two
+      const first2  = all.results.slice(0, 2).map(r => r.object);
+      const paged2  = paged.results.map(r => r.object);
+      assert.ok(!paged2.every(v => first2.includes(v)), 'offset should shift the result window');
+    });
+  });
+
+  describe('literal() — filter by subject', () => {
+    it('should return only Alice\'s name literal when filtering by her subject URI', async () => {
+      const result = await caskFs.dbClient.getLiteralValues({ subject: ALICE_URI, ignoreAcl: true });
+      assert.strictEqual(result.totalCount, 1);
+      assert.strictEqual(result.results[0].object, 'Alice Smith');
+      assert.strictEqual(result.results[0].subject, ALICE_URI);
+      assert.strictEqual(result.results[0].predicate, SCHEMA_NAME);
+    });
+
+    it('should return only pub1\'s literal when filtering by pub1 subject URI', async () => {
+      const result = await caskFs.dbClient.getLiteralValues({ subject: PUB1_URI, ignoreAcl: true });
+      assert.strictEqual(result.totalCount, 1);
+      assert.strictEqual(result.results[0].object, 'Advances in Content-Addressed Storage');
+    });
+
+    it('should return 0 results for an unknown subject URI', async () => {
+      const result = await caskFs.dbClient.getLiteralValues({
+        subject: 'https://example.org/unknown/nobody',
+        ignoreAcl: true
+      });
+      assert.strictEqual(result.totalCount, 0);
+      assert.strictEqual(result.results.length, 0);
+    });
+  });
+
+  describe('literal() — filter by predicate', () => {
+    it('should return all 6 literals when filtering by schema:name predicate', async () => {
+      const result = await caskFs.dbClient.getLiteralValues({ predicate: SCHEMA_NAME, ignoreAcl: true });
+      assert.strictEqual(result.totalCount, 6);
+      const values = literalValues(result);
+      assert.ok(values.includes('Alice Smith'));
+      assert.ok(values.includes('Bob Jones'));
+      assert.ok(values.includes('Advances in Content-Addressed Storage'));
+      assert.ok(values.includes('Knowledge Graphs in Practice'));
+      assert.ok(values.includes('Part A'));
+      assert.ok(values.includes('Part B'));
+    });
+
+    it('should return 0 results for an unused predicate', async () => {
+      const result = await caskFs.dbClient.getLiteralValues({
+        predicate: 'http://schema.org/description',
+        ignoreAcl: true
+      });
+      assert.strictEqual(result.totalCount, 0);
+    });
+  });
+
+  describe('literal() — filter by file', () => {
+    it('should return only Alice\'s literals when filtering by her file path', async () => {
+      const result = await caskFs.dbClient.getLiteralValues({ filePath: ALICE_PATH, ignoreAcl: true });
+      assert.strictEqual(result.totalCount, 1);
+      assert.strictEqual(result.results[0].object, 'Alice Smith');
+    });
+
+    it('should return only pub1\'s literals when filtering by pub1 file path', async () => {
+      const result = await caskFs.dbClient.getLiteralValues({ filePath: PUB1_PATH, ignoreAcl: true });
+      assert.strictEqual(result.totalCount, 1);
+      assert.strictEqual(result.results[0].object, 'Advances in Content-Addressed Storage');
+    });
+
+    it('should return 0 results for a non-existent file path', async () => {
+      const result = await caskFs.dbClient.getLiteralValues({
+        filePath: '/no/such/file.jsonld.json',
+        ignoreAcl: true
+      });
+      assert.strictEqual(result.totalCount, 0);
+    });
+  });
+
+  describe('literal() — filter by partition key', () => {
+    it('should return only literals from partitioned files when filtering by partition key', async () => {
+      const result = await caskFs.dbClient.getLiteralValues({
+        partitionKeys: [PART_KEY],
+        ignoreAcl: true
+      });
+      assert.strictEqual(result.totalCount, 2);
+      const values = literalValues(result);
+      assert.ok(values.includes('Part A'));
+      assert.ok(values.includes('Part B'));
+    });
+
+    it('should return 0 results for an unknown partition key', async () => {
+      const result = await caskFs.dbClient.getLiteralValues({
+        partitionKeys: ['no-such-partition'],
+        ignoreAcl: true
+      });
+      assert.strictEqual(result.totalCount, 0);
+    });
+  });
+
+  describe('literal() — combined filters', () => {
+    it('should intersect subject + predicate to return exactly one literal', async () => {
+      const result = await caskFs.dbClient.getLiteralValues({
+        subject: BOB_URI,
+        predicate: SCHEMA_NAME,
+        ignoreAcl: true
+      });
+      assert.strictEqual(result.totalCount, 1);
+      assert.strictEqual(result.results[0].object, 'Bob Jones');
+    });
+
+    it('should intersect file + predicate to return one literal', async () => {
+      const result = await caskFs.dbClient.getLiteralValues({
+        filePath: PUB2_PATH,
+        predicate: SCHEMA_NAME,
+        ignoreAcl: true
+      });
+      assert.strictEqual(result.totalCount, 1);
+      assert.strictEqual(result.results[0].object, 'Knowledge Graphs in Practice');
+    });
+
+    it('should intersect partition key + predicate to return partition literals', async () => {
+      const result = await caskFs.dbClient.getLiteralValues({
+        partitionKeys: [PART_KEY],
+        predicate: SCHEMA_NAME,
+        ignoreAcl: true
+      });
+      assert.strictEqual(result.totalCount, 2);
+    });
+  });
+
+  describe('literal() — debugQuery', () => {
+    it('should return SQL and args without executing when debugQuery is true', async () => {
+      const result = await caskFs.dbClient.getLiteralValues({
+        subject: ALICE_URI,
+        debugQuery: true
+      });
+      assert.ok(typeof result.query === 'string', 'should return a query string');
+      assert.ok(Array.isArray(result.args), 'should return args array');
+      assert.ok(result.query.toLowerCase().includes('select'), 'query should contain SELECT');
+      assert.ok(!result.results, 'should not have results when debugQuery is true');
+    });
+  });
+
+  describe('rdf.literal() — full pipeline', () => {
+    it('should return formatted JSON-LD results via rdf.literal()', async () => {
+      const result = await caskFs.rdf.literal({ subject: ALICE_URI, format: 'jsonld', ignoreAcl: true });
+      assert.ok(result.totalCount === 1, 'should have totalCount of 1');
+      assert.ok(Array.isArray(result.results), 'results should be an array');
+      assert.ok(result.results.length > 0, 'should have at least one result item');
+    });
+
+    it('should return debugQuery passthrough from rdf.literal()', async () => {
+      const result = await caskFs.rdf.literal({ subject: ALICE_URI, debugQuery: true });
+      assert.ok(typeof result.query === 'string');
+      assert.ok(Array.isArray(result.args));
     });
   });
 });
