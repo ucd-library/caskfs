@@ -17,6 +17,7 @@ export default class CorkAppToast extends Mixin(LitElement)
   static get properties() {
     return {
       queue: { type: Array },
+      maxQueueLength: { type: Number, attribute: 'max-queue-length' },
       defaultDisplayTime: { type: Number, attribute: 'default-display-time' },
       defaultAnimationTime: { type: Number, attribute: 'default-animation-time' },
       processingQueue: { type: Boolean },
@@ -34,6 +35,7 @@ export default class CorkAppToast extends Mixin(LitElement)
     this.queue = [];
     this.defaultDisplayTime = 5000;
     this.defaultAnimationTime = 300;
+    this.maxQueueLength = 3;
     this.processingQueue = false;
     this.currentToast = null;
 
@@ -64,6 +66,10 @@ export default class CorkAppToast extends Mixin(LitElement)
     if ( !registryItem ) {
       this.logger.warn('AppToast.show() called with invalid type', opts.type);
       return;
+    }
+
+    if ( this.queue.length >= this.maxQueueLength ) {
+      this.queue.shift();
     }
 
     this.queue.push({

@@ -92,7 +92,7 @@ class FsService extends BaseService {
         loaderSettings: {suppressLoader: true}
       };
       this.store.set(
-        { id, state: 'loading', destDir, filename, opts, bytesUploaded: 0, bytesTotal: file.size }, 
+        { id, state: 'loading', destDir, filename, opts, completedBytes: 0, totalBytes: file.size }, 
         store,
         null,
         appStateOptions
@@ -103,9 +103,9 @@ class FsService extends BaseService {
           const entry = store.get(id);
           if ( entry ) {
             const entryProgress = Math.round((e.loaded / e.total) * 100);
-            const lastEmittedProgress = Math.round((entry.bytesUploaded / entry.bytesTotal) * 100);
-            entry.bytesUploaded = e.loaded;
-            entry.bytesTotal = e.total;
+            const lastEmittedProgress = Math.round((entry.completedBytes / entry.totalBytes) * 100);
+            entry.completedBytes = e.loaded;
+            entry.totalBytes = e.total;
             if (entryProgress - lastEmittedProgress >= this.store.uploadProgressThreshold || entryProgress === 100) {
               this.store.emit(this.store.events.FS_UPLOAD_PROGRESS_UPDATE, { entityType: 'file', entity: entry });
             }

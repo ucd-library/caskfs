@@ -18,6 +18,7 @@ export default class CaskfsUploadTracker extends Mixin(LitElement)
     return {
       uploads: { type: Array },
       visible: { type: Boolean },
+      displayLimit: { type: Number }
     }
   }
 
@@ -30,6 +31,7 @@ export default class CaskfsUploadTracker extends Mixin(LitElement)
     this.render = render.bind(this);
     this.uploads = [];
     this.visible = false;
+    this.displayLimit = 20;
 
     this.ctl = { 
       directoryPath: new DirectoryPathController(this),
@@ -38,12 +40,21 @@ export default class CaskfsUploadTracker extends Mixin(LitElement)
     this._injectModel('FsModel', 'AppStateModel');
   }
 
+  /**
+   * @description Handle upload progress events emitted by FsModel. Has two types of events:
+   * 1. Entry uploads - represents a FileSystemEntry, which may contain multiple files (e.g. a directory). Fires when each of its file upload completes.
+   * 2. File uploads - represents each individual file of the FileSystemEntry. Fires from the xhr.upload.onprogress event, so has more granular progress info
+   * @param {*} e 
+   */
   _onFsUploadProgressUpdate(e) {
     console.log('FS_UPLOAD_PROGRESS_UPDATE', e);
     const now = Date.now();
+    let doUpdate = false;
 
+    // for entry uploads, progress event is emitted after each file in the entry is uploaded
     if ( e.entityType === 'entry' ){
       let upload;
+      doUpdate = true;
       const existing = this.uploads.find(upload => upload.record.id === e.entity.id);
       if ( existing ) {
         existing.record = e.entity;
@@ -53,105 +64,112 @@ export default class CaskfsUploadTracker extends Mixin(LitElement)
         upload = { record: e.entity, started: now, updated: now };
         this.uploads.push(upload);
       }
+      this.setUploadProgess(upload);
       this.maybeScheduleToast(upload);
+
+      // for single file uploads, we track progress of the file rather than the entry
+    } else if ( e.entityType === 'file' ) {
+      const uploadEntry = this.uploads.find(upload => upload.record.fileId === e.entity.id);
+      if ( uploadEntry ){
+        uploadEntry.file = e.entity;
+        uploadEntry.updated = now;
+        this.setUploadProgess(uploadEntry);
+        doUpdate = true;
+      }
     }
 
-    
+    if ( doUpdate ){
+      this.requestUpdate();
+    }
   }
 
+  /**
+   * @description Sets the percent complete for an upload
+   * @param {Object} upload - object from this.uploads
+   */
+  setUploadProgess(upload){
+    let totalBytes = 0;
+    let completedBytes = 0;
+    if ( upload.file ){
+      totalBytes = upload.file.totalBytes;
+      completedBytes = upload.file.completedBytes;
+    } else {
+      totalBytes = upload.record.totalBytes;
+      completedBytes = upload.record.completedBytes;
+    }
+    upload.progress = totalBytes ? Math.round((completedBytes / totalBytes) * 100) : 0;
+  }
+
+  /**
+   * @description Schedules toast notification when upload completes if user is not currently viewing the tracker.
+   * @param {Object} upload - object from this.uploads for which a toast should be scheduled.
+   * @returns 
+   */
   async maybeScheduleToast(upload){
     if ( !this.showToastForUploadsSince ) {
       this.showToastForUploadsSince = upload.started;
     }
-    console.log(upload, this.showToastForUploadsSince, this.FsModel.uploadInProgress);
     if ( upload.record.state === 'loading' || this.FsModel.uploadInProgress ) return;
 
-    // no toast if user is currently viewing the tracker, since they can see the progress there
-    if ( this.visible ) {
-      this.showToastForUploadsSince = null;
-      return;
+    if ( this.toastTimeout ){
+      clearTimeout(this.toastTimeout);
+      this.toastTimeout = null;
     }
-
-    // TODO: Move this to a timeout that only gets scheduled once to deal with race conditions.
-    const uploads = this.uploads.filter( upload => upload.started >= this.showToastForUploadsSince );
-    this.showToastForUploadsSince = null;
-    let toastType, toastText;
-
-    // all entries successful, but individual files may have failed
-    if ( uploads.every(upload => upload.record.state === 'loaded') ) {
-
-      // every file successful
-      if ( uploads.every(upload => !upload.record.failedFiles.length) ) {
-        toastType = 'success';
-
-        if ( uploads.length === 1 ){
-          const upload = uploads[0];
-          const filename = uploadUtils.normalizeFileName(upload.record.name);
-          toastText = `Uploaded ${filename}`;
-        } else {
-          toastText = `Upload${uploads.length > 1 ? 's' : ''} completed`;
-        }
-
-      // some files failed
-      } else {
-        toastType = 'warning';
-        const failedCt = uploads.reduce((sum, upload) => sum + upload.record.failedFiles.length, 0);
-        toastText = `Upload completed with ${failedCt} failed file${failedCt > 1 ? 's' : ''}`;
+    this.toastTimeout = setTimeout(() => {
+      // no toast if user is currently viewing the tracker, since they can see the progress there
+      if ( this.visible ) {
+        this.showToastForUploadsSince = null;
+        return;
       }
 
-      // all entries failed
-    } else if ( uploads.every(upload => upload.record.state === 'error') ) {
-      toastType = 'error';
-      toastText = `Upload${uploads.length > 1 ? 's' : ''} failed`;
-    } else if ( uploads.some(upload => upload.record.state === 'error') ) {
-      toastType = 'warning';
-      toastText = `Upload${uploads.length > 1 ? 's' : ''} completed with some errors`;
-    } else {
-      toastType = 'success';
-      toastText = `Upload${uploads.length > 1 ? 's' : ''} completed`;
-    }
+      const uploads = this.uploads.filter( upload => upload.started >= this.showToastForUploadsSince );
+      this.showToastForUploadsSince = null;
+      if ( uploads.length === 0 ) return;
+      let toastType, toastText;
 
-    this.AppStateModel.showToast({ text: toastText, type: toastType });
+      // all entries successful, but individual files may have failed
+      if ( uploads.every(upload => upload.record.state === 'loaded') ) {
 
-    if ( uploads.filter( upload => upload.record.state === 'loaded').every(upload => upload.record.destDir === this.ctl.directoryPath.pathname ) ){
-      this.AppStateModel.refresh({ scrollToLastPosition: true } );
-    }
+        // every file successful
+        if ( uploads.every(upload => !upload.record.failedFiles.length) ) {
+          toastType = 'success';
 
+          if ( uploads.length === 1 ){
+            const upload = uploads[0];
+            const filename = uploadUtils.normalizeFileName(upload.record.name);
+            toastText = `Uploaded ${filename}`;
+          } else {
+            toastText = `Upload${uploads.length > 1 ? 's' : ''} completed`;
+          }
+
+        // some files failed
+        } else {
+          toastType = 'warning';
+          const failedCt = uploads.reduce((sum, upload) => sum + upload.record.failedFiles.length, 0);
+          toastText = `Upload completed with ${failedCt} failed file${failedCt > 1 ? 's' : ''}`;
+        }
+
+        // all entries failed
+      } else if ( uploads.every(upload => upload.record.state === 'error') ) {
+        toastType = 'error';
+        toastText = `Upload${uploads.length > 1 ? 's' : ''} failed`;
+      } else if ( uploads.some(upload => upload.record.state === 'error') ) {
+        toastType = 'warning';
+        toastText = `Upload${uploads.length > 1 ? 's' : ''} completed with some errors`;
+      } else {
+        toastType = 'success';
+        toastText = `Upload${uploads.length > 1 ? 's' : ''} completed`;
+      }
+
+      this.AppStateModel.showToast({ text: toastText, type: toastType });
+
+      if ( uploads.filter( upload => upload.record.state === 'loaded').every(upload => upload.record.destDir === this.ctl.directoryPath.pathname ) ){
+        this.AppStateModel.refresh({ scrollToLastPosition: true } );
+      }
+
+    }, 200);
 
   }
-
-  // _onFsUploadProgressUpdate(e) {
-  //   console.log('FS_UPLOAD_PROGRESS_UPDATE', e);
-  //   const now = Date.now();
-  //   const pastWindow = this.windowStart && (now - this.windowStart > this.windowLength);
-
-  //   if ( e.entityType === 'entry' ){
-
-  //     const existing = this.uploads.find(upload => upload.record.id === e.entity.id);
-  //     if ( existing ) {
-  //       existing.record = e.entity;
-  //       existing.updated = now;
-  //     } else {
-  //       this.uploads.push({ record: e.entity, started: now, updated: now });
-  //     }
-  //   }
-
-  //   if ( !this.windowStart ) {
-  //     this.windowStart = now;
-  //   }
-
-  //   // wait for another upload to come in or for window to elapse before showing tracker or toast
-  //   if ( pastWindow && !this.pastWindowTimeout ) {
-  //     this.pastWindowTimeout = setTimeout(() => {
-  //       this._onPastWindow();
-  //       this.pastWindowTimeout = null;
-  //       const mostRecentUpload = this.mostRecentUpload();
-  //       if ( mostRecentUpload?.record?.state !== 'loading' ){
-  //         this.windowStart = null;
-  //       }
-  //     }, 1000);
-  //   }
-  // }
 
   mostRecentUpload() {
     return this.uploads.reduce((mostRecent, upload) => {
