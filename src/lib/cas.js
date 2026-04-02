@@ -206,12 +206,14 @@ class Cas {
   /**
    * @method read
    * @description Return the file contents for the given hash value.
-   * 
+   *
    * @param {String} hash
    * @param {Object} opts options object
    * @param {Boolean} opts.stream if true, return a readable stream instead of a buffer
    * @param {String} opts.encoding if specified, encode the file contents with the given encoding (e.g. 'utf8')
-   *  
+   * @param {Number} [opts.start] - First byte offset for partial reads (inclusive). Only applies when stream=true.
+   * @param {Number} [opts.end] - Last byte offset for partial reads (inclusive). Only applies when stream=true.
+   *
    * @returns {Promise<Buffer>|ReadableStream} resolves with a buffer or a readable stream
    */
   async read(hash, opts={}) {
@@ -224,7 +226,11 @@ class Cas {
     }
 
     if( opts.stream === true ) {
-      return this.storage.createReadStream(fullPath, {encoding: opts.encoding || null});
+      return this.storage.createReadStream(fullPath, {
+        encoding: opts.encoding || null,
+        start: opts.start,
+        end: opts.end,
+      });
     }
 
     return this.storage.readFile(fullPath, {encoding: opts.encoding || null});
