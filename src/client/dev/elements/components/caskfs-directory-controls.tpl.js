@@ -30,17 +30,6 @@ export function styles() {
 export function render() { 
 return html`
   <div class='container'>
-    <cork-icon-button 
-      icon="fas.folder-plus" 
-      title="Create Empty Folder" 
-      link-aria-label="Create Empty Folder">
-    </cork-icon-button>
-    <cork-icon-button 
-      icon="fas.upload" 
-      title="Upload Files" 
-      @click=${this._onUploadClick}
-      link-aria-label="Upload Files">
-    </cork-icon-button>
     <cork-icon-button
       icon='fas.turn-up'
       title='Up One Level'
@@ -48,18 +37,25 @@ return html`
       @click=${() => this.ctl.directoryPath.moveUp()}
       link-aria-label='Up One Level'>
     </cork-icon-button>
-    <!-- <cork-icon-button 
-      icon='fas.sort'
-      title='Sort Items'
-      @click=${this._onSortClick}
-      link-aria-label='Sort Items'>
-    </cork-icon-button> -->
     <cork-icon-button
       icon='fas.copy'
       title='Copy Directory Path'
       @click=${this._onCopyPathClick}
       link-aria-label='Copy Directory Path'>
     </cork-icon-button>
+    <cork-icon-button 
+      icon="fas.folder-plus" 
+      title="Create Empty Folder" 
+      link-aria-label="Create Empty Folder">
+    </cork-icon-button>
+    <caskfs-upload-button></caskfs-upload-button>
+    <caskfs-upload-tracker-toggle></caskfs-upload-tracker-toggle>
+    <!-- <cork-icon-button 
+      icon='fas.sort'
+      title='Sort Items'
+      @click=${this._onSortClick}
+      link-aria-label='Sort Items'>
+    </cork-icon-button> -->
     <cork-icon-button
       icon='fas.trash'
       color='medium'
@@ -68,7 +64,6 @@ return html`
       @click=${this._onBulkDeleteClick}
       link-aria-label='Delete Selected Items'>
     </cork-icon-button>
-    <caskfs-upload-tracker-toggle></caskfs-upload-tracker-toggle>
   </div>
 
 `;}

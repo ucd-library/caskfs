@@ -72,6 +72,38 @@ class UploadUtils {
   }
 
   /**
+   * Transform a file input's FileList into the item array shape consistent with this.getFilesFromDragEvent expected by FsModel.upload().
+   * Each individual file becomes its own entry; for a webkitdirectory input, files are grouped
+   * by top-level folder name so each folder becomes its own entry.
+   * @param {HTMLInputElement} input - the file input element
+   * @returns {Array<{entry: {name: string, isDirectory: boolean}, files: File[]}>}
+   */
+  getFilesFromInput(input) {
+    const files = this.normalizeFiles(input.files);
+    if ( !files.length ) return [];
+
+    const isDirectory = input.hasAttribute('webkitdirectory');
+
+    if ( isDirectory ) {
+      const groups = new Map();
+      for ( const file of files ) {
+        const folderName = file.webkitRelativePath?.split('/')[0] || 'folder';
+        if ( !groups.has(folderName) ) groups.set(folderName, []);
+        groups.get(folderName).push(file);
+      }
+      return Array.from(groups.entries()).map(([name, groupFiles]) => ({
+        entry: { name, isDirectory: true },
+        files: groupFiles
+      }));
+    }
+
+    return files.map(file => ({
+      entry: { name: file.name, isDirectory: false },
+      files: [file]
+    }));
+  }
+
+  /**
    * Normalize files from any source into an array with a relativePath property.
    * @param {File[]} files
    * @returns {File[]}

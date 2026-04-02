@@ -7,7 +7,6 @@ import headings from './headings.css';
 // mainDomElement styles from lit component elements
 // if done in the element itself, it creates a style tag for each instance
 import { styles as directoryListStyles } from '../elements/components/caskfs-directory-list.tpl.js';
-import { styles as uploadFormStyles } from '../elements/components/caskfs-upload-form.tpl.js';
 import { styles as deleteFormStyles } from '../elements/components/caskfs-delete-form.tpl.js';
 import { styles as sortFormStyles } from '../elements/components/caskf-sort-form.tpl.js';
 import { styles as systemStatsStyles } from '../elements/components/caskf-system-stats.tpl.js';
@@ -45,7 +44,6 @@ const styles = `
   ${fonts}
   ${headings}
   ${getLitStyles(directoryListStyles)}
-  ${getLitStyles(uploadFormStyles)}
   ${getLitStyles(deleteFormStyles)}
   ${getLitStyles(sortFormStyles)}
   ${getLitStyles(systemStatsStyles)}
