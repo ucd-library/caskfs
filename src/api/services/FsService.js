@@ -74,7 +74,7 @@ class FsService extends BaseService {
 
   async uploadFile(destDir, file, opts = {}) {
     const store = this.store.data.uploadFile;
-    const filename = file.webkitRelativePath || file.name;
+    const filename = file.filename;
     const id = await digest({ destDir, filename, ...opts });
     
     return new Promise((resolve, reject) => {

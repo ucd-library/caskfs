@@ -73,7 +73,6 @@ return html`
     @dragleave=${this._onDragLeave}>
     <div><h1 class="page-title">Directory</h1></div>
     <ol class="breadcrumbs">
-      <li><a href="${appUrlUtils.fullLocation()}">Home</a></li>
       <li>Directory</li>
     </ol>
     <div class="l-container u-space-mt--large">

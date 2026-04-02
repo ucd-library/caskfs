@@ -66,7 +66,7 @@ class FsModel extends BaseModel {
           failedFiles: []
         };
         if ( files.length === 1 && !entry.isDirectory ) {
-          record.fileId = await digest({ destDir, filename: files[0].webkitRelativePath || files[0].name, ...opts });
+          record.fileId = await digest({ destDir, filename: files[0].filename, ...opts });
         }
         this.store.set(record, store, null, appStateOptions);
         this.emit(this.store.events.FS_UPLOAD_PROGRESS_UPDATE, { entityType: 'entry', entity: record });
@@ -109,6 +109,20 @@ class FsModel extends BaseModel {
       clearCache();
     }
     return records;
+  }
+
+  /**
+   * @description Show the upload tracker component
+   */
+  showUploadTracker() {
+    this.emit(this.store.events.FS_UPLOAD_TRACKER_VISIBILITY_UPDATE, { visible: true });
+  }
+
+  /**
+   * @description Hide the upload tracker component
+   */
+  hideUploadTracker() {
+    this.emit(this.store.events.FS_UPLOAD_TRACKER_VISIBILITY_UPDATE, { visible: false });
   }
 
   /**

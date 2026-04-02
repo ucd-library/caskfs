@@ -54,8 +54,9 @@ class UploadUtils {
     const files = [];
     if (entry.isFile) {
       const file = await new Promise((res, rej) => entry.file(res, rej));
-      // attach the relative path manually since drag-drop doesn't set webkitRelativePath
-      Object.defineProperty(file, 'relativePath', { value: path + file.name });
+      const relativePath = path + file.name;
+      Object.defineProperty(file, 'relativePath', { value: relativePath });
+      Object.defineProperty(file, 'filename', { value: this.normalizeFileName(relativePath) });
       files.push(file);
     } else if (entry.isDirectory) {
       const reader = entry.createReader();
@@ -77,10 +78,10 @@ class UploadUtils {
    */
   normalizeFiles(files) {
     return Array.from(files).map(file => {
-      if (!file.relativePath) {
-        Object.defineProperty(file, 'relativePath', {
-          value: file.webkitRelativePath || file.name
-        });
+      if (!file.filename) {
+        const relativePath = file.webkitRelativePath || file.name;
+        Object.defineProperty(file, 'relativePath', { value: relativePath });
+        Object.defineProperty(file, 'filename', { value: this.normalizeFileName(relativePath) });
       }
       return file;
     });

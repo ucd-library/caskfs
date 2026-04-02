@@ -4,17 +4,17 @@ import appUrlUtils from '../../utils/appUrlUtils.js';
 
 export function styles() {
   const elementStyles = css`
-    :host {
+    caskfs-upload-tracker {
       display: block;
     }
-    .container {
+    caskfs-upload-tracker .container {
       position: fixed;
       bottom: 1rem;
       right: 1rem;
       z-index: 10000;
       display: block;
       max-width: 500px;
-      min-width: 400px;
+      min-width: 300px;
       border: 1px solid var(--ucd-black-40, #999);
       background: white;
       box-shadow: 0 4px 12px rgba(0,0,0,0.3);
@@ -44,7 +44,6 @@ export function styles() {
     }
     .upload-tracker__upload-main-info {
       display: flex;
-      flex-wrap: wrap;
       gap: .5rem;
       justify-content: space-between;
       align-items: flex-start;
@@ -163,7 +162,7 @@ function _renderUpload(upload) {
     error: 'fas.circle-exclamation',
     warning: 'fas.circle-exclamation'
   }
-  const filepath = uploadUtils.joinPath([upload.record.destDir, upload.record.name], {leadingSlash: true});
+  const filepath = uploadUtils.joinPath([upload.record.destDir, upload.record.name], {leadingSlash: true, normalize: true});
   return html`
     <div class='upload-tracker__upload upload-tracker__upload--${state}'>
       <div class='upload-tracker__upload-main-info'>

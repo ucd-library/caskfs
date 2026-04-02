@@ -14,7 +14,8 @@ class FsStore extends BaseStore {
       uploadFileEntry: new LruStore({name: 'fs.upload.file.entry'}, {maxSize: 100})
     };
     this.events = {
-      FS_UPLOAD_PROGRESS_UPDATE: 'fs-upload-progress-update'
+      FS_UPLOAD_PROGRESS_UPDATE: 'fs-upload-progress-update',
+      FS_UPLOAD_TRACKER_VISIBILITY_UPDATE: 'fs-upload-tracker-visibility-update'
     };
     this.uploadProgressThreshold = 5; // only emit progress update for every 5% change to avoid excessive updates
   }

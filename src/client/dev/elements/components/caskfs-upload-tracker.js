@@ -34,10 +34,20 @@ export default class CaskfsUploadTracker extends Mixin(LitElement)
     this.displayLimit = 20;
 
     this.ctl = { 
-      directoryPath: new DirectoryPathController(this),
+      directoryPath: new DirectoryPathController(this, {alwaysSyncOnAppStateUpdate: true}),
     }
 
     this._injectModel('FsModel', 'AppStateModel');
+  }
+
+  willUpdate(props){
+    if ( props.has('visible') ){
+      this.visible ? this.FsModel.showUploadTracker() : this.FsModel.hideUploadTracker();
+    }
+  }
+
+  _onFsUploadTrackerVisibilityUpdate(e){
+    this.visible = e.visible;
   }
 
   /**
@@ -47,7 +57,6 @@ export default class CaskfsUploadTracker extends Mixin(LitElement)
    * @param {*} e 
    */
   _onFsUploadProgressUpdate(e) {
-    console.log('FS_UPLOAD_PROGRESS_UPDATE', e);
     const now = Date.now();
     let doUpdate = false;
 
@@ -65,7 +74,8 @@ export default class CaskfsUploadTracker extends Mixin(LitElement)
         this.uploads.push(upload);
       }
       this.setUploadProgess(upload);
-      this.maybeScheduleToast(upload);
+      this.scheduleToastIfHidden(upload);
+      this.refreshIfCurrentDirectory(upload);
 
       // for single file uploads, we track progress of the file rather than the entry
     } else if ( e.entityType === 'file' ) {
@@ -101,11 +111,23 @@ export default class CaskfsUploadTracker extends Mixin(LitElement)
   }
 
   /**
+   * @description Refreshes the current directory if the upload that just completed is for the current directory, to show the newly uploaded file(s).
+   * @param {Object} upload - object from this.uploads
+   * @returns 
+   */
+  refreshIfCurrentDirectory(upload){
+    if ( upload.record.state !== 'loaded' ) return;
+    if ( upload.record.destDir === this.ctl.directoryPath.pathname ){
+      this.AppStateModel.refresh({ scrollToLastPosition: true });
+    }
+  }
+
+  /**
    * @description Schedules toast notification when upload completes if user is not currently viewing the tracker.
    * @param {Object} upload - object from this.uploads for which a toast should be scheduled.
    * @returns 
    */
-  async maybeScheduleToast(upload){
+  async scheduleToastIfHidden(upload){
     if ( !this.showToastForUploadsSince ) {
       this.showToastForUploadsSince = upload.started;
     }
@@ -162,10 +184,6 @@ export default class CaskfsUploadTracker extends Mixin(LitElement)
       }
 
       this.AppStateModel.showToast({ text: toastText, type: toastType });
-
-      if ( uploads.filter( upload => upload.record.state === 'loaded').every(upload => upload.record.destDir === this.ctl.directoryPath.pathname ) ){
-        this.AppStateModel.refresh({ scrollToLastPosition: true } );
-      }
 
     }, 200);
 

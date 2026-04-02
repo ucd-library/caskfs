@@ -68,6 +68,7 @@ return html`
       @click=${this._onBulkDeleteClick}
       link-aria-label='Delete Selected Items'>
     </cork-icon-button>
+    <caskfs-upload-tracker-toggle></caskfs-upload-tracker-toggle>
   </div>
 
 `;}

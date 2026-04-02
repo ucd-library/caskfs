@@ -8,6 +8,7 @@ import DirectoryItemSelectController from '../../controllers/DirectoryItemSelect
 import './caskfs-delete-form.js';
 import './caskfs-upload-form.js';
 import './caskf-sort-form.js';
+import './caskfs-upload-tracker-toggle.js';
 
 export default class CaskfsDirectoryControls extends Mixin(LitElement)
   .with(LitCorkUtils) {

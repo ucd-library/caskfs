@@ -4,12 +4,13 @@ import appUrlUtils from '../utils/appUrlUtils.js';
 
 export default class DirectoryPathController {
 
-  constructor(host){
+  constructor(host, opts = {}) {
     this.host = host;
     host.addController(this);
     this.AppStateModel = Registry.getModel('AppStateModel');
     this.appComponentController = new AppComponentController(host);
     this.logger = getLogger('DirectoryPathController');
+    this.alwaysSyncOnAppStateUpdate = opts.alwaysSyncOnAppStateUpdate || false;
 
     this.pathPrefix = {
       'directory': appUrlUtils.fullPath('directory', {returnArray: true}),
@@ -132,7 +133,7 @@ export default class DirectoryPathController {
     this.updateComplete = Promise.all([Promise.resolve(), deferred]).then(() => undefined);
 
     try {
-      if ( !this.appComponentController.isOnActivePage ) {
+      if ( !this.appComponentController.isOnActivePage && !this.alwaysSyncOnAppStateUpdate ) {
         return;
       }
       this.syncState(e);

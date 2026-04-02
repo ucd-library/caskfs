@@ -50,7 +50,8 @@ export default class CaskfsPageDirectory extends Mixin(LitElement)
   /**
    * @description Handle dragleave event on page.
    */
-  _onDragLeave() {
+  _onDragLeave(e) {
+    if (this.contains(e.relatedTarget)) return;
     this.dragging = false;
   }
 
