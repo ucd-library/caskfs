@@ -52,6 +52,15 @@ class GCSStorage {
     return bucket;
   }
 
+  /**
+   * @method createReadStream
+   * @description Create a readable stream for a GCS file, optionally bounded to a byte range.
+   * @param {String} filePath - GCS object path.
+   * @param {Object} [opts={}]
+   * @param {Number} [opts.start] - First byte offset (inclusive).
+   * @param {Number} [opts.end] - Last byte offset (inclusive).
+   * @returns {Promise<ReadableStream>}
+   */
   async createReadStream(filePath, opts={}) {
     if( !this.client ) {
       throw new Error('GCS client is not initialized');
@@ -59,7 +68,12 @@ class GCSStorage {
 
     let file = this.bucket(await this.getFileBucket(filePath, opts))
                    .file(filePath);
-    return file.createReadStream();
+
+    const streamOpts = {};
+    if (opts.start !== undefined) streamOpts.start = opts.start;
+    if (opts.end !== undefined) streamOpts.end = opts.end;
+
+    return file.createReadStream(streamOpts);
   }
 
   async readFile(filePath, opts={}) {
