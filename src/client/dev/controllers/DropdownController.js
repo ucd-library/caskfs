@@ -1,4 +1,5 @@
 import { styleMap } from 'lit/directives/style-map.js';
+import controllerUtils from '../utils/controllerUtils.js';
 
 /**
  * @typedef {Object} DropdownControllerOptions
@@ -22,7 +23,7 @@ export default class DropdownController {
 
   constructor(host, opts={}) {
     this.host = host;
-    host.addController(this);
+    controllerUtils.addController(host, this);
 
     this._open = false;
 

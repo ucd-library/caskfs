@@ -59,21 +59,8 @@ export default class CaskfsPageDirectory extends Mixin(LitElement)
     e.preventDefault();
     this.dragging = false;
     const files = await uploadUtils.getFilesFromDragEvent(e);
-    console.log('files to upload', files);
     this.FsModel.upload(files, this.ctl.directoryPath.pathname);
   }
-
-  // _onFsUploadProgressUpdate(e) {
-  //   console.log('FS_UPLOAD_PROGRESS_UPDATE', e);
-  // }
-
-  // _onFsUploadFileEntryUpdate(e) {
-  //   console.log('_onFsUploadFileEntryUpdate', e);
-  // }
-
-  // _onFsUploadFileUpdate(e) {
-  //   console.log('_onFsUploadFileUpdate', e);
-  // }
 
 }
 

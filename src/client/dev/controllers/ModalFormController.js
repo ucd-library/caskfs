@@ -1,4 +1,5 @@
 import { Registry } from '@ucd-lib/cork-app-utils';
+import controllerUtils from '../utils/controllerUtils.js';
 
 /**
  * @description Controller for managing modal behavior from a form-based custom element.
@@ -17,7 +18,7 @@ export default class ModalFormController {
 
   constructor(host, opts={}) {
     this.host = host;
-    host.addController(this);
+    controllerUtils.addController(host, this);
     this.AppStateModel = Registry.getModel('AppStateModel');
 
     this._modal = null;

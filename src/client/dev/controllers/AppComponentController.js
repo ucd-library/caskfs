@@ -1,4 +1,5 @@
 import { Registry } from '@ucd-lib/cork-app-utils';
+import controllerUtils from '../utils/controllerUtils.js';
 
 /**
  * @description Controller for app components
@@ -10,7 +11,7 @@ export default class AppComponentController {
 
   constructor(host){
     this.host = host;
-    host.addController(this);
+    controllerUtils.addController(host, this);
     this.AppStateModel = Registry.getModel('AppStateModel');
 
     this.parentPageId = null;

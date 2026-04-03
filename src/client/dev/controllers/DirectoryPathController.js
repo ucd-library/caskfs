@@ -1,12 +1,13 @@
 import { Registry, getLogger } from '@ucd-lib/cork-app-utils';
 import AppComponentController from './AppComponentController.js';
 import appUrlUtils from '../utils/appUrlUtils.js';
+import controllerUtils from '../utils/controllerUtils.js';
 
 export default class DirectoryPathController {
 
   constructor(host, opts = {}) {
     this.host = host;
-    host.addController(this);
+    controllerUtils.addController(host, this);
     this.AppStateModel = Registry.getModel('AppStateModel');
     this.appComponentController = new AppComponentController(host);
     this.logger = getLogger('DirectoryPathController');

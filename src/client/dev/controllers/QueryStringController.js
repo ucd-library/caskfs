@@ -1,5 +1,6 @@
 import { Registry } from '@ucd-lib/cork-app-utils';
 import AppComponentController from './AppComponentController.js';
+import controllerUtils from '../utils/controllerUtils.js';
 
 /**
  * @description Controller for managing query string parameters in the URL.
@@ -11,7 +12,7 @@ export default class QueryStringController {
     this.pageSize = opts.pageSize || 20;
     this.alwaysSyncOnAppStateUpdate = opts.alwaysSyncOnAppStateUpdate || false;
     this.host = host;
-    host.addController(this);
+    controllerUtils.addController(host, this);
     this.AppStateModel = Registry.getModel('AppStateModel');
     this.appComponentController = new AppComponentController(host);
     this.syncState();

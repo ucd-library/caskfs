@@ -1,5 +1,6 @@
 import { Registry, getLogger } from '@ucd-lib/cork-app-utils';
 import AppComponentController from './AppComponentController.js';
+import controllerUtils from '../utils/controllerUtils.js';
 
 let CONTROLLERS = [];
 let CTL_COUNT = 1;
@@ -12,7 +13,7 @@ let CTL_COUNT = 1;
 export default class DirectoryItemSelectController {
   constructor(host, opts={}){
     this.host = host;
-    host.addController(this);
+    controllerUtils.addController(host, this);
     this.appComponentCtl = new AppComponentController(host);
     this.logger = getLogger('DirectoryItemSelectController');
 
