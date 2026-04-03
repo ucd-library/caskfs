@@ -41,7 +41,7 @@ return html`
   <main>
     <cork-app-loader-bar></cork-app-loader-bar>
     <cork-app-error></cork-app-error>
-    <cork-app-toast></cork-app-toast>
+    <cork-app-toast dismissable></cork-app-toast>
     <cork-app-dialog-modal></cork-app-dialog-modal>
     <caskfs-upload-tracker></caskfs-upload-tracker>
     <ucdlib-pages

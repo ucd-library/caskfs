@@ -8,6 +8,8 @@ import { WaitController } from "@ucd-lib/theme-elements/utils/controllers/wait.j
  * @prop {Array} queue - queue of toasts to display
  * @prop {Number} defaultDisplayTime - default time to display a toast
  * @prop {Number} defaultAnimationTime - default time for toast animation
+ * @prop {Number} maxQueueLength - maximum number of toasts to keep in the queue
+ * @prop {Boolean} dismissable - flag for if toasts can be dismissed by the user
  * @prop {Boolean} processingQueue - flag for if the queue is currently being processed
  * @prop {Object} currentToast - the current toast being displayed
  */
@@ -20,6 +22,7 @@ export default class CorkAppToast extends Mixin(LitElement)
       maxQueueLength: { type: Number, attribute: 'max-queue-length' },
       defaultDisplayTime: { type: Number, attribute: 'default-display-time' },
       defaultAnimationTime: { type: Number, attribute: 'default-animation-time' },
+      dismissable: { type: Boolean },
       processingQueue: { type: Boolean },
       currentToast: { type: Object }
     }
@@ -38,6 +41,7 @@ export default class CorkAppToast extends Mixin(LitElement)
     this.maxQueueLength = 3;
     this.processingQueue = false;
     this.currentToast = null;
+    this.dismissable = false;
 
     this.registry = [
       {name: 'basic', icon: null, brandColor: null, isDefault: true},
@@ -101,7 +105,15 @@ export default class CorkAppToast extends Mixin(LitElement)
       easing: 'ease-in-out'
     });
     await fadeIn.finished;
-    await this.wait.wait(item.displayTime);
+    
+    const intervalCheck = 100;
+    let elapsed = 0;
+    while ( elapsed < item.displayTime ) {
+      await this.wait.wait(intervalCheck);
+      elapsed += intervalCheck;
+      if ( !this.currentToast ) return; // if toast was dismissed while waiting
+    }
+
     const fadeOut = this.animate([
       {opacity: 1, bottom: '2rem'},
       {opacity: 0, bottom: '-100%'}
