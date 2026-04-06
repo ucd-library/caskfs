@@ -1,7 +1,7 @@
 // Set test environment defaults before any modules load.
 // Actual env vars take precedence over these defaults.
 const defaults = {
-  CASKFS_PG_DATABASE: 'caskfs_db',
+  CASKFS_PG_DATABASE: 'testing_caskfs_db',
   CASKFS_ACL_ENABLED: 'false',
   CASKFS_LOG_LEVEL: 'error',
 };

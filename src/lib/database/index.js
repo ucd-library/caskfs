@@ -504,7 +504,7 @@ class Database {
   generateFileWithFilter(opts={}, args) {
     let withClauses = opts.withClauses || [];
     let intersectClauses = opts.intersectClauses || [];
-    let basic = ['object', 'subject', 'predicate', 'graph', 'type'];
+    let basic = args.allowedPropFilters ? args.allowedPropFilters : ['object', 'subject', 'predicate', 'graph', 'type'];
 
     for( let type of basic ) {
       if( !opts[type] ) continue;
@@ -601,65 +601,142 @@ class Database {
     return withClauses.join(', ');
   }
 
+  /**
+   * @method getLiteralValues
+   * @description Query literal (text) values from the RDF literal store with flexible filtering.
+   * Filters are ANDed together. At least one filter or no filters can be specified; with no filters
+   * all literals are returned (paginated).
+   *
+   * @param {Object} opts
+   * @param {String} opts.graph graph URI to filter by
+   * @param {String} opts.subject subject URI to filter by
+   * @param {String} opts.predicate predicate URI to filter by
+   * @param {String} opts.filePath file path to restrict results to literals associated with that file
+   * @param {String|Array} opts.partitionKeys partition key or array of partition keys to filter by
+   * @param {Number} opts.limit max results to return, default 100
+   * @param {Number} opts.offset result offset for pagination, default 0
+   * @param {Boolean} opts.debugQuery if true, return the SQL query and args instead of executing
+   *
+   * @returns {Promise<Object>} { limit, offset, totalCount, results }
+   */
   async getLiteralValues(opts={}) {
-    if( !opts.subject ) {
-      throw new Error('subject is required to get literal values');
-    }
-
-    let withClauses = [];
     let args = [];
+    let withClauses = [];
+    let intersectSources = [];
 
-    let offset = opts.offset || 0;
-    let limit = opts.limit || 5;
-
-    let where = [];
-    ['subject', 'predicate', 'graph'].forEach(field => {
-      if( opts[field] ) {
-        where.push(`${field} = caskfs.get_uri_id($${args.length + 1})`);
-        args.push(opts[field]);
+    // Literal-side filters: query ld_literal directly (subject has an index)
+    let hasLiteralFilter = opts.graph || opts.subject || opts.predicate;
+    if( hasLiteralFilter ) {
+      let literalWhere = [];
+      if( opts.graph ) {
+        args.push(opts.graph);
+        literalWhere.push(`graph = ${this.schema}.get_uri_id($${args.length})`);
       }
-    });
-
-    let fileFilter = 'f.ld_literal_id IN (SELECT ld_literal_id FROM subject_match)';
-    if( opts.filePath ) {
-      let fileId = await this.getFile({ filePath: opts.filePath });
-      if( !fileId ) throw new MissingResourceError('File', opts.filePath);
-      fileFilter = `f.file_id = $${args.length + 1}`;
-      args.push(fileId.file_id);
+      if( opts.subject ) {
+        args.push(opts.subject);
+        literalWhere.push(`subject = ${this.schema}.get_uri_id($${args.length})`);
+      }
+      if( opts.predicate ) {
+        args.push(opts.predicate);
+        literalWhere.push(`predicate = ${this.schema}.get_uri_id($${args.length})`);
+      }
+      withClauses.push(`literal_filter AS (
+        SELECT ld_literal_id FROM ${this.schema}.ld_literal
+        WHERE ${literalWhere.join(' AND ')}
+      )`);
+      intersectSources.push('SELECT ld_literal_id FROM literal_filter');
     }
 
-    withClauses.push(`subject_match AS (
-      SELECT ld_literal_id FROM ${config.database.schema}.ld_literal
-      WHERE ${where.join(' AND ')}
-    ),
-    files AS (
-      SELECT DISTINCT f.file_id FROM ${config.database.schema}.file_ld_literal f
-      WHERE ${fileFilter}
-    )
-    `);
+    // File-side filter: restrict to literals associated with a specific file
+    if( opts.filePath ) {
+      let fileParts = path.parse(opts.filePath);
+      args.push(fileParts.dir, fileParts.base);
+      withClauses.push(`file_filter AS (
+        SELECT file_id FROM ${this.schema}.file_view
+        WHERE directory = $${args.length - 1} AND filename = $${args.length}
+      ),
+      file_literal_filter AS (
+        SELECT DISTINCT ld_literal_id FROM ${this.schema}.file_ld_literal
+        WHERE file_id IN (SELECT file_id FROM file_filter)
+      )`);
+      intersectSources.push('SELECT ld_literal_id FROM file_literal_filter');
+    } else if( opts.partitionKeys ) {
+      // Partition key filter: restrict to literals associated with files having all specified keys
+      if( !Array.isArray(opts.partitionKeys) ) opts.partitionKeys = [opts.partitionKeys];
+      let joinClauses = [`SELECT f0.file_id
+        FROM ${this.schema}.file_partition_key f0
+        JOIN ${this.schema}.partition_key pk0
+          ON f0.partition_key_id = pk0.partition_key_id
+          AND pk0.value = $${args.length + 1}`];
+      args.push(opts.partitionKeys[0]);
 
-    let {table, aclQuery} = await this.generateAclWithFilter(opts, args);
-    if( aclQuery ) withClauses.push(aclQuery);
+      for( let i = 1; i < opts.partitionKeys.length; i++ ) {
+        joinClauses.push(`JOIN ${this.schema}.file_partition_key f${i}
+          ON f${i}.file_id = f0.file_id
+          JOIN ${this.schema}.partition_key pk${i}
+            ON f${i}.partition_key_id = pk${i}.partition_key_id
+            AND pk${i}.value = $${args.length + 1}`);
+        args.push(opts.partitionKeys[i]);
+      }
 
-    args.push(limit);
-    args.push(offset);
+      withClauses.push(`partition_filter AS (
+        ${joinClauses.join('\n')}
+      ),
+      partition_literal_filter AS (
+        SELECT DISTINCT ld_literal_id FROM ${this.schema}.file_ld_literal
+        WHERE file_id IN (SELECT file_id FROM partition_filter)
+      )`);
+      intersectSources.push('SELECT ld_literal_id FROM partition_literal_filter');
+    }
+
+    // ACL filter: restrict to literals in files the requestor can read
+    let aclOpts = { requestor: opts.requestor, ignoreAcl: opts.ignoreAcl, dbClient: this };
+    if( await acl.aclLookupRequired(aclOpts) ) {
+      let aclWhere = ['(acl.user_id IS NULL AND acl.can_read = TRUE)'];
+      if( opts.requestor ) {
+        let userId = await acl.getUserId({ user: opts.requestor, dbClient: this });
+        if( userId !== null && userId !== undefined ) {
+          args.push(userId);
+          aclWhere.push(`(acl.user_id = $${args.length} AND acl.can_read = TRUE)`);
+        }
+      }
+      withClauses.push(`acl_literal_filter AS (
+        SELECT DISTINCT fll.ld_literal_id
+        FROM ${this.schema}.file_ld_literal fll
+        LEFT JOIN ${this.schema}.file f ON f.file_id = fll.file_id
+        LEFT JOIN ${this.schema}.directory_user_permissions_lookup acl
+          ON acl.directory_id = f.directory_id
+        WHERE ${aclWhere.join(' OR ')}
+      )`);
+      intersectSources.push('SELECT ld_literal_id FROM acl_literal_filter');
+    }
+
+    // Build final candidates CTE
+    let candidatesSQL = intersectSources.length > 0
+      ? intersectSources.join('\nINTERSECT\n')
+      : `SELECT ld_literal_id FROM ${this.schema}.ld_literal`;
+    withClauses.push(`candidates AS (\n  ${candidatesSQL}\n)`);
+
+    let limit = opts.limit || 100;
+    let offset = opts.offset || 0;
+    args.push(limit, offset);
 
     let query = `
-      WITH ${withClauses.join(', ')}
+      WITH ${withClauses.join(',\n')},
+      total AS (SELECT COUNT(*) AS total_count FROM candidates)
       SELECT
         gu.uri AS graph,
         su.uri AS subject,
         pu.uri AS predicate,
         ll.value AS object,
-        ll.language AS language,
-        ll.datatype AS datatype
-      FROM ${table} f
-      LEFT JOIN ${config.database.schema}.file_ld_literal fll ON fll.file_id = f.file_id
-      LEFT JOIN caskfs.ld_literal ll ON fll.ld_literal_id = ll.ld_literal_id
-      LEFT JOIN caskfs.uri pu ON ll.predicate = pu.uri_id
-      LEFT JOIN caskfs.uri su ON ll.subject = su.uri_id
-      LEFT JOIN caskfs.uri gu ON ll.graph = gu.uri_id
-      WHERE fll.ld_literal_id IN (SELECT ld_literal_id FROM subject_match)
+        ll.language,
+        ll.datatype,
+        total.total_count
+      FROM total, candidates c
+      JOIN ${this.schema}.ld_literal ll ON ll.ld_literal_id = c.ld_literal_id
+      LEFT JOIN ${this.schema}.uri pu ON ll.predicate = pu.uri_id
+      LEFT JOIN ${this.schema}.uri su ON ll.subject = su.uri_id
+      LEFT JOIN ${this.schema}.uri gu ON ll.graph = gu.uri_id
       LIMIT $${args.length - 1} OFFSET $${args.length}
     `;
 
@@ -668,11 +745,10 @@ class Database {
     }
 
     let resp = await this.client.query(query, args);
-    return {
-      limit,
-      offset,
-      results: resp.rows,
-    }
+    let totalCount = resp.rows.length > 0 ? parseInt(resp.rows[0].total_count) : 0;
+    resp.rows = resp.rows.map(r => { delete r.total_count; return r; });
+
+    return { limit, offset, totalCount, results: resp.rows };
   }
 
   powerWash() {

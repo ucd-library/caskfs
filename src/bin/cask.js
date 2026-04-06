@@ -300,25 +300,40 @@ program
   });
 
 program
-  .command('literal <subject>')
-  .description('Read literal labels for a subject URI and output as supported RDF format to stdout')
+  .command('literal')
+  .description('Read literal (text) values from the RDF store with optional filters')
   .option('-g, --graph <graph-uri>', 'Only include literals in the specified graph')
+  .option('-s, --subject <subject-uri>', 'Only include literals with the specified subject URI')
   .option('-p, --predicate <predicate>', 'Only include literals with the specified predicate')
-  .option('-f, --file-path <file-path>', 'Only include literals for the specified file path')
+  .option('-f, --file-path <file-path>', 'Only include literals associated with the specified file path')
+  .option('-k, --partition-keys <keys>', 'Only include literals associated with files having the specified partition keys (comma-separated)')
+  .option('-l, --limit <number>', 'Limit the number of results returned', parseInt)
+  .option('-n, --offset <number>', 'Offset the results returned by the specified number', parseInt)
   .option('-o, --format <format>', 'RDF format to output: jsonld, compact, flattened, expanded, nquads or json. Default is jsonld', 'jsonld')
   .option('-d, --debug-query', 'Output the SQL query used to find the literals', false)
-  .action(async (subject, options) => {
+  .action(async (options) => {
     handleGlobalOpts(options);
 
     const cask = new CaskFs();
 
-    options.subject = subject;
+    if( options.partitionKeys ) {
+      options.partitionKeys = options.partitionKeys.split(',').map(k => k.trim());
+    }
+
     let resp = await cask.rdf.literal(options);
 
-    if( typeof resp === 'object' ) {
+    if( options.debugQuery ) {
+      console.log('SQL Query:');
+      console.log(resp.query);
+      console.log(resp.args);
+      cask.dbClient.end();
+      return;
+    }
+
+    if( typeof resp.results === 'object' ) {
       console.log(JSON.stringify(resp, null, 2));
     } else {
-      process.stdout.write(resp);
+      process.stdout.write(resp.results);
     }
     cask.dbClient.end();
   });

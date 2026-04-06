@@ -155,15 +155,35 @@ class Rdf {
     throw new Error(`Unsupported RDF format: ${format}`);
   }
 
+  /**
+   * @method literal
+   * @description Query literal (text) values from the RDF store and return in the specified format.
+   *
+   * @param {Object} opts
+   * @param {String} opts.graph graph URI to filter by
+   * @param {String} opts.subject subject URI to filter by
+   * @param {String} opts.predicate predicate URI to filter by
+   * @param {String} opts.filePath file path to restrict results to literals associated with that file
+   * @param {String|Array} opts.partitionKeys partition key(s) to filter by
+   * @param {Number} opts.limit max results to return
+   * @param {Number} opts.offset result offset for pagination
+   * @param {String} opts.format RDF format to return
+   * @param {Boolean} opts.debugQuery if true, return the SQL query and args
+   *
+   * @returns {Promise<Object>} paginated results with RDF-formatted literals
+   */
   async literal(opts={}) {
     let data = await this.dbClient.getLiteralValues(opts);
+
+    if( opts.debugQuery ) return data;
+
     data.results = data.results.map(q => quad(
       namedNode(q.subject),
       namedNode(q.predicate),
       literal(q.object, q.language || namedNode(q.datatype)),
       namedNode(q.graph)
     ));
- 
+
     data.results = await this._objectToNQuads(data.results);
     data.results = await this.format(data.results, opts.format);
     return data;

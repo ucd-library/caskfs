@@ -632,6 +632,8 @@ class CaskFs {
    * @param {Object} opts options object
    * @param {Boolean} opts.stream if true, return a stream. If false, return a Promise to content. Default: false
    * @param {String} opts.encoding encoding to use when reading the file. Default: null (buffer)
+   * @param {Number} [opts.start] - First byte offset for partial reads (inclusive). Only applies when stream=true.
+   * @param {Number} [opts.end] - Last byte offset for partial reads (inclusive). Only applies when stream=true.
    *
    * @returns {Promise<Buffer>|Stream} file contents as a Buffer or Stream
    */
