@@ -93,6 +93,11 @@ const config = {
 
   git : {
     metadataProperties : ['remote', 'branch', 'commit', 'tag', 'lastCommitTime']
+  },
+
+  oidc : {
+    url      : env.CASKFS_OIDC_URL       || null,
+    clientId : env.CASKFS_OIDC_CLIENT_ID || 'caskfs-cli',
   }
 
 }

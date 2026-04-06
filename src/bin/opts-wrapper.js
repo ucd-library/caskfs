@@ -13,8 +13,8 @@ let optsWrapper = (program) => {
 let handleEnv = (opts) => {
   let gOpts = programInstance.opts();
   if( gOpts.env ) {
-    opts.environment = {name: gOpts.env};
-    environment.loadEnv(gOpts.env);
+    const config = environment.loadEnv(gOpts.env);
+    opts.environment = { name: gOpts.env, config };
   } else {
     opts.environment = environment.getDefaultEnv();
     if( opts.environment ) {

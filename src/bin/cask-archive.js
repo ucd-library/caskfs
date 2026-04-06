@@ -3,8 +3,8 @@
 import { Command } from 'commander';
 import path from 'path';
 import cliProgress from 'cli-progress';
-import CaskFs from '../index.js';
 import { optsWrapper, handleGlobalOpts } from './opts-wrapper.js';
+import { getClient, endClient } from './lib/client.js';
 import fs from 'fs';
 
 const program = new Command();
@@ -17,6 +17,7 @@ program
   .option('-p, --include-auto-partition', 'include auto-partition and auto-bucket rules in the archive', false)
   .action(async (rootDir, file, options) => {
     handleGlobalOpts(options);
+    const cask = getClient(options);
 
     if (!file) {
       const ts = new Date().toISOString().replace(/[:.]/g, '-');
@@ -27,7 +28,7 @@ program
       file = path.resolve(process.cwd(), file);
     }
 
-    if( fs.statSync(file).isDirectory() ) {
+    if( fs.existsSync(file) && fs.statSync(file).isDirectory() ) {
       const ts = new Date().toISOString().replace(/[:.]/g, '-');
       file = path.join(file, `caskfs-export-${ts}.tar.gz`);
     }
@@ -35,8 +36,6 @@ program
     if( !file.endsWith('.tar.gz') ) {
       file += '.tar.gz';
     }
-
-    const cask = new CaskFs();
 
     let pbar;
     const cb = ({ type, current, total }) => {
@@ -61,7 +60,7 @@ program
     console.log(`  hashes : ${summary.hashCount}`);
     console.log(`  files  : ${summary.fileCount}`);
 
-    cask.close();
+    await endClient(cask);
   });
 
 program
@@ -72,12 +71,11 @@ program
   .option('--auto-partition-conflict <mode>', "auto-partition conflict mode: 'fail', 'skip', or 'merge' (default: fail)", 'fail')
   .action(async (file, options) => {
     handleGlobalOpts(options);
+    const cask = getClient(options);
 
     if (!path.isAbsolute(file)) {
       file = path.resolve(process.cwd(), file);
     }
-
-    const cask = new CaskFs();
 
     let pbar;
     const cb = ({ type, current, total }) => {
@@ -103,7 +101,7 @@ program
     console.log(`  files imported  : ${summary.fileCount}`);
     console.log(`  files skipped   : ${summary.skippedFiles}`);
 
-    cask.close();
+    await endClient(cask);
   });
 
 program.parse(process.argv);

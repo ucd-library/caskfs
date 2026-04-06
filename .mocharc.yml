@@ -7,5 +7,6 @@ spec:
   - tests/ld-operations.test.js
   - tests/transfer.test.js
   - tests/http-fs.test.js
-timeout: 15000
+  - tests/cli.test.js
+timeout: 30000
 require: tests/helpers/env.js

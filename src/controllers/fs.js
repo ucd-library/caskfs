@@ -158,19 +158,69 @@ router.get(/(.*)/, async (req, res) => {
   }
 });
 
-// only allow new file
-router.post(/(.*)/, (req, res) => {
-  res.status(404).json({ error: 'Not Found' });
+/**
+ * @function handleWrite
+ * @description Shared handler for POST (create) and PUT (upsert) file write requests.
+ * Streams the request body directly into CaskFS as the file content.
+ *
+ * @param {String} filePath - Destination path in CaskFS
+ * @param {import('express').Request} req - Express request (used as the read stream)
+ * @param {import('express').Response} res - Express response
+ * @param {Boolean} replace - If true, overwrite an existing file (PUT semantics)
+ */
+async function handleWrite(filePath, req, res, replace) {
+  try {
+    const mimeType = req.headers['content-type']?.split(';')[0]?.trim() || 'application/octet-stream';
+
+    const partitionKeys = req.query['partition-keys']
+      ? req.query['partition-keys'].split(',').map(k => k.trim()).filter(Boolean)
+      : [];
+
+    let metadata = {};
+    if (req.query.metadata) {
+      try { metadata = JSON.parse(req.query.metadata); } catch(e) {}
+    }
+
+    const ctx = await caskFs.write({
+      filePath,
+      readStream: req,
+      mimeType,
+      partitionKeys,
+      metadata: Object.keys(metadata).length ? metadata : undefined,
+      bucket: req.query.bucket || undefined,
+      replace,
+      corkTraceId: req.corkTraceId,
+    });
+
+    if (ctx.data?.error) {
+      const err = ctx.data.error;
+      if (err.name === 'DuplicateFileError') {
+        return res.status(409).json({ message: err.message, code: 'DuplicateFileError' });
+      }
+      return res.status(400).json({ message: err.message });
+    }
+
+    res.status(replace ? 200 : 201).json(ctx.data);
+  } catch (e) {
+    return handleError(res, req, e);
+  }
+}
+
+// create new file — fails with 409 if path already exists
+router.post(/(.*)/, async (req, res) => {
+  const filePath = req.params[0] || '/';
+  await handleWrite(filePath, req, res, false);
 });
 
-// allow upsert via put
-router.put(/(.*)/, (req, res) => {
-  res.status(404).json({ error: 'Not Found' });
+// create or replace file
+router.put(/(.*)/, async (req, res) => {
+  const filePath = req.params[0] || '/';
+  await handleWrite(filePath, req, res, true);
 });
 
-// metadata updates via patch
+// metadata updates — not yet implemented
 router.patch(/(.*)/, (req, res) => {
-  res.status(404).json({ error: 'Not Found' });
+  res.status(501).json({ error: 'Not Implemented' });
 });
 
 router.delete(/(.*)/, json(), async (req, res) => {

@@ -1,6 +1,6 @@
 import { Command } from 'commander';
-import CaskFs from '../index.js';
 import {optsWrapper, handleGlobalOpts} from './opts-wrapper.js';
+import { getClient, endClient, assertDirectPg } from './lib/client.js';
 import path from 'path';
 import os from 'os';
 import config from '../lib/config.js';
@@ -11,11 +11,11 @@ optsWrapper(program);
 program
   .command('stats')
   .description('Get statistics about the CaskFS')
-  .action(async () => {
-    handleGlobalOpts({});
-    const caskfs = new CaskFs();
-    console.log(await caskfs.stats());
-    caskfs.dbClient.end();
+  .action(async (options={}) => {
+    handleGlobalOpts(options);
+    const cask = getClient(options);
+    console.log(await cask.stats());
+    await endClient(cask);
   });
 
 program
@@ -24,11 +24,12 @@ program
   .option('-l, --hash-list <hashes>', 'Comma-separated list of hash values to delete', (val) => val.split(','))
   .action(async (options) => {
     handleGlobalOpts(options);
-    const caskfs = new CaskFs();
+    const cask = getClient(options);
+    assertDirectPg(cask, 'admin delete-unused-hashes');
 
     if( options.hashList && options.hashList.length > 0 ) {
       console.log(`Deleting ${options.hashList.length} specified hashes...`);
-      await caskfs.cas.deleteUnusedHashes({ hashList: options.hashList });
+      await cask.cas.deleteUnusedHashes({ hashList: options.hashList });
     } else {
 
       const readline = await import('readline');
@@ -54,7 +55,7 @@ program
       console.log(`Deleting all unused hashes...`);
       let deletedCount = 0;
       while( true ) {
-        let batchDeleted = await caskfs.cas.deleteUnusedHashes({ limit: 100 });
+        let batchDeleted = await cask.cas.deleteUnusedHashes({ limit: 100 });
         if( batchDeleted.length === 0 ) {
           break;
         }
@@ -63,17 +64,18 @@ program
       }
     }
 
-    caskfs.dbClient.end();
+    await endClient(cask);
   });
 
 program
   .command('unused-hash-count')
   .description('Count unused hashes in the CaskFS')
-  .action(async () => {
-    handleGlobalOpts({});
-    const caskfs = new CaskFs();
-    console.log(await caskfs.cas.getUnusedHashCount());
-    caskfs.dbClient.end();
+  .action(async (options={}) => {
+    handleGlobalOpts(options);
+    const cask = getClient(options);
+    assertDirectPg(cask, 'admin unused-hash-count');
+    console.log(await cask.cas.getUnusedHashCount());
+    await endClient(cask);
   });
 
 program
@@ -83,6 +85,8 @@ program
   .option('-r, --user-roles-file <user-roles-file>', 'Path to a JSON or YAML file containing user roles to initialize after powerwash')
   .action(async (options) => {
     handleGlobalOpts(options);
+    const cask = getClient(options);
+    assertDirectPg(cask, 'admin powerwash');
 
     const readline = await import('readline');
     const rl = readline.createInterface({
@@ -108,7 +112,6 @@ program
       process.exit(0);
     }
 
-    const cask = new CaskFs();
     await cask.powerWash();
 
     if( options.includeAdmin ) {
@@ -118,12 +121,13 @@ program
     }
 
     if( options.userRolesFile ) {
+      const fs = await import('fs/promises');
       console.log(`Loading user roles from ${options.userRolesFile}`);
-      let userRoles = JSON.parse(await fs.readFile(options.userRolesFile, 'utf-8'));
+      let userRoles = JSON.parse(await fs.default.readFile(options.userRolesFile, 'utf-8'));
       await cask.ensureUserRoles(handleGlobalOpts({}), userRoles);
     }
 
-    cask.dbClient.end();
+    await endClient(cask);
   });
 
 program.parse(process.argv);

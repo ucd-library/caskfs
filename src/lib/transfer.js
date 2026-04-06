@@ -70,7 +70,8 @@ class Transfer {
    * streaming .tar.gz archive.  Each unique hash is written exactly once regardless of how
    * many CaskFS file paths reference it.
    *
-   * @param {String} destPath - absolute path to write the .tar.gz archive to
+   * @param {String|import('stream').Writable} dest - absolute file path to write to, or a
+   *   Writable stream to pipe into (e.g. an HTTP response)
    * @param {Object} opts
    * @param {String} opts.rootDir - required. only export files under this CaskFS path
    * @param {Boolean} [opts.includeAcl=false] - include ACL data in the export
@@ -79,12 +80,12 @@ class Transfer {
    *
    * @returns {Promise<{hashCount: number, fileCount: number}>} export summary
    */
-  async export(destPath, opts={}) {
+  async export(dest, opts={}) {
     if (!opts.rootDir) throw new Error('opts.rootDir is required for export');
 
     const pack = tarStream.pack();
     const gzip = zlib.createGzip();
-    const output = fs.createWriteStream(destPath);
+    const output = typeof dest === 'string' ? fs.createWriteStream(dest) : dest;
 
     let summary = { hashCount: 0, fileCount: 0 };
 
@@ -275,7 +276,8 @@ class Transfer {
    * produced by export().  A single database connection is held open for the duration of the
    * import; each hash's file records are committed in their own transaction.
    *
-   * @param {String} srcPath - absolute path to the .tar.gz archive to import
+   * @param {String|import('stream').Readable} src - absolute file path to read from, or a
+   *   Readable stream to consume (e.g. an HTTP request body)
    * @param {Object} [opts={}]
    * @param {Boolean} [opts.overwrite=false] - replace existing file records; default throws DuplicateFileError
    * @param {String} [opts.aclConflict='fail'] - 'fail' | 'skip' | 'merge' on ACL conflicts
@@ -284,8 +286,8 @@ class Transfer {
    *
    * @returns {Promise<{hashCount: number, fileCount: number, skippedFiles: number}>}
    */
-  async import(srcPath, opts={}) {
-    const input = fs.createReadStream(srcPath);
+  async import(src, opts={}) {
+    const input = typeof src === 'string' ? fs.createReadStream(src) : src;
     const gunzip = zlib.createGunzip();
     const extract = tarStream.extract();
 

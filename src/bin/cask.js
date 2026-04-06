@@ -3,7 +3,6 @@
 import { Command } from 'commander';
 import fs from 'fs/promises';
 import fsSync from 'fs';
-import CaskFs from '../index.js';
 import {createContext} from '../lib/context.js';
 import {silenceLoggers} from '../lib/logger.js';
 import path from 'path';
@@ -13,7 +12,8 @@ import git from '../lib/git.js';
 import {parse as parseYaml} from 'yaml';
 import {optsWrapper, handleGlobalOpts} from './opts-wrapper.js';
 import cliProgress from 'cli-progress';
-import printLogo from './print-logo.js';
+import printLogo, { printConnection } from './print-logo.js';
+import { getClient, endClient, assertDirectPg } from './lib/client.js';
 import { fileURLToPath } from 'url';
 
 
@@ -30,21 +30,18 @@ config.acl.defaultRequestor = os.userInfo().username;
 
 program
   .name('CaskFs')
-  // .option('-V, --version', 'show version')
   .action(async () => {
-
-    let versionInfo = pkg.version;
-    try {
-      let latest = await getLatestVersion();
-      if( latest !== versionInfo ) {
-        versionInfo = `${versionInfo} (latest: ${colors.green(latest)}. Run '${colors.yellow(`npm install -g @ucd-lib/caskfs@${latest}`)}' to update)`;
-      } else {
-        versionInfo += colors.green(' (latest)');
-      }
-    } catch(e) {}
-
-
     printLogo(pkg);
+  });
+
+program
+  .command('info')
+  .description('Show active connection and CaskFS version')
+  .action(async (options) => {
+    handleGlobalOpts(options);
+    printLogo(pkg);
+    console.log('');
+    printConnection(options.environment);
   });
 
 program
@@ -58,9 +55,8 @@ program
   .description('Write a file')
   .action(async (filePath, options) => {
     let opts = {};
-    const cask = new CaskFs();
-
     handleGlobalOpts(options);
+    const cask = getClient(options);
 
     if (options.dataFile === '-') {
       opts.readStream = process.stdin;
@@ -90,7 +86,7 @@ program
 
     await cask.write(opts);
 
-    cask.dbClient.end();
+    await endClient(cask);
   });
 
 program
@@ -101,9 +97,10 @@ program
   .option('-b, --bucket <bucket>', 'Target bucket when copying to GCS')
   .action(async (sourcePath, destPath, options) => {
     silenceLoggers();
-    
+
     handleGlobalOpts(options);
-    
+    const cask = getClient(options);
+
     if( !path.isAbsolute(sourcePath) ) {
       sourcePath = path.resolve(process.cwd(), sourcePath);
     }
@@ -127,34 +124,33 @@ program
       casDeletes : 0
     };
 
-    const cask = new CaskFs();
     let location;
 
     // is the source path a file or directory?
     let stat = await fs.stat(sourcePath);
-    let git;
+    let gitInfo;
     if( !stat.isDirectory() ) {
       destPath = path.resolve(destPath, path.basename(sourcePath));
 
       try {
-        git = await git.info(sourcePath);
+        gitInfo = await git.info(sourcePath);
       } catch(e) {}
-      
+
       let context = createContext({
         filePath: destPath,
         requestor: options.requestor,
         bucket: options.bucket,
         readPath: sourcePath,
         replace: options.replace,
-        git
+        git: gitInfo
       });
-      
+
       location = await cask.getCasLocation(context);
       console.log(`Copying file ${sourcePath} to (${location}) ${destPath}`);
       if( !options.dryRun ) {
         await cask.write(context);
       }
-      cask.dbClient.end();
+      await endClient(cask);
       return;
     }
 
@@ -167,11 +163,11 @@ program
 
     console.log('Copying files from directory', sourcePath);
     console.log('');
-    
+
     let pbar = new cliProgress.Bar(
-      {etaBuffer: 50}, 
+      {etaBuffer: 50},
       cliProgress.Presets.shades_classic
-    ); 
+    );
     let total = files.filter(f => !f.match(/\/\./)).length;
     let filesCopied = 0;
     pbar.start(total, 0);
@@ -182,7 +178,7 @@ program
       let destFile = path.join(destPath, path.relative(sourcePath, file))
 
       try {
-        git = await git.info(file);
+        gitInfo = await git.info(file);
       } catch(e) {}
 
       context = createContext({
@@ -191,11 +187,10 @@ program
         bucket: options.bucket,
         readPath: file,
         replace: options.replace,
-        git
+        git: gitInfo
       });
 
       location = await cask.getCasLocation(context);
-      // console.log(`Copying file ${file} to (${location}) ${destFile}`);
       if( !options.dryRun ) {
         try {
           await cask.write(context);
@@ -214,11 +209,6 @@ program
 
           pbar.update(filesCopied++);
         } catch (err) {
-          // console.error(`Failed to copy ${file} to ${destFile}: ${err.message}`);
-          // console.error(err.stack);
-          // if( err.details ) {
-          //   console.error(err.details);
-          // }
           failed.push(file);
         }
       }
@@ -244,7 +234,7 @@ program
     console.log(`  - CAS writes: ${stats.casWrites}`);
     console.log(`  - CAS deletes: ${stats.casDeletes}`);
 
-    cask.dbClient.end();
+    await endClient(cask);
     return;
   });
 
@@ -253,14 +243,13 @@ program
   .description('Get metadata for a file')
   .action(async (filePath, options={}) => {
     handleGlobalOpts(options);
-
-    const cask = new CaskFs();
+    const cask = getClient(options);
     const context = createContext({
       filePath,
       requestor: options.requestor
     });
     console.log(await cask.metadata(context));
-    cask.dbClient.end();
+    await endClient(cask);
   });
 
 program
@@ -268,15 +257,14 @@ program
   .description('Get contents of a file')
   .action(async (filePath, options={}) => {
     handleGlobalOpts(options);
-
-    const cask = new CaskFs();
+    const cask = getClient(options);
     const context = createContext({
       filePath,
       requestor: options.requestor,
       user: options.user
     });
     console.log((await cask.read(context)).toString('utf-8'));
-    cask.dbClient.end();
+    await endClient(cask);
   });
 
 program
@@ -285,8 +273,7 @@ program
   .option('-o, --format <format>', 'RDF format to output: jsonld, compact, flattened, expanded, nquads or json. Default is jsonld', 'jsonld')
   .action(async (filePath, options) => {
     handleGlobalOpts(options);
-
-    const cask = new CaskFs();
+    const cask = getClient(options);
 
     options.filePath = filePath;
     let resp = await cask.rdf.read(options);
@@ -296,7 +283,7 @@ program
     } else {
       process.stdout.write(resp);
     }
-    cask.dbClient.end();
+    await endClient(cask);
   });
 
 program
@@ -313,8 +300,7 @@ program
   .option('-d, --debug-query', 'Output the SQL query used to find the literals', false)
   .action(async (options) => {
     handleGlobalOpts(options);
-
-    const cask = new CaskFs();
+    const cask = getClient(options);
 
     if( options.partitionKeys ) {
       options.partitionKeys = options.partitionKeys.split(',').map(k => k.trim());
@@ -326,7 +312,7 @@ program
       console.log('SQL Query:');
       console.log(resp.query);
       console.log(resp.args);
-      cask.dbClient.end();
+      await endClient(cask);
       return;
     }
 
@@ -335,7 +321,7 @@ program
     } else {
       process.stdout.write(resp.results);
     }
-    cask.dbClient.end();
+    await endClient(cask);
   });
 
 program
@@ -350,8 +336,7 @@ program
   .option('-d, --debug-query', 'Output the SQL query used to find the files', false)
   .action(async (filePath, options) => {
     handleGlobalOpts(options);
-
-    const cask = new CaskFs();
+    const cask = getClient(options);
 
     if( options.partitionKeys ) {
       options.partitionKeys = options.partitionKeys.split(',').map(k => k.trim());
@@ -367,7 +352,7 @@ program
 
     options.filePath = filePath;
     console.log(JSON.stringify(await cask.relationships(options), null, 2));
-    cask.dbClient.end();
+    await endClient(cask);
   });
 
 program
@@ -384,25 +369,24 @@ program
   .option('-d, --debug-query', 'Output the SQL query used to find the files', false)
   .action(async (options) => {
     handleGlobalOpts(options);
-
-    const cask = new CaskFs();
+    const cask = getClient(options);
 
     if( options.partitionKeys ) {
       options.partitionKeys = options.partitionKeys.split(',').map(k => k.trim());
     }
 
     let resp = await cask.rdf.find(options);
-    cask.dbClient.end();
-    
+
     if( options.debugQuery ) {
       console.log('SQL Query:');
       console.log(resp.query);
       console.log(resp.args);
+      await endClient(cask);
       return;
     }
 
     console.log(resp);
-    cask.dbClient.end();
+    await endClient(cask);
   });
 
 program
@@ -415,18 +399,17 @@ program
 
     options.filePath = filePath;
 
-    const cask = new CaskFs();
+    const cask = getClient(options);
 
     if( options.directory ) {
       options.directory = filePath;
-      const resp = await cask.deleteDirectory(options);
+      await cask.deleteDirectory(options);
     } else {
       const resp = await cask.deleteFile(options);
       console.log(resp);
     }
 
-    
-    cask.dbClient.end();
+    await endClient(cask);
   });
 
 program
@@ -436,9 +419,8 @@ program
   .action(async (directory, options) => {
     handleGlobalOpts(options);
 
-    let partitionKeys = options.partitionKeys ? options.partitionKeys.split(',').map(k => k.trim()) : undefined;
-    const caskfs = new CaskFs();
-    const resp = await caskfs.ls({
+    const cask = getClient(options);
+    const resp = await cask.ls({
       directory,
       requestor: options.requestor
     });
@@ -446,6 +428,7 @@ program
     if (options.output === 'json') {
       delete resp.query;
       console.log(JSON.stringify(resp, null, 2));
+      await endClient(cask);
       return;
     }
 
@@ -456,12 +439,11 @@ program
     }
 
     resp.files.forEach(f => {
-      let keys = f.partition_keys ? f.partition_keys.join(',') : '';
       let directory = f.directory ? f.directory.replace(/\/+$/, '') + '/' : '';
       console.log(`f ${directory}${f.filename} `);
     });
 
-    caskfs.dbClient.end();
+    await endClient(cask);
   });
 
 program.command('acl', 'Manage ACL rules');
@@ -469,13 +451,16 @@ program.command('auto-path', 'Manage auto-path rules');
 program.command('env', 'Manage cask cli environment');
 program.command('admin', 'CaskFS administrative commands');
 program.command('archive', 'Import and export CaskFS archives');
+program.command('auth', 'Authenticate with a CaskFS server');
 
 program
   .command('init-pg')
   .description('Initialize the PostgreSQL database')
   .option('-r, --user-roles-file <user-roles-file>', 'Path to a JSON or YAML file containing user roles to initialize after setting up the database')
   .action(async (options) => {
-    const cask = new CaskFs();
+    handleGlobalOpts(options);
+    const cask = getClient(options);
+    assertDirectPg(cask, 'init-pg');
 
     await cask.dbClient.init();
 
@@ -484,18 +469,20 @@ program
       await cask.ensureUserRoles(handleGlobalOpts({}), userRoles);
     }
 
-    cask.dbClient.end();
+    await endClient(cask);
   });
 
 program
   .command('init-user-roles <user-roles-file>')
   .description('Initialize user roles in the PostgreSQL database')
-  .action(async (userRolesFile) => {
-    let userRoles = JSON.parse(await fs.readFile(options.userRolesFile, 'utf-8'));
+  .action(async (userRolesFile, options={}) => {
+    handleGlobalOpts(options);
+    const cask = getClient(options);
+    assertDirectPg(cask, 'init-user-roles');
 
-    const cask = new CaskFs();
+    let userRoles = JSON.parse(await fs.readFile(userRolesFile, 'utf-8'));
     await cask.ensureUserRoles(handleGlobalOpts({}), userRoles);
-    cask.dbClient.end();
+    await endClient(cask);
   });
 
 program
@@ -505,10 +492,11 @@ program
     handleGlobalOpts(options);
     console.log(`Current User: ${options.requestor || 'public (no user)'}`);
     if( options.requestor ) {
-      const cask = new CaskFs();
-      let resp = await cask.acl.getUserRoles({ 
-        user: options.requestor, 
-        dbClient: cask.dbClient 
+      const cask = getClient(options);
+      assertDirectPg(cask, 'whoami');
+      let resp = await cask.acl.getUserRoles({
+        user: options.requestor,
+        dbClient: cask.dbClient
       });
       console.log('Roles:');
       if( resp.length === 0 ) {
@@ -516,7 +504,7 @@ program
       } else {
         console.log(' - '+resp.join('\n - '));
       }
-      cask.dbClient.end();
+      await endClient(cask);
     }
   });
 
@@ -540,24 +528,5 @@ program
     const { startServer } = await import('../client/index.js');
     startServer(options);
   });
-
-async function loadUserRolesFile(userRolesFile) {
-  if( !path.isAbsolute(userRolesFile) ) {
-    userRolesFile = path.resolve(process.cwd(), userRolesFile);
-  }
-  if( !fsSync.existsSync(userRolesFile) ) {
-    console.error(`User roles file ${userRolesFile} does not exist`);
-    process.exit(1);
-  }
-
-  let data = await fs.readFile(userRolesFile, 'utf-8');
-  let userRoles;
-  if( userRolesFile.match(/\.ya?ml$/) ) {
-    userRoles = parseYaml(data);
-  } else {
-    userRoles = JSON.parse(data);
-  }
-  return userRoles;
-}
 
 program.parse(process.argv);
