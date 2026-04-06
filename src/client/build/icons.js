@@ -21,7 +21,7 @@ export function buildIconsets(){
         'fingerprint', 'right-from-bracket', 'right-to-bracket',
         'arrows-to-circle', 'copy', 'eye', 'plus', 'crosshairs',
         'code', 'arrow-right', 'circle-check', 'bars-progress',
-        'circle-notch', 'circle-chevron-right'
+        'circle-notch', 'circle-chevron-right', 'download'
       ]
     }, 
     { name: 'ucdlib-core', 

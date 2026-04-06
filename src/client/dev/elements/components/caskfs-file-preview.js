@@ -1,11 +1,15 @@
 import { LitElement } from 'lit';
 import {render, styles} from "./caskfs-file-preview.tpl.js";
-import { LitCorkUtils, Mixin } from '@ucd-lib/cork-app-utils';
+import { LitCorkUtils, Mixin, LruStore } from '@ucd-lib/cork-app-utils';
+
+import DirectoryPathController from '../../controllers/DirectoryPathController.js';
+import AppComponentController from '../../controllers/AppComponentController.js';
 
 import Prism from 'prismjs';
 import 'prismjs/components/prism-json.js';
 
 import mimeTypeUtils from '../../utils/mimeTypeUtils.js';
+import config from '../../config.js';
 
 /**
  * @description A file preview component that displays certain files in the browser based on their mime type.
@@ -20,6 +24,7 @@ export default class CaskfsFilePreview extends Mixin(LitElement)
       metadata: { type: Object },
       fileContents: { type: String}, 
       previewType: { state: true },
+      exceedsPreviewThreshold: { state: true },
       loading: { state: true }
     }
   }
@@ -32,14 +37,31 @@ export default class CaskfsFilePreview extends Mixin(LitElement)
     super();
     this.render = render.bind(this);
 
+    this.ctl = {
+      appComponent: new AppComponentController(this),
+      directoryPath: new DirectoryPathController(this)
+    };
+
+    this.previewAnyway = new LruStore({name: 'previewAnyway', maxSize: 50});
+
     this.filepath = '';
     this.metadata = null;
     this.loading = false;
     this.previewType = false;
     this.fileContents = '';
+    this.exceedsPreviewThreshold = false;
 
-    this._injectModel('FsModel');
+    this._injectModel('FsModel', 'AppStateModel');
   }
+
+  get _filepath() {
+    return this.filepath || this.ctl.directoryPath.pathname;
+  }
+
+  async _onAppStateUpdate() {
+    if ( !this.ctl.appComponent.isOnActivePage ) return;
+      this.getData();
+    }
 
   willUpdate(props){
     if ( props.has('filepath') && this.filepath ) {
@@ -57,19 +79,30 @@ export default class CaskfsFilePreview extends Mixin(LitElement)
     this.loading = false;
   }
 
+  _onDisplayAnywayClick() {
+    this.previewAnyway.set(this._filepath, true);
+    this.getData();
+    this.requestUpdate();
+  }
+
   async getMetadata() {
     this.metadata = {};
     this.previewType = false;
-    const res = await this.FsModel.getMetadata(this.filepath);
+    const res = await this.FsModel.getMetadata(this._filepath);
     if ( res.state === 'loaded' ) {
       this.metadata = res.payload;
       this.previewType = mimeTypeUtils.previewType(this.metadata?.metadata?.mimeType);
+      if ( this.previewType === 'image' ) {
+        this.exceedsPreviewThreshold = this.metadata.size > config.previewThresholdImage;
+      } else if ( this.previewType === 'text' || this.previewType === 'json' ) {
+        this.exceedsPreviewThreshold = this.metadata.size > config.previewThresholdText;
+      }
     }
   }
 
   async getFileContents() {
     this.fileContents = '';
-    const res = await this.FsModel.getFileContents(this.filepath);
+    const res = await this.FsModel.getFileContents(this._filepath);
     if ( res.state === 'loaded' ) {
       if ( this.previewType === 'json' ){
 
