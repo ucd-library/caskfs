@@ -6,13 +6,17 @@ import FsDisplayUtils from '../utils/FsDisplayUtils.js';
 /**
  * @description Controller for managing directory listing contents and pagination
  * @property {LitElement} host The LitElement instance that is using this controller
+ * @property {Object} opts Options for configuring the controller
+ * @propery {Boolean} opts.parent If true, the controller will get the contents of the parent directory of the current path. Default is false.
  * @property {Number} totalPages The total number of pages for the current directory listing
  * @property {Array} contents The contents of the current directory listing
  */
 export default class DirectoryListController {
-  constructor(host){
+  constructor(host, opts={}){
     this.host = host;
     controllerUtils.addController(host, this);
+
+    this.opts = opts;
 
     this.DirectoryModel = Registry.getModel('DirectoryModel');
 
@@ -41,6 +45,8 @@ export default class DirectoryListController {
     await this.directoryPathCtl.updateComplete;
     await this.qsCtl.updateComplete;
 
+    opts = {...this.opts, ...opts};
+
     this.qsCtl.pageSize = this.qsCtl.query.limit || 20;
     const query = {
       offset: this.qsCtl.pageOffset,
@@ -49,7 +55,15 @@ export default class DirectoryListController {
     if ( this.qsCtl.query.query ){
       query.query = this.qsCtl.query.query;
     }
-    const res = await this.DirectoryModel.list(this.directoryPathCtl.pathname, query);
+    let path = this.directoryPathCtl.pathname;
+    if ( opts.parent ) {
+      const parent = this.directoryPathCtl.parentPath;
+      if ( !parent ) {
+        throw new Error('No parent directory for path: ' + path);
+      }
+      path = parent;
+    }
+    const res = await this.DirectoryModel.list(path, query);
     if ( res.state !== 'loaded' ) {
       this.contents = [];
       this.host.requestUpdate();

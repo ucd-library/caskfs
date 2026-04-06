@@ -4,6 +4,7 @@ import FsStore from '../stores/FsStore.js';
 import payload from '../utils/payload.js';
 import appUrlUtils from '../../client/dev/utils/appUrlUtils.js';
 import uploadUtils from '../../client/dev/utils/uploadUtils.js';
+import serviceUtils from '../utils/serviceUtils.js';
 
 class FsService extends BaseService {
 
@@ -44,14 +45,15 @@ class FsService extends BaseService {
     return store.get(id);
   }
 
-  async getMetadata(path) {
+  async getMetadata(path, modelAppStateOptions={}) {
     let ido = { path };
     let id = payload.getKey(ido);
     const store = this.store.data.metadata;
 
-    const appStateOptions = {
-      errorSettings: {message: 'Unable to get file metadata'}
-    };
+    const appStateOptions = serviceUtils.mergeAppStateOptions(
+      { errorSettings: {message: 'Unable to get file metadata'} },
+      modelAppStateOptions
+    );
 
     await this.checkRequesting(
       id, store,

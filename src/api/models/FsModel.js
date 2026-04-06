@@ -154,8 +154,8 @@ class FsModel extends BaseModel {
     return res;
   }
 
-  getMetadata(path) {
-    return this.service.getMetadata(path);
+  getMetadata(path, appStateOptions={}) {
+    return this.service.getMetadata(path, appStateOptions);
   }
 
   getFileContents(path) {

@@ -11,6 +11,7 @@ import DirectoryListController from '../../controllers/DirectoryListController.j
 import ScrollController from '../../controllers/ScrollController.js';
 
 import uploadUtils from '../../utils/uploadUtils.js';
+import FsDisplayUtils from '../../utils/FsDisplayUtils.js';
 
 export default class CaskfsDirectorySimpleList extends Mixin(LitElement)
   .with(LitCorkUtils, MainDomElement) {
@@ -20,6 +21,8 @@ export default class CaskfsDirectorySimpleList extends Mixin(LitElement)
       dragging: { type: Boolean },
       dragZoneHeight: { type: Number },
       dragZonePaddingTop: { type: Number },
+      hasParentFile: { type: Boolean },
+      parentFile: { state: true }
     }
   }
 
@@ -34,6 +37,8 @@ export default class CaskfsDirectorySimpleList extends Mixin(LitElement)
     this.dragging = false;
     this.dragZoneHeight = 200;
     this.dragZonePaddingTop = 0;
+    this.hasParentFile = false;
+    this.parentFile = null;
 
     this.ctl = {
       appComponent: new AppComponentController(this),
@@ -48,7 +53,17 @@ export default class CaskfsDirectorySimpleList extends Mixin(LitElement)
 
   async _onAppStateUpdate(e) {
     if ( !this.ctl.appComponent.isOnActivePage ) return;
-    await this.ctl.directoryList.getContents({asDisplayItems: true});
+
+    this.hasParentFile = false;
+    this.parentFile = null;
+    const parentFileRes = await this.FsModel.getMetadata(this.ctl.directoryPath.parentPath, { errorSettings: { suppressError: true } });
+    if ( parentFileRes.state === 'loaded') {
+      this.hasParentFile = true;
+      this.parentFile = new FsDisplayUtils(parentFileRes.payload);
+
+    }
+
+    await this.ctl.directoryList.getContents( {asDisplayItems: true, parent: this.hasParentFile} );
 
     if ( e.location.pathname === e.lastLocation.pathname && e.location.query.page !== e.lastLocation.query.page ) {
       this.requestUpdate();
@@ -70,7 +85,6 @@ export default class CaskfsDirectorySimpleList extends Mixin(LitElement)
     const height = Math.round(rect.height);
     this.dragZoneHeight = Math.min(diff, height);
     this.dragZonePaddingTop = Math.round(Math.max(0, -rect.top));
-    console.log('drag over', this.dragZoneHeight, this.dragZonePaddingTop);
     this.dragging = true;
   }
 

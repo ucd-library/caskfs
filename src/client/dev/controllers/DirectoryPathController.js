@@ -39,6 +39,11 @@ export default class DirectoryPathController {
     return this.path.length <= 1;
   }
 
+  get parentPath(){
+    if ( this.path.length <= 1 ) return null;
+    return '/' + this.path.slice(1, -1).join('/');
+  }
+
   /**
    * @description Move up one level in the directory path. Sets app state location.
    * @returns 
