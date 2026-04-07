@@ -1463,6 +1463,17 @@ class CaskFs {
    *
    * @returns {Promise<{hashCount: number, fileCount: number}>} export summary
    */
+  /**
+   * @method exportPreflight
+   * @description Return hash and file counts for a prospective export without streaming data.
+   * @param {Object} opts
+   * @param {String} opts.rootDir - Only count files under this CaskFS path
+   * @returns {Promise<{hashCount: number, fileCount: number}>}
+   */
+  exportPreflight(opts={}) {
+    return this.transfer.exportPreflight(opts);
+  }
+
   export(destPath, opts={}) {
     return this.transfer.export(destPath, opts);
   }

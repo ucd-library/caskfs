@@ -61,6 +61,56 @@ class Transfer {
   }
 
   // ---------------------------------------------------------------------------
+  // PREFLIGHT
+  // ---------------------------------------------------------------------------
+
+  /**
+   * @method exportPreflight
+   * @description Return hash and file counts for a prospective export without
+   * streaming any data.  Used by the CLI to confirm before starting a full export.
+   *
+   * @param {Object} opts
+   * @param {String} opts.rootDir - Only count files under this CaskFS path
+   * @returns {Promise<{hashCount: number, fileCount: number}>}
+   */
+  async exportPreflight(opts={}) {
+    const rootDir   = (opts.rootDir || '/').replace(/\/+$/, '') || '/';
+    const dirFilter = rootDir === '/'
+      ? 'TRUE'
+      : `(fv.directory = $1 OR fv.directory LIKE $1 || '/%')`;
+    const params = rootDir === '/' ? [] : [rootDir];
+
+    // Use DISTINCT ON to get one row per hash so we sum each CAS file's size
+    // exactly once, regardless of how many filesystem paths reference it.
+    const result = await this.dbClient.query(`
+      WITH unique_hashes AS (
+        SELECT DISTINCT ON (h.hash_id) h.hash_id, fv.size
+        FROM ${this.schema}.hash h
+        JOIN ${this.schema}.file_view fv ON fv.hash_value = h.value
+        WHERE ${dirFilter}
+        ORDER BY h.hash_id
+      )
+      SELECT
+        (SELECT COUNT(DISTINCT h.hash_id)::int
+         FROM ${this.schema}.hash h
+         JOIN ${this.schema}.file_view fv ON fv.hash_value = h.value
+         WHERE ${dirFilter})                          AS hash_count,
+        (SELECT COUNT(fv.file_id)::int
+         FROM ${this.schema}.file_view fv
+         WHERE ${dirFilter})                          AS file_count,
+        COALESCE(SUM(size), 0)::bigint               AS disk_size
+      FROM unique_hashes
+    `, params);
+
+    const row = result.rows[0] || { hash_count: 0, file_count: 0, disk_size: 0 };
+    return {
+      hashCount: row.hash_count,
+      fileCount: row.file_count,
+      diskSize:  Number(row.disk_size),
+    };
+  }
+
+  // ---------------------------------------------------------------------------
   // EXPORT
   // ---------------------------------------------------------------------------
 

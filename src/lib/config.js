@@ -98,6 +98,24 @@ const config = {
   oidc : {
     url      : env.CASKFS_OIDC_URL       || null,
     clientId : env.CASKFS_OIDC_CLIENT_ID || 'caskfs-cli',
+  },
+
+  headerAuth : {
+    // When enabled, the server trusts an upstream proxy to populate x-user with
+    // a JSON object describing the authenticated user. Only enable this behind a
+    // gateway that sets the header — never expose it directly to the internet.
+    enabled    : env.CASKFS_HEADER_AUTH_ENABLED === 'true',
+    header     : env.CASKFS_HEADER_AUTH_HEADER || 'x-user',
+
+    // Comma-separated list of dot-notation paths to try in order for the username.
+    // The first path that resolves to a non-null value is used.
+    userPaths  : (env.CASKFS_HEADER_AUTH_USER_PATHS  || 'username,name,sub')
+      .split(',').map(s => s.trim()).filter(Boolean),
+
+    // Comma-separated list of dot-notation paths to try in order for the roles.
+    // A string value is promoted to a single-element array automatically.
+    rolesPaths : (env.CASKFS_HEADER_AUTH_ROLES_PATHS || 'roles,groups')
+      .split(',').map(s => s.trim()).filter(Boolean),
   }
 
 }

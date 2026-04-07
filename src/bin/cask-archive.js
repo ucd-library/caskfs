@@ -2,7 +2,7 @@
 
 import { Command } from 'commander';
 import path from 'path';
-import cliProgress from 'cli-progress';
+import readline from 'readline';
 import { optsWrapper, handleGlobalOpts } from './opts-wrapper.js';
 import { getClient, endClient } from './lib/client.js';
 import fs from 'fs';
@@ -10,11 +10,51 @@ import fs from 'fs';
 const program = new Command();
 optsWrapper(program);
 
+/**
+ * @function formatBytes
+ * @description Format a byte count as a human-readable string.
+ * @param {Number} bytes
+ * @returns {String}
+ */
+function formatBytes(bytes) {
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  if (bytes >= 1024 * 1024)        return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+/**
+ * @function formatSpeed
+ * @description Format bytes-per-second as a human-readable speed string.
+ * @param {Number} bps
+ * @returns {String}
+ */
+function formatSpeed(bps) {
+  if (bps >= 1024 * 1024) return `${(bps / (1024 * 1024)).toFixed(1)} MB/s`;
+  return `${(bps / 1024).toFixed(1)} KB/s`;
+}
+
+/**
+ * @function confirm
+ * @description Prompt the user for a yes/no answer and resolve true/false.
+ * @param {String} question
+ * @returns {Promise<Boolean>}
+ */
+function confirm(question) {
+  return new Promise(resolve => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(`${question} (yes/no): `, answer => {
+      rl.close();
+      resolve(answer.trim().toLowerCase().startsWith('y'));
+    });
+  });
+}
+
 program
   .command('export <root-dir> [file]')
   .description('Export files under a CaskFS path to a .tar.gz archive')
   .option('-a, --include-acl', 'include ACL roles, users, and permissions in the archive', false)
   .option('-p, --include-auto-partition', 'include auto-partition and auto-bucket rules in the archive', false)
+  .option('-y, --yes', 'skip confirmation prompt', false)
   .action(async (rootDir, file, options) => {
     handleGlobalOpts(options);
     const cask = getClient(options);
@@ -28,37 +68,82 @@ program
       file = path.resolve(process.cwd(), file);
     }
 
-    if( fs.existsSync(file) && fs.statSync(file).isDirectory() ) {
+    if (fs.existsSync(file) && fs.statSync(file).isDirectory()) {
       const ts = new Date().toISOString().replace(/[:.]/g, '-');
       file = path.join(file, `caskfs-export-${ts}.tar.gz`);
     }
 
-    if( !file.endsWith('.tar.gz') ) {
+    if (!file.endsWith('.tar.gz')) {
       file += '.tar.gz';
     }
 
-    let pbar;
-    const cb = ({ type, current, total }) => {
-      if (type !== 'cas') return;
-      if (!pbar) {
-        pbar = new cliProgress.Bar({ etaBuffer: 50 }, cliProgress.Presets.shades_classic);
-        pbar.start(total, 0);
+    // Preflight: get counts before committing to the export
+    let preflight = { hashCount: '?', fileCount: '?', diskSize: null };
+    try {
+      preflight = await cask.exportPreflight({ rootDir });
+    } catch(e) {
+      console.log(`Warning: export preflight failed — proceeding without counts (${e.message})`);
+    }
+
+    const diskSizeStr = preflight.diskSize != null ? formatBytes(preflight.diskSize) : '?';
+
+    console.log('');
+    console.log(`  Source path : cask:${rootDir}`);
+    console.log(`  Destination : ${file}`);
+    console.log(`  Hashes      : ${preflight.hashCount}`);
+    console.log(`  Files       : ${preflight.fileCount}`);
+    console.log(`  Disk size   : ${diskSizeStr}`);
+    console.log('');
+
+    if (!options.yes) {
+      const ok = await confirm('Proceed with export?');
+      if (!ok) {
+        console.log('Export cancelled.');
+        await endClient(cask);
+        return;
       }
-      pbar.update(current);
+    }
+
+    // Track bytes written for speed display
+    let bytesWritten = 0;
+    let startTime    = Date.now();
+    let speedTimer   = null;
+
+    const printSpeed = () => {
+      const elapsed = (Date.now() - startTime) / 1000;
+      const speed   = elapsed > 0 ? bytesWritten / elapsed : 0;
+      process.stdout.write(`\r  Writing... ${formatSpeed(speed)}   `);
     };
 
-    const summary = await cask.export(file, {
+    const cb = ({ type, current }) => {
+      if (type !== 'cas') return;
+      bytesWritten = current;
+      if (!speedTimer) {
+        startTime  = Date.now();
+        speedTimer = setInterval(printSpeed, 250);
+      }
+    };
+
+    await cask.transfer.export(file, {
       rootDir,
-      includeAcl: options.includeAcl,
+      includeAcl:           options.includeAcl,
       includeAutoPartition: options.includeAutoPartition,
       cb,
     });
 
-    if (pbar) pbar.stop();
+    if (speedTimer) {
+      clearInterval(speedTimer);
+      printSpeed();
+      process.stdout.write('\n');
+    }
+
+    const archiveSize = formatBytes(fs.statSync(file).size);
 
     console.log(`\nExported to: ${file}`);
-    console.log(`  hashes : ${summary.hashCount}`);
-    console.log(`  files  : ${summary.fileCount}`);
+    console.log(`  hashes       : ${preflight.hashCount}`);
+    console.log(`  files        : ${preflight.fileCount}`);
+    console.log(`  disk size    : ${diskSizeStr}`);
+    console.log(`  archive size : ${archiveSize}`);
 
     await endClient(cask);
   });
@@ -87,7 +172,7 @@ program
       pbar.update(current);
     };
 
-    const summary = await cask.import(file, {
+    const summary = await cask.transfer.import(file, {
       overwrite: options.overwrite,
       aclConflict: options.aclConflict,
       autoPartitionConflict: options.autoPartitionConflict,

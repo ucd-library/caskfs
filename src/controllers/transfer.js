@@ -6,6 +6,26 @@ import caskFs from './caskFs.js';
 const router = Router();
 
 /**
+ * GET /transfer/export/preflight
+ * @description Return hash and file counts for a prospective export without streaming data.
+ * Query parameters:
+ *   - rootDir {String} required - CaskFS path prefix to count
+ * Returns: { hashCount, fileCount }
+ */
+router.get('/export/preflight', async (req, res) => {
+  try {
+    const validator = new Validator({
+      rootDir: { type: 'string', required: true },
+    });
+    const opts = validator.validate(req.query);
+    const counts = await caskFs.transfer.exportPreflight({ rootDir: opts.rootDir });
+    res.json(counts);
+  } catch (e) {
+    return handleError(res, req, e);
+  }
+});
+
+/**
  * GET /transfer/export
  * @description Stream a .tar.gz archive of CaskFS content to the response.
  * Query parameters:

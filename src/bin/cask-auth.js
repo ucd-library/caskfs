@@ -131,13 +131,23 @@ program.command('login')
       interval = 5,
     } = await deviceRes.json();
 
-    const verifyUrl = verification_uri_complete || verification_uri;
+    // Build a reliable direct URL by appending user_code as a query param to
+    // verification_uri. verification_uri_complete from Keycloak only includes
+    // user_code and still requires a login step; the full URI below skips that.
+    const verifyUrl = (() => {
+      try {
+        const u = new URL(verification_uri);
+        u.searchParams.set('user_code', user_code);
+        return u.toString();
+      } catch(e) {
+        return verification_uri_complete || verification_uri;
+      }
+    })();
+
+    const expiresMinutes = Math.round(expires_in / 60);
 
     console.log('');
-    console.log(`  Go to:  ${verification_uri}`);
-    console.log(`  Code:   ${user_code}`);
-    console.log('');
-    console.log(`  Or open directly (code pre-filled):`);
+    console.log(`Open this URL in your browser (link expires in ~${expiresMinutes} min):`);
     console.log(`  ${verifyUrl}`);
     console.log('');
 
@@ -151,6 +161,12 @@ program.command('login')
     let tokenData     = null;
     let backoffMs     = pollMs;
 
+    const tokenParams = new URLSearchParams({
+      grant_type:  'urn:ietf:params:oauth:grant-type:device_code',
+      client_id:   clientId,
+      device_code,
+    });
+
     process.stdout.write('Waiting for authorization');
 
     while (Date.now() < deadline) {
@@ -160,11 +176,7 @@ program.command('login')
       const tokenRes = await fetch(endpoints.tokenEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          grant_type: 'urn:ietf:params:oauth2:grant-type:device_code',
-          client_id:   clientId,
-          device_code,
-        }),
+        body: tokenParams
       });
 
       const body = await tokenRes.json();

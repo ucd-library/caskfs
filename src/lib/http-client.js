@@ -1,5 +1,8 @@
-import { Readable } from 'stream';
+import { Readable, Transform, pipeline } from 'stream';
+import { promisify } from 'util';
 import fs from 'fs';
+
+const pipelineAsync = promisify(pipeline);
 
 /**
  * @class HttpCaskFsClient
@@ -37,6 +40,9 @@ class HttpCaskFsClient {
     this.autoPath = this._buildAutoPath();
     this.transfer = this._buildTransfer();
     this.cas = this._buildCas();
+
+    // Top-level delegates to match the CaskFs API surface
+    this.exportPreflight = (opts) => this.transfer.exportPreflight(opts);
   }
 
   // ---------------------------------------------------------------------------
@@ -60,11 +66,6 @@ class HttpCaskFsClient {
    * @returns {Promise<Response>}
    */
   async _fetch(url, opts={}) {
-
-    console.log({
-      ...opts,
-      headers: { ...this._authHeaders(), ...(opts.headers || {}) },
-    })
 
     const res = await fetch(url, {
       ...opts,
@@ -385,6 +386,22 @@ class HttpCaskFsClient {
     const self = this;
     return {
       /**
+       * @method transfer.exportPreflight
+       * @description Fetch hash and file counts for a prospective export without
+       * streaming any data.
+       *
+       * @param {Object} opts
+       * @param {String} opts.rootDir - CaskFS path prefix to count
+       * @returns {Promise<{hashCount: Number, fileCount: Number}>}
+       */
+      async exportPreflight(opts={}) {
+        const url = new URL(`${self.baseUrl}/transfer/export/preflight`);
+        url.searchParams.set('rootDir', opts.rootDir || '/');
+        const res = await self._fetch(url.toString());
+        return res.json();
+      },
+
+      /**
        * @method transfer.export
        * @description Export a CaskFS directory as a .tar.gz archive via the HTTP server.
        * Streams the response body directly to the destination file.
@@ -405,21 +422,19 @@ class HttpCaskFsClient {
 
         const res = await self._fetch(url.toString());
 
-        const fileStream = fs.createWriteStream(destPath);
         const body = Readable.fromWeb(res.body);
+        const fileStream = fs.createWriteStream(destPath);
 
         let received = 0;
-        body.on('data', chunk => {
-          received += chunk.length;
-          if (opts.cb) opts.cb({ type: 'cas', current: received, total: received });
+        const counter = new Transform({
+          transform(chunk, _enc, cb) {
+            received += chunk.length;
+            if (opts.cb) opts.cb({ type: 'cas', current: received, total: received });
+            cb(null, chunk);
+          }
         });
 
-        await new Promise((resolve, reject) => {
-          body.pipe(fileStream);
-          fileStream.on('finish', resolve);
-          fileStream.on('error', reject);
-          body.on('error', reject);
-        });
+        await pipelineAsync(body, counter, fileStream);
 
         // The server returns a streaming response with no summary JSON;
         // return a stub so callers that log counts don't crash.
