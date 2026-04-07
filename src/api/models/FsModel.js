@@ -158,8 +158,8 @@ class FsModel extends BaseModel {
     return this.service.getMetadata(path, appStateOptions);
   }
 
-  getFileContents(path) {
-    return this.service.getFileContents(path);
+  getFileContents(path, opts={}) {
+    return this.service.getFileContents(path, opts);
   }
 
   fileDownloadUrl(path) {

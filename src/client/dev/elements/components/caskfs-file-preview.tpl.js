@@ -2,6 +2,7 @@ import { html, css, unsafeCSS } from 'lit';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import prismStyles from 'prismjs/themes/prism.css';
 import spaceUtils from '@ucd-lib/theme-sass/6_utility/_u-space.css.js';
+import './caskfs-av-player.js';
 
 export function styles() {
   const elementStyles = css`
@@ -54,10 +55,10 @@ export function styles() {
 
 export function render() { 
   return html`
-    <div ?hidden=${!this.loading} class='loader'>
+    <div ?hidden=${!(this.loading && !this.buttonLoader)} class='loader'>
       <cork-icon icon="fas.spinner"></cork-icon> Loading preview...
     </div>
-    <div ?hidden=${this.loading}>
+    <div ?hidden=${!(!this.loading || (this.loading && this.buttonLoader))}>
       ${_renderContents.call(this)}
     </div>
   `;
@@ -66,6 +67,7 @@ export function render() {
 function _renderContents(){
 
   const showPreviewButton = this.exceedsPreviewThreshold && !this.previewAnyway.get(this._filepath);
+  const showButtonLoader = this.loading && this.buttonLoader;
 
   // preview exceeds threshold, show warning and options
   if ( this.previewType === 'image' && showPreviewButton ) {
@@ -84,7 +86,12 @@ function _renderContents(){
     return html`
       <pre><code class="language-json">${unsafeHTML(this.fileContents)}</code></pre>
       <div class="preview-options">
-        <cork-prefixed-icon-button icon="fas.eye" @click=${this._onDisplayAnywayClick} ?hidden=${!showPreviewButton}>Show All</cork-prefixed-icon-button>
+        <cork-prefixed-icon-button 
+          icon="fas.eye" 
+          @click=${this._onDisplayAnywayClick}
+          text=${showButtonLoader ? 'Loading...' : 'Show All'}
+          ?hidden=${!showPreviewButton}>
+        </cork-prefixed-icon-button>
         ${_renderDownloadButton.call(this)}
       </div>
     `;
@@ -100,11 +107,32 @@ function _renderContents(){
       
     `;
   }
+  if ( this.previewType === 'video' ) {
+    return html`
+      <caskfs-av-player src=${this.FsModel.fileDownloadUrl(this._filepath)} video></caskfs-av-player>
+      <div class='u-space-mt'>
+        ${_renderDownloadButton.call(this)}
+      </div>
+    `;
+  }
+  if ( this.previewType === 'audio' ) {
+    return html`
+      <caskfs-av-player src=${this.FsModel.fileDownloadUrl(this._filepath)}></caskfs-av-player>
+      <div class='u-space-mt'>
+        ${_renderDownloadButton.call(this)}
+      </div>
+    `;
+  }
   if ( this.previewType === 'text' ) {
     return html`
       <pre><code>${this.fileContents}</code></pre>
       <div class="preview-options">
-        <cork-prefixed-icon-button icon="fas.eye" @click=${this._onDisplayAnywayClick} ?hidden=${!showPreviewButton}>Show All</cork-prefixed-icon-button>
+        <cork-prefixed-icon-button 
+          icon="fas.eye" 
+          @click=${this._onDisplayAnywayClick}
+          text=${showButtonLoader ? 'Loading...' : 'Show All'}
+          ?hidden=${!showPreviewButton}>
+        </cork-prefixed-icon-button>
         ${_renderDownloadButton.call(this)}
       </div>
     `;

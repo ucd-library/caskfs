@@ -74,6 +74,14 @@ export default class ScrollController {
   }
 
   /**
+   * @description Scroll to a specific Y position
+   * @param {number} y 
+   */
+  scrollToY(y){
+    window.scrollTo(0, y);
+  }
+
+  /**
    * @description Scroll to top of the host element
    */
   scrollToTopOfElement(noHeaderOffset){

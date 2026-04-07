@@ -155,8 +155,19 @@ class FsService extends BaseService {
     });
   }
 
-  async getFileContents(path) {
+  async getFileContents(path, opts) {
     let ido = { path };
+    const fetchOptions = {};
+
+    // if range options are provided, add Range header and include in ID for caching
+    if ( opts?.rangeStart !== undefined && opts?.rangeEnd !== undefined ) {
+      ido.rangeStart = opts.rangeStart;
+      ido.rangeEnd = opts.rangeEnd;
+      fetchOptions.headers = {
+        'Range': `bytes=${opts.rangeStart}-${opts.rangeEnd}`
+      };
+    }
+
     let id = payload.getKey(ido);
     const store = this.store.data.fileContents;
 
@@ -169,6 +180,7 @@ class FsService extends BaseService {
       id, store,
       () => this.request({
         url : `${this.baseUrl}${path}`,
+        fetchOptions,
         checkCached : () => store.get(id),
         onUpdate : resp => this.store.set(
           payload.generate(ido, resp),

@@ -4,6 +4,7 @@ import { LitCorkUtils, Mixin, LruStore } from '@ucd-lib/cork-app-utils';
 
 import DirectoryPathController from '../../controllers/DirectoryPathController.js';
 import AppComponentController from '../../controllers/AppComponentController.js';
+import { WaitController } from '@ucd-lib/theme-elements/utils/controllers/wait.js';
 
 import Prism from 'prismjs';
 import 'prismjs/components/prism-json.js';
@@ -25,7 +26,8 @@ export default class CaskfsFilePreview extends Mixin(LitElement)
       fileContents: { type: String}, 
       previewType: { state: true },
       exceedsPreviewThreshold: { state: true },
-      loading: { state: true }
+      loading: { state: true },
+      buttonLoader: { state: true }
     }
   }
 
@@ -39,7 +41,8 @@ export default class CaskfsFilePreview extends Mixin(LitElement)
 
     this.ctl = {
       appComponent: new AppComponentController(this),
-      directoryPath: new DirectoryPathController(this)
+      directoryPath: new DirectoryPathController(this),
+      wait: new WaitController(this)
     };
 
     this.previewAnyway = new LruStore({name: 'previewAnyway', maxSize: 50});
@@ -47,6 +50,7 @@ export default class CaskfsFilePreview extends Mixin(LitElement)
     this.filepath = '';
     this.metadata = null;
     this.loading = false;
+    this.buttonLoader = false;
     this.previewType = false;
     this.fileContents = '';
     this.exceedsPreviewThreshold = false;
@@ -79,10 +83,12 @@ export default class CaskfsFilePreview extends Mixin(LitElement)
     this.loading = false;
   }
 
-  _onDisplayAnywayClick() {
+  async _onDisplayAnywayClick() {
+    this.buttonLoader = true;
     this.previewAnyway.set(this._filepath, true);
-    this.getData();
-    this.requestUpdate();
+    await this.getFileContents({noReset: true});
+    this.buttonLoader = false;
+    await this.ctl.wait.waitForUpdate();
   }
 
   async getMetadata() {
@@ -100,28 +106,29 @@ export default class CaskfsFilePreview extends Mixin(LitElement)
     }
   }
 
-  async getFileContents() {
-    this.fileContents = '';
-    const res = await this.FsModel.getFileContents(this._filepath);
+  /**
+   * @description Gets file contents for the specified file path. If the file exceeds the preview threshold, only a portion of the file will be fetched
+   * @param {Object} opts - options object
+   * @param {boolean} opts.noReset - if true, will not reset fileContents to empty string before fetching
+   */
+  async getFileContents(opts={}) {
+    if ( !opts.noReset ) this.fileContents = '';
+    let fetchOpts = {};
+    if ( this.exceedsPreviewThreshold && !this.previewAnyway.get(this._filepath) ) {
+      fetchOpts.rangeStart = 0;
+      fetchOpts.rangeEnd = config.previewRangeSize;
+    }
+    const res = await this.FsModel.getFileContents(this._filepath, fetchOpts);
     if ( res.state === 'loaded' ) {
       if ( this.previewType === 'json' ){
 
+        let rawJson = typeof res.payload === 'string' ? res.payload : JSON.stringify(res.payload);
         try {
-          let jsonObj = res.payload;
-          if ( typeof jsonObj === 'string') {
-            jsonObj = JSON.parse(jsonObj);
-          }
-          this.fileContents = Prism.highlight(
-            JSON.stringify(jsonObj, null, 2), 
-            Prism.languages.json, 
-            'json'
-          );
-          
+          rawJson = JSON.stringify(JSON.parse(rawJson), null, 2);
         } catch(e) {
-          this.logger.warn('CaskfsFilePreview: Error parsing JSON file for preview', e);
-          this.fileContents = res.payload;
-          this.previewType = 'text';
+          // truncated or invalid json — highlight raw string as-is
         }
+        this.fileContents = Prism.highlight(rawJson, Prism.languages.json, 'json');
       } else {
         this.fileContents = res.payload;
       }
