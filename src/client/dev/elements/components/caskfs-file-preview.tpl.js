@@ -21,6 +21,7 @@ export function styles() {
     pre {
       overflow-x: scroll;
       font-size: .875rem;
+      white-space: pre-wrap;
     }
     .loader {
       display: flex;
@@ -55,11 +56,13 @@ export function styles() {
 
 export function render() { 
   return html`
-    <div ?hidden=${!(this.loading && !this.buttonLoader)} class='loader'>
-      <cork-icon icon="fas.spinner"></cork-icon> Loading preview...
-    </div>
-    <div ?hidden=${!(!this.loading || (this.loading && this.buttonLoader))}>
-      ${_renderContents.call(this)}
+    <div>
+      <div ?hidden=${!(this.loading && !this.buttonLoader)} class='loader'>
+        <cork-icon icon="fas.spinner"></cork-icon> Loading preview...
+      </div>
+      <div ?hidden=${!(!this.loading || (this.loading && this.buttonLoader))}>
+        ${_renderContents.call(this)}
+      </div>
     </div>
   `;
 }

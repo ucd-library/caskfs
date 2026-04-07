@@ -24,7 +24,7 @@ export default class CaskfsFilePreview extends Mixin(LitElement)
     return {
       filepath: { type: String },
       metadata: { type: Object },
-      fileContents: { type: String}, 
+      fileContents: { type: String},
       previewType: { state: true },
       exceedsPreviewThreshold: { state: true },
       loading: { state: true },

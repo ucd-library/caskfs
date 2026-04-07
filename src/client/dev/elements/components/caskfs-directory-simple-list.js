@@ -106,7 +106,7 @@ export default class CaskfsDirectorySimpleList extends Mixin(LitElement)
     e.preventDefault();
     this.dragging = false;
     const files = await uploadUtils.getFilesFromDragEvent(e);
-    const results = await this.FsModel.upload(files, this.ctl.directoryPath.pathname);
+    const results = await this.FsModel.upload(files, this.hasParentFile ? this.ctl.directoryPath.parentPath : this.ctl.directoryPath.pathname);
     if ( results.some( r => r.state === 'loaded' )) {
       this.AppStateModel.refresh();
     }
