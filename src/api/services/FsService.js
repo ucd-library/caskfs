@@ -181,6 +181,7 @@ class FsService extends BaseService {
       () => this.request({
         url : `${this.baseUrl}${path}`,
         fetchOptions,
+        parseResponseJson: false,
         checkCached : () => store.get(id),
         onUpdate : resp => this.store.set(
           payload.generate(ido, resp),
@@ -190,7 +191,6 @@ class FsService extends BaseService {
         )
       })
     );
-
     return store.get(id);
   }
 

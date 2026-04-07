@@ -10,6 +10,7 @@ import Prism from 'prismjs';
 import 'prismjs/components/prism-json.js';
 
 import mimeTypeUtils from '../../utils/mimeTypeUtils.js';
+import textUtils from '../../utils/textUtils.js';
 import config from '../../config.js';
 
 /**
@@ -126,7 +127,7 @@ export default class CaskfsFilePreview extends Mixin(LitElement)
         try {
           rawJson = JSON.stringify(JSON.parse(rawJson), null, 2);
         } catch(e) {
-          // truncated or invalid json — highlight raw string as-is
+          rawJson = textUtils.formatPartialJson(rawJson);
         }
         this.fileContents = Prism.highlight(rawJson, Prism.languages.json, 'json');
       } else {
