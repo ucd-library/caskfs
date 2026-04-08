@@ -16,7 +16,7 @@ export function styles() {
       display: none;
     }
     caskfs-directory-simple-list .subdir-contents-container {
-      min-height: 100px;
+      min-height: 50px;
     }
     caskfs-directory-simple-list .subdir-contents {
       display: flex;
@@ -57,13 +57,10 @@ export function styles() {
       display: flex;
     }
     caskfs-directory-simple-list .drag-overlay .drag-message {
-      background: white;
       color: var(--ucd-blue, #022851);
       padding: 1rem;
-      border-radius: 8px;
       font-size: .875rem;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      --cork-icon-size: 1rem;
+      --cork-icon-size: 1.5rem;
       display: flex;
       flex-direction: row;
       align-items: center;
@@ -73,8 +70,10 @@ export function styles() {
       text-decoration: none;
       display: flex;
       gap: .25rem;
-      font-weight: 700;
       color: var(--ucd-blue-80, #13639e);
+    }
+    caskfs-directory-simple-list .name-link.is-current-file {
+      font-weight: 700;
     }
     caskfs-directory-simple-list .name-link:visited {
       color: var(--ucd-blue-80, #13639e);
@@ -109,7 +108,7 @@ export function render() {
         <div class='subdir-contents'>
           ${this.ctl.directoryList.contents.map( item => html`
             <div>
-              <a class='name-link' href=${item.link}>
+              <a class='name-link ${item?.metadata?.filepath === this.ctl.directoryPath.pathname ? 'is-current-file' : ''}' href=${item.link}>
                 <cork-icon icon=${item.isDirectory ? 'fas.folder' : 'fas.file'} class='type-icon'></cork-icon>
                 <div class='name-text'>${item.name}</div>
               </a>
@@ -124,20 +123,20 @@ export function render() {
           xs-screen
           @page-change=${this._onPageChange}
         ></ucd-theme-pagination>
-      </div>
-      <div ?hidden=${!this.hasParentFile}>
-        <div class='ucd-link-list-item category-brand--secondary'>
-          <cork-icon icon='fas.circle-chevron-right' class='ucd-link-list-item--icon'></cork-icon>
-          <div>
-            <a class='ucd-link-list-item--title' href=${this.parentFile?.link}>Parent File</a>
-            <div class='ucd-link-list-item--excerpt'>${this.parentFile?.name}</div>
+        <div ?hidden=${!this.hasParentFile}>
+          <div class='ucd-link-list-item category-brand--secondary'>
+            <cork-icon icon='fas.circle-chevron-right' class='ucd-link-list-item--icon'></cork-icon>
+            <div>
+              <a class='ucd-link-list-item--title' href=${this.parentFile?.link}>Parent File</a>
+              <div class='ucd-link-list-item--excerpt'>${this.parentFile?.name}</div>
+            </div>
           </div>
         </div>
       </div>
+
       <div class="drag-overlay" style="height: ${this.dragZoneHeight}px;padding-top: ${this.dragZonePaddingTop}px;">
         <div class="drag-message">
           <cork-icon icon="fas.upload"></cork-icon>
-          <div>Drop files here to upload them to this subdirectory.</div>
         </div>
       </div>
     </div>
