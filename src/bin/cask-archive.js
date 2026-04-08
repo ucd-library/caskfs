@@ -162,42 +162,80 @@ program
       file = path.resolve(process.cwd(), file);
     }
 
-    let bytesRead = 0;
-    let startTime = Date.now();
-    let speedTimer = null;
+    let progressTimer = null;
+    let summary;
 
-    const printImportSpeed = () => {
-      const elapsed = (Date.now() - startTime) / 1000;
-      const speed = elapsed > 0 ? bytesRead / elapsed : 0;
-      process.stdout.write(`\r  Uploading... ${formatSpeed(speed)}   `);
-    };
+    if (cask.mode === 'http') {
+      // HTTP mode: optimistic batch writes with local extraction
+      let stats = { hashesUploaded: 0, filesWritten: 0, errors: [] };
 
-    const cb = ({ type, current }) => {
-      if (type !== 'cas') return;
-      bytesRead = current;
-      if (!speedTimer) {
-        startTime = Date.now();
-        speedTimer = setInterval(printImportSpeed, 250);
+      const printProgress = () => {
+        process.stdout.write(
+          `\r  Files: ${stats.filesWritten} written | Hashes: ${stats.hashesUploaded} uploaded   `
+        );
+      };
+
+      summary = await cask.transfer.import(file, {
+        overwrite: options.overwrite,
+        aclConflict: options.aclConflict,
+        autoPartitionConflict: options.autoPartitionConflict,
+        cb: (current) => {
+          stats = current;
+          if (!progressTimer) {
+            progressTimer = setInterval(printProgress, 250);
+          }
+        },
+      });
+
+      if (progressTimer) {
+        clearInterval(progressTimer);
+        printProgress();
+        process.stdout.write('\n');
       }
-    };
 
-    const summary = await cask.transfer.import(file, {
-      overwrite: options.overwrite,
-      aclConflict: options.aclConflict,
-      autoPartitionConflict: options.autoPartitionConflict,
-      cb,
-    });
+      console.log(`\nImported from: ${file}`);
+      console.log(`  hashes uploaded : ${summary.hashesUploaded}`);
+      console.log(`  files written   : ${summary.filesWritten}`);
+      if (summary.errors.length > 0) {
+        console.log(`  errors          : ${summary.errors.length}`);
+      }
 
-    if (speedTimer) {
-      clearInterval(speedTimer);
-      printImportSpeed();
-      process.stdout.write('\n');
+    } else {
+      // Direct-pg mode: stream archive directly to the server
+      let bytesRead = 0;
+      let startTime = Date.now();
+
+      const printSpeed = () => {
+        const elapsed = (Date.now() - startTime) / 1000;
+        const speed = elapsed > 0 ? bytesRead / elapsed : 0;
+        process.stdout.write(`\r  Uploading... ${formatSpeed(speed)}   `);
+      };
+
+      summary = await cask.transfer.import(file, {
+        overwrite: options.overwrite,
+        aclConflict: options.aclConflict,
+        autoPartitionConflict: options.autoPartitionConflict,
+        cb: ({ type, current }) => {
+          if (type !== 'cas') return;
+          bytesRead = current;
+          if (!progressTimer) {
+            startTime = Date.now();
+            progressTimer = setInterval(printSpeed, 250);
+          }
+        },
+      });
+
+      if (progressTimer) {
+        clearInterval(progressTimer);
+        printSpeed();
+        process.stdout.write('\n');
+      }
+
+      console.log(`\nImported from: ${file}`);
+      console.log(`  hashes imported : ${summary.hashCount}`);
+      console.log(`  files imported  : ${summary.fileCount}`);
+      console.log(`  files skipped   : ${summary.skippedFiles}`);
     }
-
-    console.log(`\nImported from: ${file}`);
-    console.log(`  hashes imported : ${summary.hashCount}`);
-    console.log(`  files imported  : ${summary.fileCount}`);
-    console.log(`  files skipped   : ${summary.skippedFiles}`);
 
     await endClient(cask);
   });

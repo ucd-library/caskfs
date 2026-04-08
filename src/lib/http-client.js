@@ -1,6 +1,11 @@
 import { Readable, Transform, pipeline } from 'stream';
 import { promisify } from 'util';
 import fs from 'fs';
+import fsp from 'fs/promises';
+import os from 'os';
+import path from 'path';
+import zlib from 'zlib';
+import tarStream from 'tar-stream';
 
 const pipelineAsync = promisify(pipeline);
 
@@ -465,44 +470,238 @@ class HttpCaskFsClient {
 
       /**
        * @method transfer.import
-       * @description Import a .tar.gz archive into CaskFS via the HTTP server.
-       * Streams the local file directly as the request body.
+       * @description Import a .tar.gz archive into CaskFS via the HTTP server using
+       * optimistic batch writes.  The archive is extracted locally to a temp directory,
+       * then file records are created in batches of 100 using optimisticBatchWrite.
+       * When a batch reports hashes that are missing on the server, the raw CAS file is
+       * uploaded (full write) for the first file referencing that hash, and any remaining
+       * files with the same hash are queued for a follow-up batch write.
        *
-       * @param {String} srcPath - local file path of the archive to upload
+       * Progress is reported via opts.cb after every batch or hash upload:
+       *   opts.cb({ hashesUploaded, filesWritten, errors })
+       *
+       * @param {String} srcPath - local file path of the .tar.gz archive to import
        * @param {Object} [opts={}]
-       * @param {Boolean} [opts.overwrite=false]
-       * @param {String} [opts.aclConflict='fail'] - 'fail' | 'skip' | 'merge'
-       * @param {String} [opts.autoPartitionConflict='fail'] - 'fail' | 'skip' | 'merge'
-       * @param {Function} [opts.cb] - progress callback; receives `{type, current, total}` as bytes are sent
-       * @returns {Promise<{hashCount: Number, fileCount: Number, skippedFiles: Number}>}
+       * @param {Boolean} [opts.overwrite=false] - replace existing file records on conflict
+       * @param {String} [opts.aclConflict='fail'] - ACL conflict mode: 'fail' | 'skip' | 'merge'
+       * @param {String} [opts.autoPartitionConflict='fail'] - auto-partition conflict mode: 'fail' | 'skip' | 'merge'
+       * @param {Function} [opts.cb] - progress callback; receives `{hashesUploaded, filesWritten, errors}`
+       * @returns {Promise<{hashesUploaded: Number, filesWritten: Number, errors: Array}>}
        */
       async import(srcPath, opts={}) {
-        const url = new URL(`${self.baseUrl}/transfer/import`);
-        if (opts.overwrite)             url.searchParams.set('overwrite',             'true');
-        if (opts.aclConflict)           url.searchParams.set('aclConflict',           opts.aclConflict);
-        if (opts.autoPartitionConflict) url.searchParams.set('autoPartitionConflict', opts.autoPartitionConflict);
+        const BATCH_SIZE = 100;
+        const summary = { hashesUploaded: 0, filesWritten: 0, errors: [] };
 
-        let sent = 0;
-        const counter = new Transform({
-          transform(chunk, _enc, cb) {
-            sent += chunk.length;
-            if (opts.cb) opts.cb({ type: 'cas', current: sent });
-            cb(null, chunk);
+        // 1. Extract the archive into a local temp directory
+        const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'caskfs-import-'));
+
+        try {
+          await new Promise((resolve, reject) => {
+            const extract = tarStream.extract();
+            const gunzip  = zlib.createGunzip();
+
+            extract.on('entry', (header, stream, next) => {
+              if (header.type !== 'file') {
+                stream.resume();
+                next();
+                return;
+              }
+              const destPath = path.join(tmpDir, header.name);
+              fsp.mkdir(path.dirname(destPath), { recursive: true })
+                .then(() => {
+                  const out = fs.createWriteStream(destPath);
+                  out.on('finish', next);
+                  out.on('error', reject);
+                  stream.on('error', reject);
+                  stream.pipe(out);
+                })
+                .catch(reject);
+            });
+
+            extract.on('finish', resolve);
+            extract.on('error', reject);
+            gunzip.on('error', reject);
+
+            fs.createReadStream(srcPath).pipe(gunzip).pipe(extract);
+          });
+
+          // 2. Scan extracted cas/**/*.json files to build hash → files map
+          const hashToFiles = new Map();
+
+          const scanDir = async (dir) => {
+            let entries;
+            try {
+              entries = await fsp.readdir(dir, { withFileTypes: true });
+            } catch(e) {
+              return; // dir absent (empty archive)
+            }
+            for (const entry of entries) {
+              const full = path.join(dir, entry.name);
+              if (entry.isDirectory()) {
+                await scanDir(full);
+              } else if (entry.isFile() && entry.name.endsWith('.json')) {
+                const raw = await fsp.readFile(full, 'utf-8');
+                try {
+                  const meta = JSON.parse(raw);
+                  if (meta.value && Array.isArray(meta.files) && meta.files.length > 0) {
+                    hashToFiles.set(meta.value, meta.files);
+                  }
+                } catch(e) { /* skip malformed */ }
+              }
+            }
+          };
+
+          await scanDir(path.join(tmpDir, 'cas'));
+
+          // 3. Build flat descriptor list and path → hash lookup
+          const allDescriptors = [];
+          const pathToHash = new Map();
+
+          for (const [hash, files] of hashToFiles) {
+            for (const f of files) {
+              const filePath = path.join(f.directory, f.filename);
+              allDescriptors.push({
+                filename: f.filename,
+                directory: f.directory,
+                hash,
+                metadata: f.metadata,
+                partitionKeys: f.partitionKeys,
+              });
+              pathToHash.set(filePath, hash);
+            }
           }
-        });
 
-        const fileStream = fs.createReadStream(srcPath);
-        fileStream.pipe(counter);
-        const body = Readable.toWeb(counter);
+          // 4. Process in batches — optimistic writes, then upload missing hashes
+          const followUpDescriptors = [];
 
-        const res = await self._fetch(url.toString(), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/gzip' },
-          body,
-          duplex: 'half',
-        });
+          for (let i = 0; i < allDescriptors.length; i += BATCH_SIZE) {
+            const batch = allDescriptors.slice(i, i + BATCH_SIZE);
+            const result = await self.optimisticBatchWrite(batch);
 
-        return res.json();
+            summary.filesWritten += (result.written?.length || 0) +
+                                    (result.metadataUpdated?.length || 0) +
+                                    (result.noChange?.length || 0);
+            for (const e of (result.errors || [])) summary.errors.push(e);
+
+            if (opts.cb) opts.cb({ ...summary });
+
+            if (!result.doesNotExist?.length) continue;
+
+            // Group doesNotExist paths by hash — upload each CAS binary only once
+            const hashGroups = new Map();
+            for (const filePath of result.doesNotExist) {
+              const hash = pathToHash.get(filePath);
+              if (!hash) continue;
+              if (!hashGroups.has(hash)) hashGroups.set(hash, []);
+              const desc = batch.find(d => path.join(d.directory, d.filename) === filePath);
+              if (desc) hashGroups.get(hash).push(desc);
+            }
+
+            for (const [hash, filesForHash] of hashGroups) {
+              if (!filesForHash.length) continue;
+
+              const first = filesForHash[0];
+              const casPath = path.join(
+                tmpDir, 'cas',
+                hash.substring(0, 3), hash.substring(3, 6), hash
+              );
+
+              try {
+                await self.write({
+                  filePath: path.join(first.directory, first.filename),
+                  readPath: casPath,
+                  mimeType: first.metadata?.mimeType || 'application/octet-stream',
+                  metadata: first.metadata,
+                  partitionKeys: first.partitionKeys,
+                  replace: opts.overwrite,
+                });
+                summary.hashesUploaded++;
+                summary.filesWritten++;
+              } catch(err) {
+                summary.errors.push({
+                  path: path.join(first.directory, first.filename),
+                  message: err.message,
+                });
+              }
+
+              if (opts.cb) opts.cb({ ...summary });
+
+              // Remaining files sharing this hash → queue for follow-up batch
+              for (const f of filesForHash.slice(1)) followUpDescriptors.push(f);
+            }
+          }
+
+          // 5. Follow-up batch for files whose hash was just uploaded
+          for (let i = 0; i < followUpDescriptors.length; i += BATCH_SIZE) {
+            const batch = followUpDescriptors.slice(i, i + BATCH_SIZE);
+            const result = await self.optimisticBatchWrite(batch);
+
+            summary.filesWritten += (result.written?.length || 0) +
+                                    (result.metadataUpdated?.length || 0) +
+                                    (result.noChange?.length || 0);
+            for (const p of (result.doesNotExist || [])) {
+              summary.errors.push({ path: p, message: 'Hash not found after upload' });
+            }
+            for (const e of (result.errors || [])) summary.errors.push(e);
+
+            if (opts.cb) opts.cb({ ...summary });
+          }
+
+          // 6. Re-stream ACL and auto-partition data to the server's import endpoint.
+          //    A minimal tar.gz containing only those entries is built in memory and posted.
+          const aclDir       = path.join(tmpDir, 'acl');
+          const autoPartDir  = path.join(tmpDir, 'auto-partition');
+          const [hasAcl, hasAutoPartition] = await Promise.all([
+            fsp.access(aclDir).then(() => true).catch(() => false),
+            fsp.access(autoPartDir).then(() => true).catch(() => false),
+          ]);
+
+          if (hasAcl || hasAutoPartition) {
+            const pack = tarStream.pack();
+            const gzip = zlib.createGzip();
+
+            const packEntry = (header, content) => new Promise((resolve, reject) => {
+              pack.entry(header, content, (err) => (err ? reject(err) : resolve()));
+            });
+
+            (async () => {
+              try {
+                if (hasAcl) {
+                  for (const f of await fsp.readdir(aclDir)) {
+                    const content = await fsp.readFile(path.join(aclDir, f));
+                    await packEntry({ name: `acl/${f}`, size: content.length }, content);
+                  }
+                }
+                if (hasAutoPartition) {
+                  for (const f of await fsp.readdir(autoPartDir)) {
+                    const content = await fsp.readFile(path.join(autoPartDir, f));
+                    await packEntry({ name: `auto-partition/${f}`, size: content.length }, content);
+                  }
+                }
+                pack.finalize();
+              } catch(e) {
+                pack.destroy(e);
+              }
+            })();
+
+            const url = new URL(`${self.baseUrl}/transfer/import`);
+            if (opts.aclConflict)           url.searchParams.set('aclConflict',           opts.aclConflict);
+            if (opts.autoPartitionConflict) url.searchParams.set('autoPartitionConflict', opts.autoPartitionConflict);
+
+            const body = Readable.toWeb(pack.pipe(gzip));
+            await self._fetch(url.toString(), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/gzip' },
+              body,
+              duplex: 'half',
+            });
+          }
+
+          return summary;
+
+        } finally {
+          await fsp.rm(tmpDir, { recursive: true, force: true });
+        }
       },
     };
   }

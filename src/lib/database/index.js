@@ -323,6 +323,7 @@ class Database {
       WHERE parent_id = ${config.database.schema}.get_directory_id($1)
         ${userAclQuery}
         ${fileNameQuery}
+      GROUP BY d.directory_id, d.fullname, d.name, d.parent_id, d.created, d.modified
       ORDER BY fullname ASC
       LIMIT $2 OFFSET $3;
     `;

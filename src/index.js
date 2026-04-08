@@ -61,7 +61,10 @@ class CaskFs {
       dbClient: this.dbClient,
       cas: this.cas
     });
-    this.directory = new Directory({dbClient: this.dbClient});
+    this.directory = new Directory({
+      dbClient: this.dbClient,
+      acl: acl
+    });
 
     this.autoPath = {
       bucket: new AutoPathBucket({dbClient: this.dbClient, schema: this.schema}),

@@ -130,6 +130,8 @@ class Acl {
 
     if( !opts.requestor ) return false;
 
+    if( opts.requestor === config.acl.superAdminUser ) return true;
+
     let cached = this.cache.getUserRole(opts.requestor, role);
     if( cached !== null ) return cached;
 
@@ -196,6 +198,7 @@ class Acl {
         SELECT user_id FROM ${config.database.schema}.acl_user WHERE name = $2
       )`);
       userSelectQuery = 'user_id = (SELECT user_id FROM acluser)';
+      // userSelectQuery = '(user_id = (SELECT user_id FROM acluser) OR user_id IS NULL)';
       args.push(user);
     }
 

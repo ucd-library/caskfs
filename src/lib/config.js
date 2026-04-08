@@ -83,6 +83,7 @@ const config = {
     enabled : (env.CASKFS_ACL_ENABLED !== 'false'),
     defaultRequestor : env.CASKFS_ACL_DEFAULT_REQUESTOR, // mostly used for internal scripts / integration tests
     adminRole : env.CASKFS_ACL_ADMIN_ROLE || 'admin',
+    superAdminUser : env.CASKFS_ACL_SUPER_ADMIN_USER || 'admin',
     enabledCache : (env.CASKFS_ACL_ENABLED_CACHE === 'true'),
     cacheTTL : parseInt(env.CASKFS_ACL_CACHE_TTL) || 10 // seconds
   },

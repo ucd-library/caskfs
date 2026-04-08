@@ -453,6 +453,17 @@ program.command('admin', 'CaskFS administrative commands');
 program.command('archive', 'Import and export CaskFS archives');
 program.command('auth', 'Authenticate with a CaskFS server');
 
+// Forward global options to external subcommands via environment variables.
+// Commander consumes parent-level options before spawning the child process,
+// so they must be re-injected another way.
+program.hook('preSubcommand', (thisCommand, subCommand) => {
+  if (!subCommand._executableHandler) return;
+  const opts = thisCommand.opts();
+  if (opts.impersonate) process.env.CASKFS_IMPERSONATE = opts.impersonate;
+  if (opts.env)         process.env.CASKFS_ENV_OVERRIDE = opts.env;
+  if (opts.publicUser)  process.env.CASKFS_PUBLIC_USER  = 'true';
+});
+
 program
   .command('init-pg')
   .description('Initialize the PostgreSQL database')
