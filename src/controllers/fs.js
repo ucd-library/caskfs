@@ -4,6 +4,7 @@ import caskFs from './caskFs.js';
 import { pipeline } from 'stream/promises';
 import { Validator } from './validate.js';
 import { MissingResourceError } from '../lib/errors.js';
+import config from '../lib/config.js';
 
 const router = Router();
 
@@ -189,6 +190,7 @@ async function handleWrite(filePath, req, res, replace) {
       metadata: Object.keys(metadata).length ? metadata : undefined,
       bucket: req.query.bucket || undefined,
       replace,
+      requestor: req.user || config.acl.defaultRequestor || 'http',
       corkTraceId: req.corkTraceId,
     });
 
@@ -200,11 +202,43 @@ async function handleWrite(filePath, req, res, replace) {
       return res.status(400).json({ message: err.message });
     }
 
-    res.status(replace ? 200 : 201).json(ctx.data);
+    const { readStream, dbClient, ...safeData } = ctx.data;
+    res.status(replace ? 200 : 201).json(safeData);
   } catch (e) {
     return handleError(res, req, e);
   }
 }
+
+const silentJson = (req, res, next) => {
+  json()(req, res, (err) => {
+    if (err?.type === 'entity.parse.failed') {
+      return res.status(400).json({ error: 'Invalid JSON' });
+    }
+    next(err);
+  });
+};
+
+/**
+ * POST /fs/batch
+ * @description Optimistic batch write — create or update file records for files whose
+ * CAS content is already present on disk.  Accepts a JSON body; no stream data.
+ * Returns counts and paths for each result category.
+ */
+router.post('/batch', silentJson, async (req, res) => {
+  try {
+    const files = req.body?.files;
+    if (!Array.isArray(files)) {
+      return res.status(400).json({ error: 'files array is required' });
+    }
+    const result = await caskFs.optimisticBatchWrite(
+      { requestor: req.user, corkTraceId: req.corkTraceId },
+      { files }
+    );
+    res.status(200).json(result);
+  } catch (e) {
+    return handleError(res, req, e);
+  }
+});
 
 // create new file — fails with 409 if path already exists
 router.post(/(.*)/, async (req, res) => {

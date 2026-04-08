@@ -465,6 +465,158 @@ class CaskFs {
   }
 
   /**
+   * @method optimisticBatchWrite
+   * @description Batch-write file records when the CAS content is already present on disk.
+   * No stream or buffer data is accepted — every file is identified by its sha256 hash value.
+   * Each file is processed independently so partial success is possible.
+   *
+   * Result categories:
+   *   - written        — file record created (new path) or hash changed (new content)
+   *   - metadataUpdated — file existed, same hash, metadata or partition keys changed
+   *   - noChange       — file existed, hash identical, metadata identical, partition keys
+   *                      identical — the database is NOT touched (modified timestamp preserved)
+   *   - errors         — CAS hash missing, validation failure, or unexpected DB error
+   *
+   * @param {Object} context
+   * @param {String} [context.requestor] - username for last_modified_by
+   * @param {Object} opts
+   * @param {Array<Object>} opts.files - array of file descriptors
+   * @param {String} opts.files[].filename  - bare filename (no directory component)
+   * @param {String} opts.files[].directory - absolute CaskFS directory path
+   * @param {String} opts.files[].hash      - sha256 hex digest of the CAS file
+   * @param {Object} [opts.files[].metadata]      - metadata object (default {})
+   * @param {Array<String>} [opts.files[].partitionKeys] - partition keys (default [])
+   *
+   * @returns {Promise<{
+   *   written: Array<{path: String, action: String}>,
+   *   metadataUpdated: Array<{path: String}>,
+   *   noChange: Array<{path: String}>,
+   *   doesNotExist: Array<String>,
+   *   errors: Array<{path: String, message: String}>
+   * }>}
+   */
+  async optimisticBatchWrite(context, opts={}) {
+    context = createContext(context, this.dbClient);
+
+    const files = opts.files;
+
+    if (!files || !Array.isArray(files)) {
+      throw new Error('opts.files must be an array');
+    }
+
+    if (files.length > config.sync.maxFilesPerBatch) {
+      throw new Error(`Too many files in batch, max is ${config.sync.maxFilesPerBatch}`);
+    }
+
+    const written = [];
+    const metadataUpdated = [];
+    const noChange = [];
+    const doesNotExist = [];
+    const errors = [];
+
+    for (const file of files) {
+      const { filename, directory, metadata, partitionKeys, hash } = file;
+
+      // Validation — derive filePath for error reporting even if incomplete
+      const filePath = (directory && filename) ? path.join(directory, filename) : (filename || directory || '');
+
+      if (!filename || !directory || !hash) {
+        errors.push({ path: filePath, message: 'filename, directory, and hash are required' });
+        continue;
+      }
+
+      try {
+        // Optimistic pre-condition: CAS content must already exist
+        if (!this.cas.exists(hash)) {
+          doesNotExist.push(filePath);
+          continue;
+        }
+
+        // Stat the CAS file to get the real size
+        const casPath = this.cas.diskPath(hash);
+        const stat = await fs.stat(casPath);
+        const size = stat.size;
+
+        const incomingMeta = metadata || {};
+        const incomingKeys = partitionKeys || [];
+
+        // DB lookup
+        const existing = await this.dbClient.getFile({ filePath });
+
+        if (!existing) {
+          // New file — insert record
+          const directoryId = await this.directory.mkdir(directory, { dbClient: this.dbClient });
+          const fileId = await this.dbClient.insertFile({
+            directoryId,
+            filePath,
+            hash,
+            metadata: incomingMeta,
+            digests: { sha256: hash },
+            size,
+            user: context.data.requestor || 'batch-write',
+          });
+          await this._setPartitionKeys({
+            fileId,
+            autoPathKeys: [],
+            manualKeys: incomingKeys,
+            dbClient: this.dbClient,
+          });
+          written.push({ path: filePath, action: 'insert' });
+
+        } else if (existing.hash_value !== hash) {
+          // Hash changed — update record (new content)
+          const directoryId = await this.directory.mkdir(directory, { dbClient: this.dbClient });
+          const fileId = await this.dbClient.updateFile({
+            directoryId,
+            filePath,
+            hash,
+            metadata: incomingMeta,
+            digests: { sha256: hash },
+            size,
+            user: context.data.requestor || 'batch-write',
+          });
+          await this._setPartitionKeys({
+            fileId,
+            autoPathKeys: [],
+            manualKeys: incomingKeys,
+            dbClient: this.dbClient,
+          });
+          written.push({ path: filePath, action: 'hashUpdated' });
+
+        } else {
+          // Same hash — compare metadata and partition keys to detect noChange
+          const existingMeta = { ...(existing.metadata || {}) };
+          for (const prop of config.git.metadataProperties) {
+            delete existingMeta[`git-${prop}`];
+          }
+
+          const metaMatch = JSON.stringify(existingMeta) === JSON.stringify(incomingMeta);
+          const keysMatch = this._arrayEquals(existing.partition_keys || [], incomingKeys);
+
+          if (metaMatch && keysMatch) {
+            noChange.push({ path: filePath });
+          } else {
+            // Metadata-only change — do not touch the hash or its modified timestamp from updateFile
+            await this.dbClient.updateFileMetadata(filePath, { metadata: incomingMeta });
+            await this._setPartitionKeys({
+              fileId: existing.file_id,
+              autoPathKeys: [],
+              manualKeys: incomingKeys,
+              dbClient: this.dbClient,
+            });
+            metadataUpdated.push({ path: filePath });
+          }
+        }
+
+      } catch (err) {
+        errors.push({ path: filePath, message: err.message });
+      }
+    }
+
+    return { written, metadataUpdated, noChange, doesNotExist, errors };
+  }
+
+  /**
    * @method patchMetadata
    * @description Update the metadata and/or partition keys for a file in the CASKFS.
    *

@@ -274,6 +274,28 @@ class HttpCaskFsClient {
   }
 
   /**
+   * @method optimisticBatchWrite
+   * @description Batch-write file records when CAS content is already present on the server.
+   * No stream or buffer data is sent — each file is identified by its sha256 hash.
+   *
+   * @param {Array<Object>} files - array of file descriptors
+   * @param {String} files[].filename  - bare filename
+   * @param {String} files[].directory - absolute CaskFS directory path
+   * @param {String} files[].hash      - sha256 hex digest
+   * @param {Object} [files[].metadata]      - metadata object
+   * @param {Array<String>} [files[].partitionKeys] - partition keys
+   * @returns {Promise<{written, metadataUpdated, noChange, doesNotExist, errors}>}
+   */
+  async optimisticBatchWrite(files, opts={}) {
+    const res = await this._fetch(`${this.baseUrl}/fs/batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ files }),
+    });
+    return res.json();
+  }
+
+  /**
    * @method relationships
    * @description Get inbound/outbound file relationships.
    * @param {Object} opts
@@ -460,13 +482,18 @@ class HttpCaskFsClient {
         if (opts.aclConflict)           url.searchParams.set('aclConflict',           opts.aclConflict);
         if (opts.autoPartitionConflict) url.searchParams.set('autoPartitionConflict', opts.autoPartitionConflict);
 
-        const body = fs.createReadStream(srcPath);
-
         let sent = 0;
-        body.on('data', chunk => {
-          sent += chunk.length;
-          if (opts.cb) opts.cb({ type: 'cas', current: sent, total: sent });
+        const counter = new Transform({
+          transform(chunk, _enc, cb) {
+            sent += chunk.length;
+            if (opts.cb) opts.cb({ type: 'cas', current: sent });
+            cb(null, chunk);
+          }
         });
+
+        const fileStream = fs.createReadStream(srcPath);
+        fileStream.pipe(counter);
+        const body = Readable.toWeb(counter);
 
         const res = await self._fetch(url.toString(), {
           method: 'POST',

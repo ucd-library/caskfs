@@ -6,7 +6,9 @@ spec:
   - tests/partitions.test.js
   - tests/ld-operations.test.js
   - tests/transfer.test.js
+  - tests/optimistic-batch-write.test.js
   - tests/http-fs.test.js
+  - tests/http-optimistic-batch-write.test.js
   - tests/cli.test.js
 timeout: 30000
 require: tests/helpers/env.js

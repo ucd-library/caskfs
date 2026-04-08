@@ -60,7 +60,9 @@ describe('CLI – direct-pg mode', () => {
 
     await fs.writeFile(dataFile, TEST_CONTENT, 'utf-8');
 
-    // Write a minimal direct-pg environment pointing at the test database
+    // Write a minimal direct-pg environment pointing at the test database.
+    // rootDir must match the CaskFs instance so the CLI subprocess writes CAS
+    // files to the same location the test instance uses.
     const envData = {
       defaultEnvironment: 'test',
       environments: {
@@ -71,6 +73,7 @@ describe('CLI – direct-pg mode', () => {
           user: process.env.CASKFS_PG_USER || 'postgres',
           password: process.env.CASKFS_PG_PASSWORD || 'postgres',
           database: process.env.CASKFS_PG_DATABASE || 'testing_caskfs_db',
+          rootDir: caskFs.rootDir,
         }
       }
     };

@@ -162,14 +162,23 @@ program
       file = path.resolve(process.cwd(), file);
     }
 
-    let pbar;
-    const cb = ({ type, current, total }) => {
+    let bytesRead = 0;
+    let startTime = Date.now();
+    let speedTimer = null;
+
+    const printImportSpeed = () => {
+      const elapsed = (Date.now() - startTime) / 1000;
+      const speed = elapsed > 0 ? bytesRead / elapsed : 0;
+      process.stdout.write(`\r  Uploading... ${formatSpeed(speed)}   `);
+    };
+
+    const cb = ({ type, current }) => {
       if (type !== 'cas') return;
-      if (!pbar) {
-        pbar = new cliProgress.Bar({ etaBuffer: 50 }, cliProgress.Presets.shades_classic);
-        pbar.start(total, 0);
+      bytesRead = current;
+      if (!speedTimer) {
+        startTime = Date.now();
+        speedTimer = setInterval(printImportSpeed, 250);
       }
-      pbar.update(current);
     };
 
     const summary = await cask.transfer.import(file, {
@@ -179,7 +188,11 @@ program
       cb,
     });
 
-    if (pbar) pbar.stop();
+    if (speedTimer) {
+      clearInterval(speedTimer);
+      printImportSpeed();
+      process.stdout.write('\n');
+    }
 
     console.log(`\nImported from: ${file}`);
     console.log(`  hashes imported : ${summary.hashCount}`);
