@@ -13,7 +13,7 @@ import { createContext, CaskFSContext } from "./lib/context.js";
 import AutoPathBucket from "./lib/auto-path/bucket.js";
 import AutoPathPartition from "./lib/auto-path/partition.js";
 import Transfer from "./lib/transfer.js";
-import { MissingResourceError, AclAccessError, DuplicateFileError } from "./lib/errors.js";
+import { MissingResourceError, AclAccessError, DuplicateFileError, HashNotFoundError } from "./lib/errors.js";
 
 class CaskFs {
 
@@ -114,8 +114,8 @@ class CaskFs {
    *
    * @param {CaskFSContext|Object} context file context to write to in the CASKFS
    * @param {String} context.filePath path to the file to write to in the CASKFS
-   * @param {String} context.readPath path to a file to read and write to the CASKFS
-   * @param {Stream} context.readStream readable stream to read and write to the CASKFS
+   * @param {String} context.readPath path to a file to read from
+   * @param {Stream} context.readStream readable stream to read from
    * @param {String} context.hash existing hash value of a file already in the CASKFS to reference
    * @param {Buffer} context.data data Buffer to write to the CASKFS
    * @param {Boolean} context.replace if true, replace existing file at filePath. Default is false (error if exists)
@@ -203,7 +203,7 @@ class CaskFs {
 
       // attempt to get mime type
       // if passed in, use that, otherwise try to detect from file extension
-      metadata.mimeType = context.data.mimeType || context.data.contentType;
+      metadata.mimeType = metadata.mimeType || context.data.mimeType || context.data.contentType;
       if( !metadata.mimeType ) {
         this.logger.debug('Attempting to auto-detect mime type, not specified in options', context.logSignal);
 
@@ -436,11 +436,20 @@ class CaskFs {
       return context;
     }
 
-    let success = [];
+    let fileInserts = [];
+    let metadataUpdates = [];
+    let noChanges = [];
     let errors = [];
     let doesNotExist = [];
+    let wContext;
 
     for( let file of files ) {
+      // allow filePath to be derived from filename + directory if not provided, 
+      // for convenience when used with transfer export format
+      if( !file.filePath && file.filename && file.directory ) {
+        file.filePath = path.join(file.directory, file.filename);
+      }
+
       if( !file.filePath || !file.hash ) {
         errors.push({file, error: new Error('filePath and hash are required')});
         continue;
@@ -448,13 +457,19 @@ class CaskFs {
 
       // set the global replace for sync
       file.replace = replace;
-      file.requestor = context.requestor;
+      file.requestor = context.data.requestor;
 
       try {
-        await this.write(
-          createContext(file, context.data.dbClient || this.dbClient)
-        );
-        success.push(file.filePath);
+        wContext = createContext(file, context.data.dbClient || this.dbClient);
+        await this.write(wContext);
+
+        if( wContext.data.actions.fileInsert ) {
+          fileInserts.push(file.filePath);
+        } else if( wContext.data.actions.updatedMetadata ) {
+          metadataUpdates.push(file.filePath);
+        } else {
+          noChanges.push(file.filePath);
+        }
       } catch (error) {
         if( error instanceof HashNotFoundError ) {
           doesNotExist.push(file.filePath);
@@ -464,7 +479,7 @@ class CaskFs {
       }
     }
 
-    return {success, errors, doesNotExist};
+    return {fileInserts, metadataUpdates, noChanges, errors, doesNotExist};
   }
 
   /**

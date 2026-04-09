@@ -219,18 +219,18 @@ const silentJson = (req, res, next) => {
 };
 
 /**
- * POST /fs/batch
+ * POST /fs/sync
  * @description Optimistic batch write — create or update file records for files whose
  * CAS content is already present on disk.  Accepts a JSON body; no stream data.
  * Returns counts and paths for each result category.
  */
-router.post('/batch', silentJson, async (req, res) => {
+router.post('/sync', silentJson, async (req, res) => {
   try {
     const files = req.body?.files;
     if (!Array.isArray(files)) {
       return res.status(400).json({ error: 'files array is required' });
     }
-    const result = await caskFs.optimisticBatchWrite(
+    const result = await caskFs.sync(
       { requestor: req.user, corkTraceId: req.corkTraceId },
       { files }
     );

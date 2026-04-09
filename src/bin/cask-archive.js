@@ -5,6 +5,7 @@ import path from 'path';
 import readline from 'readline';
 import { optsWrapper, handleGlobalOpts } from './opts-wrapper.js';
 import { getClient, endClient } from './lib/client.js';
+import { setLogLevel } from '../../src/lib/logger.js';
 import fs from 'fs';
 
 const program = new Command();
@@ -157,6 +158,7 @@ program
   .action(async (file, options) => {
     handleGlobalOpts(options);
     const cask = getClient(options);
+    setLogLevel('error'); // suppress non-error logs during import
 
     if (!path.isAbsolute(file)) {
       file = path.resolve(process.cwd(), file);
@@ -179,11 +181,12 @@ program
         overwrite: options.overwrite,
         aclConflict: options.aclConflict,
         autoPartitionConflict: options.autoPartitionConflict,
-        cb: (current) => {
-          stats = current;
-          if (!progressTimer) {
-            progressTimer = setInterval(printProgress, 250);
-          }
+        cb: (msg) => {
+          console.log(msg);
+          // stats = current;
+          // if (!progressTimer) {
+          //   progressTimer = setInterval(printProgress, 250);
+          // }
         },
       });
 
@@ -202,26 +205,21 @@ program
 
     } else {
       // Direct-pg mode: stream archive directly to the server
-      let bytesRead = 0;
-      let startTime = Date.now();
 
-      const printSpeed = () => {
-        const elapsed = (Date.now() - startTime) / 1000;
-        const speed = elapsed > 0 ? bytesRead / elapsed : 0;
-        process.stdout.write(`\r  Uploading... ${formatSpeed(speed)}   `);
-      };
 
       summary = await cask.transfer.import(file, {
+        cask,
         overwrite: options.overwrite,
         aclConflict: options.aclConflict,
         autoPartitionConflict: options.autoPartitionConflict,
-        cb: ({ type, current }) => {
-          if (type !== 'cas') return;
-          bytesRead = current;
-          if (!progressTimer) {
-            startTime = Date.now();
-            progressTimer = setInterval(printSpeed, 250);
-          }
+        cb: (msg) => {
+          console.log(msg);
+          // if (type !== 'cas') return;
+          // bytesRead = current;
+          // if (!progressTimer) {
+          //   startTime = Date.now();
+          //   progressTimer = setInterval(printSpeed, 250);
+          // }
         },
       });
 
@@ -231,10 +229,11 @@ program
         process.stdout.write('\n');
       }
 
-      console.log(`\nImported from: ${file}`);
-      console.log(`  hashes imported : ${summary.hashCount}`);
-      console.log(`  files imported  : ${summary.fileCount}`);
-      console.log(`  files skipped   : ${summary.skippedFiles}`);
+      // console.log(`\nImported from: ${file}`);
+      console.log(summary);
+      // console.log(`  hashes imported : ${summary.hashCount}`);
+      // console.log(`  files imported  : ${summary.fileCount}`);
+      // console.log(`  files skipped   : ${summary.skippedFiles}`);
     }
 
     await endClient(cask);

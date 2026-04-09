@@ -89,6 +89,7 @@ const config = {
   },
 
   sync : {
+    defaultBatchSize : parseInt(env.CASKFS_SYNC_DEFAULT_BATCH_SIZE) || 100,
     maxFilesPerBatch : parseInt(env.CASKFS_SYNC_MAX_FILES_PER_BATCH) || 1000
   },
 
