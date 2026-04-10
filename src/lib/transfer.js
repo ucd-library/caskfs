@@ -1,6 +1,6 @@
 import tarStream from 'tar-stream';
 import zlib from 'zlib';
-import fs from 'fs';
+import fs, { fstatSync } from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
 import { pipeline } from 'stream/promises';
@@ -358,9 +358,12 @@ class Transfer {
     if( !cask ) {
       throw new Error('CaskFS client instance is required for import');
     }
+    if( !opts.dbClient ) {
+      throw new Error('Database connection is required for import');
+    }
 
     // One dedicated DB connection for the entire import operation.
-    const db = opts.db || new Database({ type: config.database.client });
+    const db = opts.dbClient;
     await db.connect();
 
     // extract location
@@ -373,12 +376,42 @@ class Transfer {
       await fs.promises.rm(extractLocation, { recursive: true });
     }
     await fs.promises.mkdir(extractLocation, { recursive: true });
+    if( opts.cb ) {
+      opts.cb({ type: 'tmp-file', path: extractLocation });
+    }
 
     // now extract the archive, processing each entry as it comes.  The .json metadata entries
     // will come after their corresponding raw files, so the hash → size info will be available
     // in the rawFileCache when we process the .json entries.
-    let files = await this._extractArchiveToLocation(input, extractLocation);
+    let files;
+    if( fstatSync(input.fd).isFile() ) {
+      files = await this._extractArchiveToLocation(input, extractLocation);
+    } else {
+      // just scan directory
+      let files = {};
 
+      const walk = async (dir) => {
+        const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+        for( let entry of entries ) {
+          if( entry.isDirectory() ) {
+            await walk(path.join(dir, entry.name));
+          } else {
+            if( !files[type] ) files[type] = [];
+            if( !(type === 'cas' && relPath.endsWith('.json')) ) {
+              files[type].push(destPath); 
+            }
+          }
+        }
+      };
+      await walk(extractLocation);
+    }
+
+
+    }
+
+    if( opts.cb ) {
+      opts.cb({type: 'extract-complete'});
+    }
 
     if( !files.cas ) files.cas = [];
     files.files = [];
@@ -414,10 +447,10 @@ class Transfer {
           replace: opts.overwrite || false,
         });
         
-        stats.filesInserted += result.fileInserts;
-        stats.metadataUpdates += result.metadataUpdates;
+        stats.filesInserted += result.fileInserts.length;
+        stats.metadataUpdates += result.metadataUpdates.length;
         stats.noChanges += result.noChanges.length;
-        stats.errors += result.errors.length;
+        stats.errors += result.errors?.length || 0;
         result.errors.forEach(e => console.error(e));
 
         let writtenHashes = new Set();
@@ -426,7 +459,7 @@ class Transfer {
 
           let wContext = createContext({
             requestor: 'admin',
-            hash: metadata.hash,
+            filePath: file,
             replace : opts.overwrite || false,
             partitionKeys: metadata.partitionKeys,
             metadata: metadata.metadata
@@ -444,7 +477,7 @@ class Transfer {
             wContext.data.hash = metadata.hash;
           } else {
             // This hash has not been written yet, so we need to write the raw file from the extracted location.
-            wContext.data.readStream = fs.createReadStream(path.join(extractLocation, file));
+            wContext.data.readStream = fs.createReadStream(path.join(extractLocation, 'cas', this.cas._getHashFilePath(metadata.hash)));
           }
 
           await cask.write(wContext);
@@ -457,11 +490,15 @@ class Transfer {
           opts.cb({ type: 'batch-sync', stats});
         }
       } catch (err) {
+        console.error(err);
         stats.errors += 1;
       }
 
     }
 
+    if( fs.existsSync(extractLocation) ) {
+      await fs.promises.rm(extractLocation, { recursive: true });
+    }
 
     return stats;
   }

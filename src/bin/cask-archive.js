@@ -6,6 +6,7 @@ import readline from 'readline';
 import { optsWrapper, handleGlobalOpts } from './opts-wrapper.js';
 import { getClient, endClient } from './lib/client.js';
 import { setLogLevel } from '../../src/lib/logger.js';
+import CliProgress from 'cli-progress';
 import fs from 'fs';
 
 const program = new Command();
@@ -149,6 +150,22 @@ program
     await endClient(cask);
   });
 
+// make sure to clean up any temporary files if the process exits during import
+let tmpFile;
+async function cleanupTmpFile() {
+  if( tmpFile && fs.existsSync(tmpFile) ) {
+    await fs.promises.rm(tmpFile, { recursive: true });
+    tmpFile = null;
+  }
+}
+process.on('exit', cleanupTmpFile);
+process.on('SIGINT', () => {
+  cleanupTmpFile().then(() => process.exit());
+});
+process.on('SIGTERM', () => {
+  cleanupTmpFile().then(() => process.exit());
+});
+
 program
   .command('import <file>')
   .description('Import a .tar.gz archive produced by the export command')
@@ -158,7 +175,7 @@ program
   .action(async (file, options) => {
     handleGlobalOpts(options);
     const cask = getClient(options);
-    setLogLevel('error'); // suppress non-error logs during import
+    setLogLevel('fatal'); // suppress non-error logs during import
 
     if (!path.isAbsolute(file)) {
       file = path.resolve(process.cwd(), file);
@@ -169,7 +186,7 @@ program
 
     if (cask.mode === 'http') {
       // HTTP mode: optimistic batch writes with local extraction
-      let stats = { hashesUploaded: 0, filesWritten: 0, errors: [] };
+      // let stats = { hashesUploaded: 0, filesWritten: 0, errors: [] };
 
       const printProgress = () => {
         process.stdout.write(
@@ -177,12 +194,27 @@ program
         );
       };
 
+      let pBar = new CliProgress.SingleBar({
+        format: 'Importing... {bar} {percentage}% | {files} files written',
+        hideCursor: true,
+      });
+      let stats;
+
       summary = await cask.transfer.import(file, {
         overwrite: options.overwrite,
         aclConflict: options.aclConflict,
         autoPartitionConflict: options.autoPartitionConflict,
         cb: (msg) => {
-          console.log(msg);
+          if( msg.type === 'tmp-file' ) {
+            tmpFile = msg.path;
+          }
+          if( msg.type === 'preflight-complete' ) {
+            stats = msg.stats;
+            pBar.start(stats.totalFiles, 0, { files: 0 });
+          }
+          if( msg.type === 'batch-sync' ) {
+            pBar.update(msg.filesProcessed, { files: stats.filesProcessed });
+          }
           // stats = current;
           // if (!progressTimer) {
           //   progressTimer = setInterval(printProgress, 250);
@@ -190,11 +222,6 @@ program
         },
       });
 
-      if (progressTimer) {
-        clearInterval(progressTimer);
-        printProgress();
-        process.stdout.write('\n');
-      }
 
       console.log(`\nImported from: ${file}`);
       console.log(`  hashes uploaded : ${summary.hashesUploaded}`);
@@ -205,38 +232,56 @@ program
 
     } else {
       // Direct-pg mode: stream archive directly to the server
+      let pBar = new CliProgress.SingleBar({
+        format: 'Importing... {bar} {percentage}% | {files}/{totalFiles} files written | Speed: {speed}',
+        hideCursor: true,
+      });
 
+      let stats;
+      let startTime;
+      let lastFilesProcessed = 0;
+
+      console.log(`Extracting ${file} ...`);
 
       summary = await cask.transfer.import(file, {
         cask,
+        dbClient: cask.dbClient,
         overwrite: options.overwrite,
         aclConflict: options.aclConflict,
         autoPartitionConflict: options.autoPartitionConflict,
         cb: (msg) => {
-          console.log(msg);
-          // if (type !== 'cas') return;
-          // bytesRead = current;
-          // if (!progressTimer) {
-          //   startTime = Date.now();
-          //   progressTimer = setInterval(printSpeed, 250);
-          // }
+          if( msg.type === 'extract-complete' ) {
+            console.log(`Extraction complete. Scanning archive...`);
+          }
+          if( msg.type === 'preflight-complete' ) {
+            console.log(`Preflight scan complete. Starting import...`);
+            startTime = Date.now();
+            stats = msg.stats;
+            pBar.start(stats.totalFiles, 0, { files: 0, speed: 'N/A', totalFiles: stats.totalFiles });
+          }
+          if( msg.type === 'batch-sync' ) {
+            pBar.update(msg.stats.filesProcessed, { 
+              // totalFiles: msg.stats.totalFiles,
+              files: msg.stats.filesProcessed,
+              speed : Math.round((msg.stats.filesProcessed - lastFilesProcessed) / ((Date.now() - startTime) / 1000))+' files/s',
+            });
+            startTime = Date.now();
+            lastFilesProcessed = msg.stats.filesProcessed;
+          }
         },
       });
 
-      if (progressTimer) {
-        clearInterval(progressTimer);
-        printSpeed();
-        process.stdout.write('\n');
-      }
 
-      // console.log(`\nImported from: ${file}`);
-      console.log(summary);
-      // console.log(`  hashes imported : ${summary.hashCount}`);
-      // console.log(`  files imported  : ${summary.fileCount}`);
-      // console.log(`  files skipped   : ${summary.skippedFiles}`);
+      console.log(`\nImported from: ${file}`);
+      console.log(`  files processed : ${summary.filesProcessed}`);
+      console.log(`  files inserted  : ${summary.filesInserted}`);
+      console.log(`  files updated   : ${summary.metadataUpdates}`);
+      console.log(`  files skipped   : ${summary.noChanges}`);
+      console.log(`  errors          : ${summary.errors}`);
     }
 
     await endClient(cask);
+    process.exit(0);
   });
 
 program.parse(process.argv);
