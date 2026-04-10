@@ -6,6 +6,7 @@ import readline from 'readline';
 import { optsWrapper, handleGlobalOpts } from './opts-wrapper.js';
 import { getClient, endClient } from './lib/client.js';
 import { setLogLevel } from '../../src/lib/logger.js';
+import { Transfer } from './lib/transfer.js';
 import CliProgress from 'cli-progress';
 import fs from 'fs';
 
@@ -200,7 +201,9 @@ program
       });
       let stats;
 
-      summary = await cask.transfer.import(file, {
+      const transfer = new Transfer();
+
+      summary = await transfer.fsImport(file, {
         overwrite: options.overwrite,
         aclConflict: options.aclConflict,
         autoPartitionConflict: options.autoPartitionConflict,
@@ -236,6 +239,7 @@ program
         format: 'Importing... {bar} {percentage}% | {files}/{totalFiles} files written | Speed: {speed}',
         hideCursor: true,
       });
+      const transfer = new Transfer();
 
       let stats;
       let startTime;
@@ -243,8 +247,9 @@ program
 
       console.log(`Extracting ${file} ...`);
 
-      summary = await cask.transfer.import(file, {
+      summary = await transfer.fsImport(file, {
         cask,
+        requestor: options.requestor,
         dbClient: cask.dbClient,
         overwrite: options.overwrite,
         aclConflict: options.aclConflict,

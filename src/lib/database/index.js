@@ -282,63 +282,74 @@ class Database {
    *
    * @returns {Promise<Array>} array of child directory objects
    */
-  async getChildDirectories(directory, opts={}) {
-    let userAclQuery = '';
-    let aclOpts = {
-      requestor: opts.requestor,
-      dbClient : this
-    };
+async getChildDirectories(directory, opts = {}) {
+  let params = [directory, opts.limit || 100, opts.offset || 0];
+  let aclJoin = '';
+  let aclWhere = '';
 
-    let params = [directory, opts.limit || 100, opts.offset || 0];
+  let aclOpts = {
+    requestor: opts.requestor,
+    dbClient: this
+  };
 
-    if( await acl.aclLookupRequired(aclOpts) ) {
-      userAclQuery = '(acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE)';
-      if( opts.requestor ) {
-        let userId = await acl.getUserId({ user: opts.requestor, dbClient: this });
-        if( userId !== null && userId !== undefined ) {
-          params.push(userId);
-          userAclQuery += ` OR (acl_lookup.user_id = $${params.length} AND acl_lookup.can_read = TRUE)`;
-        }
-      }
-      userAclQuery = ' AND (' + userAclQuery + ')';
-    }
-
-    let fileNameQuery = '';
-    if( opts.query ) {
-      params.push(opts.query);
-      fileNameQuery = `AND name ILIKE '%' || $${params.length} || '%'`;
-    }
-
-    const sql = `
-      SELECT 
-        d.directory_id,
-        d.fullname,
-        d.name,
-        d.parent_id,
-        d.created,
-        d.modified,
-        COUNT(*) OVER() as total_count
-      FROM ${config.database.schema}.directory d
-      LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = d.directory_id
-      WHERE parent_id = ${config.database.schema}.get_directory_id($1)
-        ${userAclQuery}
-        ${fileNameQuery}
-      GROUP BY d.directory_id, d.fullname, d.name, d.parent_id, d.created, d.modified
-      ORDER BY fullname ASC
-      LIMIT $2 OFFSET $3;
+  if (await acl.aclLookupRequired(aclOpts)) {
+    aclJoin = `
+      JOIN ${config.database.schema}.directory_acl da ON d.directory_id = da.directory_id
+      JOIN ${config.database.schema}.root_directory_acl rda USING (root_directory_acl_id)
+      LEFT JOIN ${config.database.schema}.acl_permission p USING (root_directory_acl_id)
+      LEFT JOIN ${config.database.schema}.acl_role_user ru ON p.role_id = ru.role_id
     `;
-    let res = await this.client.query(sql, params);
 
-    let totalCount = res.rows.length > 0 ? parseInt(res.rows[0].total_count) : 0;
-    res.rows = res.rows.map(r => { delete r.total_count; return r; });
-
-    return { 
-      totalCount: totalCount, 
-      results: res.rows, 
-      offset: parseInt(opts.offset) || 0, 
-      limit: parseInt(opts.limit) || 100
-    };
+    if (opts.requestor) {
+      let userId = await acl.getUserId({ user: opts.requestor, dbClient: this });
+      if (userId !== null && userId !== undefined) {
+        params.push(userId);
+        aclJoin += ` AND ru.user_id = $${params.length}`;
+        aclWhere = `AND (rda.public = TRUE OR p.permission IN ('read', 'write', 'admin'))`;
+      } else {
+        aclWhere = `AND rda.public = TRUE`;
+      }
+    } else {
+      aclWhere = `AND rda.public = TRUE`;
+    }
   }
+
+  let fileNameQuery = '';
+  if (opts.query) {
+    params.push(opts.query);
+    fileNameQuery = `AND d.name ILIKE '%' || $${params.length} || '%'`;
+  }
+
+  const sql = `
+    SELECT DISTINCT
+      d.directory_id,
+      d.fullname,
+      d.name,
+      d.parent_id,
+      d.created,
+      d.modified,
+      COUNT(*) OVER() as total_count
+    FROM ${config.database.schema}.directory d
+    ${aclJoin}
+    WHERE d.parent_id = ${config.database.schema}.get_directory_id($1)
+      ${aclWhere}
+      ${fileNameQuery}
+    ORDER BY d.fullname ASC
+    LIMIT $2 OFFSET $3;
+  `;
+
+  let res = await this.client.query(sql, params);
+
+  let totalCount = res.rows.length > 0 ? parseInt(res.rows[0].total_count) : 0;
+  res.rows = res.rows.map(r => { delete r.total_count; return r; });
+
+  return {
+    totalCount,
+    results: res.rows,
+    offset: parseInt(opts.offset) || 0,
+    limit: parseInt(opts.limit) || 100
+  };
+}
 
   /**
    * @method getChildFiles
