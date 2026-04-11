@@ -118,10 +118,6 @@ class Directory {
       }
     }    
 
-    if( created ) {
-      await acl.refreshLookupTable({dbClient: opts.dbClient});
-    }
-
     return parentId; // Return the parent directory ID
   }
 

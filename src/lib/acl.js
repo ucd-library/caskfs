@@ -1,6 +1,7 @@
 import { getLogger } from './logger.js';
 import { AclAccessError } from './errors.js';
 import config from './config.js';
+import path from 'path';
 
 class AclCache {
 
@@ -229,14 +230,6 @@ class Acl {
       )`);
     }
 
-    console.log(`
-      WITH ${withQueries.join(', ')}
-      SELECT * FROM ${config.database.schema}.has_permission(
-        (SELECT directory_id FROM dir),
-        '${permission}',
-        ${user ? `(SELECT user_id FROM acluser)` : 'NULL'}
-      )
-    `);
     let resp = await dbClient.query(`
       WITH ${withQueries.join(', ')}
       SELECT * FROM ${config.database.schema}.has_permission(
@@ -786,6 +779,25 @@ class Acl {
       }
       await this.setDirectoryAcl({ directoryId: child.directory_id, rootDirectoryAclId, dbClient });
     }
+  }
+
+  async dumpAclState(dbClient, directory='/writable') {
+    const roles = await dbClient.query(
+      "SELECT * FROM caskfs.acl_user_roles_view ORDER BY \"user\", role"
+    );
+    const perms = await dbClient.query(
+      "SELECT directory, \"user\", can_read, can_write, is_admin, acl_root_directory " +
+      "FROM caskfs.directory_user_permissions_by_permission " +
+      "WHERE directory LIKE $1 ORDER BY directory, \"user\"",
+      [directory + '%']
+    );
+    const files = await dbClient.query(
+      "SELECT directory_id, directory, file_id, filename FROM caskfs.file_view WHERE directory = $1 ORDER BY filename",
+      [directory]
+    );
+    console.table(roles.rows);
+    console.table(perms.rows);
+    console.table(files.rows);
   }
 
 }

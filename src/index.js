@@ -925,7 +925,6 @@ class CaskFs {
         role: context.data.role,
         dbClient
       });
-      await acl.refreshLookupTable({dbClient});
     });
   }
 
@@ -1004,8 +1003,6 @@ class CaskFs {
       await acl.ensureRole(opts);
       await acl.ensureUserRole(opts);
 
-      await acl.refreshLookupTable({dbClient});
-
       return acl.getRole(opts);
     });
   }
@@ -1029,8 +1026,6 @@ class CaskFs {
       await acl.removeUserRole({
         user: context.user,
       });
-      await acl.refreshLookupTable({dbClient});
-
     });
   }
 
@@ -1062,7 +1057,6 @@ class CaskFs {
         directoryId
       });
 
-      await acl.refreshLookupTable({dbClient});
     });
   }
 
@@ -1097,7 +1091,6 @@ class CaskFs {
         directoryId
       });
 
-      await acl.refreshLookupTable({dbClient});
     });
   }
 
@@ -1122,7 +1115,6 @@ class CaskFs {
         directory: context.data.directory,
         permission: context.data.permission
       });
-      await acl.refreshLookupTable({dbClient});
     });
   }
 
@@ -1145,7 +1137,6 @@ class CaskFs {
       await acl.removeRootDirectoryAcl({
         dbClient, directory: context.data.directory
       });
-      await acl.refreshLookupTable({dbClient});
     });
   }
 

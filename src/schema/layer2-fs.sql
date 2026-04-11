@@ -189,8 +189,8 @@ AS $$
     bool_or(p.permission = 'admin')
   FROM caskfs.directory_acl da
   JOIN caskfs.root_directory_acl rda USING (root_directory_acl_id)
-  LEFT JOIN caskfs.acl_permission p USING (root_directory_acl_id)
-  LEFT JOIN caskfs.acl_role_user ru ON p.role_id = ru.role_id AND ru.user_id = p_user_id
+  INNER JOIN caskfs.acl_permission p USING (root_directory_acl_id)
+  INNER JOIN caskfs.acl_role_user ru ON p.role_id = ru.role_id AND ru.user_id = p_user_id
   WHERE da.directory_id = p_directory_id
     AND p_user_id IS NOT NULL
 
@@ -212,16 +212,20 @@ CREATE OR REPLACE FUNCTION caskfs.has_permission(
   p_permission caskfs.permission,
   p_user_id UUID DEFAULT NULL
 )
-RETURNS BOOLEAN
+RETURNS TABLE(directory_id UUID, permission caskfs.permission, user_id UUID, has_permission BOOLEAN)
 LANGUAGE sql STABLE
 AS $$
-  SELECT COALESCE(bool_or(
-    CASE p_permission
-      WHEN 'read' THEN can_read
-      WHEN 'write' THEN can_write
-      WHEN 'admin' THEN is_admin
-    END
-  ), FALSE)
+  SELECT 
+    p_directory_id as directory_id,
+    p_permission as permission,
+    p_user_id as user_id,
+    COALESCE(bool_or(
+      CASE p_permission
+        WHEN 'read' THEN can_read
+        WHEN 'write' THEN can_write
+        WHEN 'admin' THEN is_admin
+      END
+    ), FALSE) as has_permission
   FROM caskfs.get_permission(p_directory_id, p_user_id);
 $$;
 

@@ -454,9 +454,6 @@ class Transfer {
       }
     }
 
-    if (aclData.permissions && aclData.permissions.length > 0) {
-      await this.acl.refreshLookupTable({ dbClient: db });
-    }
   }
 
   /**
