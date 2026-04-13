@@ -288,7 +288,7 @@ class HttpCaskFsClient {
    * @returns {Promise<{written, metadataUpdated, noChange, doesNotExist, errors}>}
    */
   async optimisticBatchWrite(files, opts={}) {
-    const res = await this._fetch(`${this.baseUrl}/fs/batch`, {
+    const res = await this._fetch(`${this.baseUrl}/fs/sync`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ files }),

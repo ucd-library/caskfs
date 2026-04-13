@@ -183,11 +183,15 @@ program
     }
 
     const pBar = new CliProgress.SingleBar({
-      format: 'Importing... {bar} {percentage}% | {files}/{totalFiles} files',
+      format: 'Importing... {bar} {percentage}% | {files}/{totalFiles} files | {rate} files/s',
       hideCursor: true,
     });
     let pBarStarted = false;
     let totalFiles = 0;
+
+    // Timing state for per-batch files/second calculation
+    let lastBatchFiles = 0;
+    let lastBatchTime  = Date.now();
 
     const transfer = new Transfer();
 
@@ -207,11 +211,18 @@ program
         }
         if (msg.type === 'preflight-complete') {
           totalFiles = msg.stats.totalFiles;
-          pBar.start(totalFiles, 0, { files: 0, totalFiles });
+          pBar.start(totalFiles, 0, { files: 0, totalFiles, rate: '0' });
           pBarStarted = true;
+          lastBatchTime = Date.now();
         }
         if (msg.type === 'batch-sync') {
-          pBar.update(msg.stats.filesProcessed, { files: msg.stats.filesProcessed, totalFiles });
+          const now      = Date.now();
+          const elapsed  = (now - lastBatchTime) / 1000;
+          const delta    = msg.stats.filesProcessed - lastBatchFiles;
+          const rate     = elapsed > 0 ? (delta / elapsed).toFixed(1) : '0';
+          lastBatchFiles = msg.stats.filesProcessed;
+          lastBatchTime  = now;
+          pBar.update(msg.stats.filesProcessed, { files: msg.stats.filesProcessed, totalFiles, rate });
         }
       },
     });

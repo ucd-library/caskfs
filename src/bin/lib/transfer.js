@@ -286,9 +286,9 @@ class Transfer {
       const result = await cask.optimisticBatchWrite(batch);
 
       stats.filesInserted +=
-        (result.written?.length || 0) +
-        (result.metadataUpdated?.length || 0) +
-        (result.noChange?.length || 0);
+        (result.fileInserts?.length || 0) +
+        (result.metadataUpdates?.length || 0) +
+        (result.noChanges?.length || 0);
       for (const e of (result.errors || [])) stats.errors.push(e);
 
       stats.filesProcessed += batch.length;
@@ -343,9 +343,9 @@ class Transfer {
       const result = await cask.optimisticBatchWrite(batch);
 
       stats.filesInserted +=
-        (result.written?.length || 0) +
-        (result.metadataUpdated?.length || 0) +
-        (result.noChange?.length || 0);
+        (result.fileInserts?.length || 0) +
+        (result.metadataUpdates?.length || 0) +
+        (result.noChanges?.length || 0);
       for (const p of (result.doesNotExist || [])) {
         stats.errors.push({ path: p, message: 'Hash not found after upload' });
       }
