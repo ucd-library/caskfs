@@ -150,6 +150,64 @@ describe('CLI – direct-pg mode', () => {
     assert.ok(stdout.includes('direct-pg'), `expected direct-pg in info output:\n${stdout}`);
     assert.ok(stdout.includes('test'), `expected env name in info output:\n${stdout}`);
   });
+
+  describe('archive export/import (direct-pg)', () => {
+    let archiveFile;
+
+    before(async () => {
+      archiveFile = path.join(tmpDir, 'direct-pg-export.tar.gz');
+
+      // Write a test file to export
+      const { code, stderr } = await runCask(
+        ['write', '/archive-test/hello.txt', '-d', dataFile],
+        { env: env() }
+      );
+      assert.strictEqual(code, 0, `setup write failed: ${stderr}`);
+    });
+
+    it('should export files to a .tar.gz archive', async () => {
+      const { code, stderr } = await runCask(
+        ['archive', 'export', '/', archiveFile, '-y'],
+        { env: env() }
+      );
+      assert.strictEqual(code, 0, `export failed: ${stderr}`);
+      const stat = await fs.stat(archiveFile);
+      assert.ok(stat.size > 0, 'archive should not be empty');
+    });
+
+    it('should import the archive and restore all files', async () => {
+      // Wipe DB and CAS so the import has to do real work
+      await caskFs.powerWash();
+      await fs.rm(path.join(caskFs.rootDir, 'cas'), { recursive: true, force: true });
+
+      const { code, stderr } = await runCask(
+        ['archive', 'import', archiveFile],
+        { env: env() }
+      );
+      assert.strictEqual(code, 0, `import failed: ${stderr}`);
+
+      // Verify the restored file is readable
+      const { code: readCode, stdout } = await runCask(
+        ['read', '/archive-test/hello.txt'],
+        { env: env() }
+      );
+      assert.strictEqual(readCode, 0);
+      assert.ok(stdout.includes(TEST_CONTENT), `expected file content in read output:\n${stdout}`);
+    });
+
+    it('should report files inserted in import summary', async () => {
+      // Fresh import into the just-restored DB (overwrite mode)
+      const { code, stdout, stderr } = await runCask(
+        ['archive', 'import', archiveFile, '--overwrite'],
+        { env: env() }
+      );
+      assert.strictEqual(code, 0, `import --overwrite failed: ${stderr}`);
+      assert.ok(
+        stdout.includes('files processed') || stdout.includes('files inserted'),
+        `expected summary in output:\n${stdout}`
+      );
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -271,5 +329,63 @@ describe('CLI – http mode', () => {
       stderr.includes('direct-pg') || stderr.includes('init-pg'),
       `expected direct-pg error in stderr:\n${stderr}`
     );
+  });
+
+  describe('archive export/import (http)', () => {
+    let archiveFile;
+
+    before(async () => {
+      archiveFile = path.join(tmpDir, 'http-export.tar.gz');
+
+      // Write a test file to export
+      const { code, stderr } = await runCask(
+        ['write', '/archive-test/hello.txt', '-d', dataFile],
+        { env: env() }
+      );
+      assert.strictEqual(code, 0, `setup write failed: ${stderr}`);
+    });
+
+    it('should export files to a .tar.gz archive via HTTP', async () => {
+      const { code, stderr } = await runCask(
+        ['archive', 'export', '/', archiveFile, '-y'],
+        { env: env() }
+      );
+      assert.strictEqual(code, 0, `export failed: ${stderr}`);
+      const stat = await fs.stat(archiveFile);
+      assert.ok(stat.size > 0, 'archive should not be empty');
+    });
+
+    it('should import the archive and restore all files via HTTP', async () => {
+      // Wipe server-side DB and CAS so the import has to upload content
+      await caskFs.powerWash();
+      await fs.rm(path.join(caskFs.rootDir, 'cas'), { recursive: true, force: true });
+
+      const { code, stderr } = await runCask(
+        ['archive', 'import', archiveFile],
+        { env: env() }
+      );
+      assert.strictEqual(code, 0, `import failed: ${stderr}`);
+
+      // Verify the restored file is readable via HTTP
+      const { code: readCode, stdout } = await runCask(
+        ['read', '/archive-test/hello.txt'],
+        { env: env() }
+      );
+      assert.strictEqual(readCode, 0);
+      assert.ok(stdout.includes(TEST_CONTENT), `expected file content in read output:\n${stdout}`);
+    });
+
+    it('should report hashes uploaded in import summary', async () => {
+      // Re-import with overwrite — content is already on server so hashesUploaded=0
+      const { code, stdout, stderr } = await runCask(
+        ['archive', 'import', archiveFile, '--overwrite'],
+        { env: env() }
+      );
+      assert.strictEqual(code, 0, `import --overwrite failed: ${stderr}`);
+      assert.ok(
+        stdout.includes('files processed') || stdout.includes('files inserted'),
+        `expected summary in output:\n${stdout}`
+      );
+    });
   });
 });

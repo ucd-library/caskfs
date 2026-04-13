@@ -182,107 +182,57 @@ program
       file = path.resolve(process.cwd(), file);
     }
 
-    let progressTimer = null;
-    let summary;
+    const pBar = new CliProgress.SingleBar({
+      format: 'Importing... {bar} {percentage}% | {files}/{totalFiles} files',
+      hideCursor: true,
+    });
+    let pBarStarted = false;
+    let totalFiles = 0;
 
-    if (cask.mode === 'http') {
-      // HTTP mode: optimistic batch writes with local extraction
-      // let stats = { hashesUploaded: 0, filesWritten: 0, errors: [] };
+    const transfer = new Transfer();
 
-      const printProgress = () => {
-        process.stdout.write(
-          `\r  Files: ${stats.filesWritten} written | Hashes: ${stats.hashesUploaded} uploaded   `
-        );
-      };
+    const summary = await transfer.fsImport(file, {
+      cask,
+      requestor: options.requestor,
+      dbClient: cask.dbClient,
+      overwrite: options.overwrite,
+      aclConflict: options.aclConflict,
+      autoPartitionConflict: options.autoPartitionConflict,
+      cb: (msg) => {
+        if (msg.type === 'tmp-file') {
+          tmpFile = msg.path;
+        }
+        if (msg.type === 'extract-complete') {
+          console.log('Extraction complete. Scanning archive...');
+        }
+        if (msg.type === 'preflight-complete') {
+          totalFiles = msg.stats.totalFiles;
+          pBar.start(totalFiles, 0, { files: 0, totalFiles });
+          pBarStarted = true;
+        }
+        if (msg.type === 'batch-sync') {
+          pBar.update(msg.stats.filesProcessed, { files: msg.stats.filesProcessed, totalFiles });
+        }
+      },
+    });
 
-      let pBar = new CliProgress.SingleBar({
-        format: 'Importing... {bar} {percentage}% | {files} files written',
-        hideCursor: true,
-      });
-      let stats;
+    if (pBarStarted) pBar.stop();
 
-      const transfer = new Transfer();
-
-      summary = await transfer.fsImport(file, {
-        overwrite: options.overwrite,
-        aclConflict: options.aclConflict,
-        autoPartitionConflict: options.autoPartitionConflict,
-        cb: (msg) => {
-          if( msg.type === 'tmp-file' ) {
-            tmpFile = msg.path;
-          }
-          if( msg.type === 'preflight-complete' ) {
-            stats = msg.stats;
-            pBar.start(stats.totalFiles, 0, { files: 0 });
-          }
-          if( msg.type === 'batch-sync' ) {
-            pBar.update(msg.filesProcessed, { files: stats.filesProcessed });
-          }
-          // stats = current;
-          // if (!progressTimer) {
-          //   progressTimer = setInterval(printProgress, 250);
-          // }
-        },
-      });
-
-
-      console.log(`\nImported from: ${file}`);
+    console.log(`\nImported from: ${file}`);
+    console.log(`  files processed : ${summary.filesProcessed}`);
+    console.log(`  files inserted  : ${summary.filesInserted}`);
+    if (summary.hashesUploaded !== undefined) {
       console.log(`  hashes uploaded : ${summary.hashesUploaded}`);
-      console.log(`  files written   : ${summary.filesWritten}`);
-      if (summary.errors.length > 0) {
-        console.log(`  errors          : ${summary.errors.length}`);
-      }
-
-    } else {
-      // Direct-pg mode: stream archive directly to the server
-      let pBar = new CliProgress.SingleBar({
-        format: 'Importing... {bar} {percentage}% | {files}/{totalFiles} files written | Speed: {speed}',
-        hideCursor: true,
-      });
-      const transfer = new Transfer();
-
-      let stats;
-      let startTime;
-      let lastFilesProcessed = 0;
-
-      console.log(`Extracting ${file} ...`);
-
-      summary = await transfer.fsImport(file, {
-        cask,
-        requestor: options.requestor,
-        dbClient: cask.dbClient,
-        overwrite: options.overwrite,
-        aclConflict: options.aclConflict,
-        autoPartitionConflict: options.autoPartitionConflict,
-        cb: (msg) => {
-          if( msg.type === 'extract-complete' ) {
-            console.log(`Extraction complete. Scanning archive...`);
-          }
-          if( msg.type === 'preflight-complete' ) {
-            console.log(`Preflight scan complete. Starting import...`);
-            startTime = Date.now();
-            stats = msg.stats;
-            pBar.start(stats.totalFiles, 0, { files: 0, speed: 'N/A', totalFiles: stats.totalFiles });
-          }
-          if( msg.type === 'batch-sync' ) {
-            pBar.update(msg.stats.filesProcessed, { 
-              // totalFiles: msg.stats.totalFiles,
-              files: msg.stats.filesProcessed,
-              speed : Math.round((msg.stats.filesProcessed - lastFilesProcessed) / ((Date.now() - startTime) / 1000))+' files/s',
-            });
-            startTime = Date.now();
-            lastFilesProcessed = msg.stats.filesProcessed;
-          }
-        },
-      });
-
-
-      console.log(`\nImported from: ${file}`);
-      console.log(`  files processed : ${summary.filesProcessed}`);
-      console.log(`  files inserted  : ${summary.filesInserted}`);
-      console.log(`  files updated   : ${summary.metadataUpdates}`);
-      console.log(`  files skipped   : ${summary.noChanges}`);
-      console.log(`  errors          : ${summary.errors}`);
+    }
+    if (summary.metadataUpdates !== undefined) {
+      console.log(`  metadata updated: ${summary.metadataUpdates}`);
+    }
+    if (summary.noChanges !== undefined) {
+      console.log(`  no changes      : ${summary.noChanges}`);
+    }
+    const errorCount = Array.isArray(summary.errors) ? summary.errors.length : summary.errors;
+    if (errorCount > 0) {
+      console.log(`  errors          : ${errorCount}`);
     }
 
     await endClient(cask);

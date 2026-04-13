@@ -153,7 +153,7 @@ class CaskFs {
 
     context.update({
       dbClient,
-      metadata: {},
+      metadata: context.data.metadata || {},
       fileExists: false,
       primaryDigest: config.digests[0],
       actions : {
@@ -1483,24 +1483,6 @@ class CaskFs {
 
   export(destPath, opts={}) {
     return this.transfer.export(destPath, opts);
-  }
-
-  /**
-   * @method import
-   * @description Import CAS content and optional ACL / auto-partition data from a .tar.gz
-   * archive produced by export().
-   *
-   * @param {String} srcPath - absolute path to the .tar.gz archive
-   * @param {Object} [opts={}]
-   * @param {Boolean} [opts.overwrite=false] - replace existing file records on conflict
-   * @param {String} [opts.aclConflict='fail'] - 'fail' | 'skip' | 'merge' on ACL conflicts
-   * @param {String} [opts.autoPartitionConflict='fail'] - 'fail' | 'skip' | 'merge' on rule conflicts
-   * @param {Function} [opts.cb] - progress callback
-   *
-   * @returns {Promise<{hashCount: number, fileCount: number, skippedFiles: number}>}
-   */
-  import(srcPath, opts={}) {
-    return this.transfer.import(srcPath, opts);
   }
 
   /**
