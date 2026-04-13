@@ -3,8 +3,8 @@
 import { Command } from 'commander';
 import fs from 'fs/promises';
 import fsSync from 'fs';
-import crypto from 'crypto';
 import readline from 'readline';
+import FileProcessor from './lib/file-processor.js';
 import {createContext} from '../lib/context.js';
 import {silenceLoggers} from '../lib/logger.js';
 import path from 'path';
@@ -29,22 +29,6 @@ optsWrapper(program)
 
 // set default requestor to current user if not set
 config.acl.defaultRequestor = os.userInfo().username;
-
-/**
- * @function hashFile
- * @description Compute the sha256 hex digest of a local file using a streaming read.
- * @param {String} filePath - absolute path to the file
- * @returns {Promise<String>}
- */
-function hashFile(filePath) {
-  return new Promise((resolve, reject) => {
-    const hash   = crypto.createHash('sha256');
-    const stream = fsSync.createReadStream(filePath);
-    stream.on('data',  chunk => hash.update(chunk));
-    stream.on('end',   ()    => resolve(hash.digest('hex')));
-    stream.on('error', reject);
-  });
-}
 
 /**
  * @function confirm
@@ -229,29 +213,28 @@ program
     pBar.start(totalFiles, 0, { files: 0, totalFiles, rate: '0' });
 
     // srcFile → destFile lookup for doesNotExist individual writes
-    const srcByDest    = new Map();
+    const srcByDest     = new Map();
     const gitInfoByDest = new Map();
+
+    const processor = new FileProcessor({ workers: config.cp.workers });
 
     for (let i = 0; i < allFiles.length; i += BATCH_SIZE) {
       const batchSrc = allFiles.slice(i, i + BATCH_SIZE);
 
-      // Compute hashes and gather git info in parallel across the batch
-      const batchDescriptors = await Promise.all(batchSrc.map(async srcFile => {
+      // Compute hashes and git info via the worker pool
+      const processed = await processor.processBatch(batchSrc);
+
+      const batchDescriptors = processed.map(({ filePath: srcFile, hash, gitInfo }) => {
         const destFile = path.join(destPath, path.relative(sourcePath, srcFile));
         srcByDest.set(destFile, srcFile);
-
-        const hash = await hashFile(srcFile);
-        let gitInfo;
-        try { gitInfo = await git.info(srcFile); } catch(e) {}
         gitInfoByDest.set(destFile, gitInfo);
-
         const gitMeta = buildGitMetadata(gitInfo);
         return {
           filePath: destFile,
           hash,
           metadata: Object.keys(gitMeta).length ? gitMeta : undefined,
         };
-      }));
+      });
 
       // Optimistic batch: resolve which files are already in CAS
       let result;
@@ -321,6 +304,7 @@ program
     }
 
     pBar.stop();
+    processor.close();
 
     console.log(`\nCopied from: ${sourcePath}`);
     console.log(`  files processed  : ${cpStats.filesProcessed}`);

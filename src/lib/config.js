@@ -93,6 +93,10 @@ const config = {
     maxFilesPerBatch : parseInt(env.CASKFS_SYNC_MAX_FILES_PER_BATCH) || 1000
   },
 
+  cp : {
+    workers : parseInt(env.CASKFS_CP_WORKERS) || 3,
+  },
+
   git : {
     metadataProperties : ['remote', 'branch', 'commit', 'tag', 'lastCommitTime']
   },
