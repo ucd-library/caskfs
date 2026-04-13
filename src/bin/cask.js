@@ -3,6 +3,8 @@
 import { Command } from 'commander';
 import fs from 'fs/promises';
 import fsSync from 'fs';
+import crypto from 'crypto';
+import readline from 'readline';
 import {createContext} from '../lib/context.js';
 import {silenceLoggers} from '../lib/logger.js';
 import path from 'path';
@@ -27,6 +29,54 @@ optsWrapper(program)
 
 // set default requestor to current user if not set
 config.acl.defaultRequestor = os.userInfo().username;
+
+/**
+ * @function hashFile
+ * @description Compute the sha256 hex digest of a local file using a streaming read.
+ * @param {String} filePath - absolute path to the file
+ * @returns {Promise<String>}
+ */
+function hashFile(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash   = crypto.createHash('sha256');
+    const stream = fsSync.createReadStream(filePath);
+    stream.on('data',  chunk => hash.update(chunk));
+    stream.on('end',   ()    => resolve(hash.digest('hex')));
+    stream.on('error', reject);
+  });
+}
+
+/**
+ * @function confirm
+ * @description Prompt the user for a yes/no answer; resolves true for yes.
+ * @param {String} question
+ * @returns {Promise<Boolean>}
+ */
+function confirm(question) {
+  return new Promise(resolve => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(`${question} (yes/no): `, answer => {
+      rl.close();
+      resolve(answer.trim().toLowerCase().startsWith('y'));
+    });
+  });
+}
+
+/**
+ * @function buildGitMetadata
+ * @description Convert a git info object into a flat metadata object with `git-*` keys,
+ * matching the format used by CaskFS write/sync internally.
+ * @param {Object|null} gitInfo
+ * @returns {Object}
+ */
+function buildGitMetadata(gitInfo) {
+  if (!gitInfo) return {};
+  const m = {};
+  for (const key of config.git.metadataProperties) {
+    if (gitInfo[key] != null) m[`git-${key}`] = gitInfo[key];
+  }
+  return m;
+}
 
 program
   .name('CaskFs')
@@ -91,151 +141,197 @@ program
 
 program
   .command('cp <source-path> <dest-path>')
-  .description('Copy a file or directory into the CaskFS. If source-path is a directory, all files in the directory will be copied recursively.')
-  .option('-x, --replace', 'Replace the file if it already exists', false)
+  .description('Copy a file or directory into CaskFS. Directories are copied recursively using optimistic batch sync.')
+  .option('-x, --replace', 'Replace files if they already exist', false)
   .option('-d, --dry-run', 'Show what would be copied without actually copying', false)
   .option('-b, --bucket <bucket>', 'Target bucket when copying to GCS')
+  .option('-y, --yes', 'Skip the confirmation prompt', false)
   .action(async (sourcePath, destPath, options) => {
     silenceLoggers();
-
     handleGlobalOpts(options);
     const cask = getClient(options);
 
-    if( !path.isAbsolute(sourcePath) ) {
+    if (!path.isAbsolute(sourcePath)) {
       sourcePath = path.resolve(process.cwd(), sourcePath);
     }
 
-    if( options.dryRun ) {
-      console.log(`****
-* Dry run mode, no files will be copied
-****\n`);
-    }
+    // ── single file ──────────────────────────────────────────────────────────
+    const stat = await fs.stat(sourcePath);
+    if (!stat.isDirectory()) {
+      const destFile = path.join(destPath, path.basename(sourcePath));
+      let gitInfo;
+      try { gitInfo = await git.info(sourcePath); } catch(e) {}
 
-    let stats = {
-      fileTypes : {
-        linkedData: 0,
-        binary : 0
-      },
-      insertedFiles : 0,
-      replacedFiles : 0,
-      updatedMetadata : 0,
-      parsedLinkedData : 0,
-      casWrites : 0,
-      casDeletes : 0
-    };
-
-    let location;
-
-    // is the source path a file or directory?
-    let stat = await fs.stat(sourcePath);
-    let gitInfo;
-    if( !stat.isDirectory() ) {
-      destPath = path.resolve(destPath, path.basename(sourcePath));
-
-      try {
-        gitInfo = await git.info(sourcePath);
-      } catch(e) {}
-
-      let context = createContext({
-        filePath: destPath,
+      const context = createContext({
+        filePath:  destFile,
         requestor: options.requestor,
-        bucket: options.bucket,
-        readPath: sourcePath,
-        replace: options.replace,
-        git: gitInfo
+        bucket:    options.bucket,
+        readPath:  sourcePath,
+        replace:   options.replace,
+        git:       gitInfo,
       });
+      const location = await cask.getCasLocation(context);
+      console.log(`Copying ${sourcePath} → (${location}) ${destFile}`);
 
-      location = await cask.getCasLocation(context);
-      console.log(`Copying file ${sourcePath} to (${location}) ${destPath}`);
-      if( !options.dryRun ) {
+      if (!options.dryRun) {
         await cask.write(context);
       }
       await endClient(cask);
       return;
     }
 
-    // recursively get all files in sourcePath
-    let files = await fs.readdir(sourcePath, { withFileTypes: true, recursive: true });
-    files = files.filter(f => f.isFile()).map(f => path.join(f.parentPath, f.name));
+    // ── directory: pre-scan ──────────────────────────────────────────────────
+    let allFiles = await fs.readdir(sourcePath, { withFileTypes: true, recursive: true });
+    allFiles = allFiles
+      .filter(f => f.isFile() && !f.name.startsWith('.') && !f.parentPath.match(/\/\./))
+      .map(f => path.join(f.parentPath, f.name));
 
-    let failed = [];
-    let context;
+    const totalFiles = allFiles.length;
 
-    console.log('Copying files from directory', sourcePath);
+    console.log('');
+    console.log(`  Source      : ${sourcePath}`);
+    console.log(`  Destination : cask:${destPath}`);
+    console.log(`  Files       : ${totalFiles}`);
     console.log('');
 
-    let pbar = new cliProgress.Bar(
-      {etaBuffer: 50},
-      cliProgress.Presets.shades_classic
-    );
-    let total = files.filter(f => !f.match(/\/\./)).length;
-    let filesCopied = 0;
-    pbar.start(total, 0);
+    if (options.dryRun) {
+      console.log('Dry run — no files will be copied.');
+      await endClient(cask);
+      return;
+    }
 
-    for( let file of files ) {
-      if( file.match(/\/\./) ) continue; // skip hidden files
-
-      let destFile = path.join(destPath, path.relative(sourcePath, file))
-
-      try {
-        gitInfo = await git.info(file);
-      } catch(e) {}
-
-      context = createContext({
-        filePath: destFile,
-        requestor: options.requestor,
-        bucket: options.bucket,
-        readPath: file,
-        replace: options.replace,
-        git: gitInfo
-      });
-
-      location = await cask.getCasLocation(context);
-      if( !options.dryRun ) {
-        try {
-          await cask.write(context);
-
-          if( context.data.actions.detectedLd ) {
-            stats.fileTypes.linkedData++;
-          } else {
-            stats.fileTypes.binary++;
-          }
-          if( context.data.actions.fileInsert ) stats.insertedFiles++;
-          if( context.data.actions.replacedFile ) stats.replacedFiles++;
-          if( context.data.actions.updatedMetadata ) stats.updatedMetadata++;
-          if( context.data.actions.parsedLinkedData ) stats.parsedLinkedData++;
-          if( context.data.actions.fileCopiedToCas ) stats.casWrites++;
-          if( context.data.actions.deletedOldHashFile ) stats.casDeletes++;
-
-          pbar.update(filesCopied++);
-        } catch (err) {
-          failed.push(file);
-        }
+    if (!options.yes) {
+      const ok = await confirm('Proceed with copy?');
+      if (!ok) {
+        console.log('Copy cancelled.');
+        await endClient(cask);
+        return;
       }
     }
 
-    pbar.stop();
+    // ── batch sync ───────────────────────────────────────────────────────────
+    const BATCH_SIZE = 100;
+    const isHttp = cask.mode === 'http';
+    const cpStats = {
+      filesProcessed:  0,
+      filesInserted:   0,
+      metadataUpdates: 0,
+      noChanges:       0,
+      errors:          [],
+    };
 
-    console.log(`\nCopied ${filesCopied-failed.length} files to CaskFS`);
+    const pBar = new cliProgress.SingleBar({
+      format: 'Copying... {bar} {percentage}% | {files}/{totalFiles} files | {rate} files/s',
+      hideCursor: true,
+    });
+    let lastBatchFiles = 0;
+    let lastBatchTime  = Date.now();
+    pBar.start(totalFiles, 0, { files: 0, totalFiles, rate: '0' });
 
-    if( failed.length > 0 ) {
-      console.log(`\nThe following ${failed.length} files failed to copy:`);
-      failed.forEach(f => console.log(`  - ${f}`));
+    // srcFile → destFile lookup for doesNotExist individual writes
+    const srcByDest    = new Map();
+    const gitInfoByDest = new Map();
+
+    for (let i = 0; i < allFiles.length; i += BATCH_SIZE) {
+      const batchSrc = allFiles.slice(i, i + BATCH_SIZE);
+
+      // Compute hashes and gather git info in parallel across the batch
+      const batchDescriptors = await Promise.all(batchSrc.map(async srcFile => {
+        const destFile = path.join(destPath, path.relative(sourcePath, srcFile));
+        srcByDest.set(destFile, srcFile);
+
+        const hash = await hashFile(srcFile);
+        let gitInfo;
+        try { gitInfo = await git.info(srcFile); } catch(e) {}
+        gitInfoByDest.set(destFile, gitInfo);
+
+        const gitMeta = buildGitMetadata(gitInfo);
+        return {
+          filePath: destFile,
+          hash,
+          metadata: Object.keys(gitMeta).length ? gitMeta : undefined,
+        };
+      }));
+
+      // Optimistic batch: resolve which files are already in CAS
+      let result;
+      try {
+        if (isHttp) {
+          result = await cask.optimisticBatchWrite(batchDescriptors);
+        } else {
+          result = await cask.sync({ requestor: options.requestor }, {
+            files:   batchDescriptors,
+            replace: options.replace,
+          });
+        }
+      } catch(err) {
+        for (const d of batchDescriptors) cpStats.errors.push({ path: d.filePath, message: err.message });
+        cpStats.filesProcessed += batchSrc.length;
+        continue;
+      }
+
+      cpStats.filesInserted   += result.fileInserts?.length    || 0;
+      cpStats.metadataUpdates += result.metadataUpdates?.length || 0;
+      cpStats.noChanges       += result.noChanges?.length      || 0;
+      for (const e of (result.errors || [])) cpStats.errors.push(e);
+
+      // Full streaming write for files whose hash is not yet in CAS
+      for (const destFile of (result.doesNotExist || [])) {
+        const srcFile = srcByDest.get(destFile);
+        if (!srcFile) continue;
+
+        const gitInfo = gitInfoByDest.get(destFile);
+        const gitMeta = buildGitMetadata(gitInfo);
+
+        try {
+          if (isHttp) {
+            await cask.write({
+              filePath: destFile,
+              readPath: srcFile,
+              replace:  options.replace,
+              bucket:   options.bucket,
+              metadata: Object.keys(gitMeta).length ? gitMeta : undefined,
+            });
+          } else {
+            await cask.write(createContext({
+              filePath:  destFile,
+              requestor: options.requestor,
+              bucket:    options.bucket,
+              readPath:  srcFile,
+              replace:   options.replace,
+              git:       gitInfo,
+            }));
+          }
+          cpStats.filesInserted++;
+        } catch(err) {
+          cpStats.errors.push({ path: destFile, message: err.message });
+        }
+      }
+
+      cpStats.filesProcessed += batchSrc.length;
+
+      const now     = Date.now();
+      const elapsed = (now - lastBatchTime) / 1000;
+      const delta   = cpStats.filesProcessed - lastBatchFiles;
+      const rate    = elapsed > 0 ? (delta / elapsed).toFixed(1) : '0';
+      lastBatchFiles = cpStats.filesProcessed;
+      lastBatchTime  = now;
+
+      pBar.update(cpStats.filesProcessed, { files: cpStats.filesProcessed, totalFiles, rate });
     }
 
-    console.log('\nCopy statistics:');
-    console.log(`  - Total files processed: ${filesCopied}`);
-    console.log(`  - New files inserted: ${stats.insertedFiles}`);
-    console.log(`  - Existing files replaced: ${stats.replacedFiles}`);
-    console.log(`  - Files with updated metadata (includes inserts): ${stats.updatedMetadata}`);
-    console.log(`  - Binary files copied: ${stats.fileTypes.binary}`);
-    console.log(`  - Linked Data files copied: ${stats.fileTypes.linkedData}`);
-    console.log(`  - Linked Data files parsed: ${stats.parsedLinkedData}`);
-    console.log(`  - CAS writes: ${stats.casWrites}`);
-    console.log(`  - CAS deletes: ${stats.casDeletes}`);
+    pBar.stop();
+
+    console.log(`\nCopied from: ${sourcePath}`);
+    console.log(`  files processed  : ${cpStats.filesProcessed}`);
+    console.log(`  files inserted   : ${cpStats.filesInserted}`);
+    console.log(`  metadata updated : ${cpStats.metadataUpdates}`);
+    console.log(`  no changes       : ${cpStats.noChanges}`);
+    if (cpStats.errors.length > 0) {
+      console.log(`  errors           : ${cpStats.errors.length}`);
+    }
 
     await endClient(cask);
-    return;
   });
 
 program
