@@ -5,6 +5,7 @@ import fs from 'fs/promises';
 import fsSync from 'fs';
 import readline from 'readline';
 import FileProcessor from './lib/file-processor.js';
+import { buildGitMetadata, dirExt, crawlLocal, recursiveCaskLs } from './lib/cp-utils.js';
 import {createContext} from '../lib/context.js';
 import {silenceLoggers} from '../lib/logger.js';
 import path from 'path';
@@ -44,22 +45,6 @@ function confirm(question) {
       resolve(answer.trim().toLowerCase().startsWith('y'));
     });
   });
-}
-
-/**
- * @function buildGitMetadata
- * @description Convert a git info object into a flat metadata object with `git-*` keys,
- * matching the format used by CaskFS write/sync internally.
- * @param {Object|null} gitInfo
- * @returns {Object}
- */
-function buildGitMetadata(gitInfo) {
-  if (!gitInfo) return {};
-  const m = {};
-  for (const key of config.git.metadataProperties) {
-    if (gitInfo[key] != null) m[`git-${key}`] = gitInfo[key];
-  }
-  return m;
 }
 
 program
@@ -125,7 +110,7 @@ program
 
 program
   .command('cp <source-path> <dest-path>')
-  .description('Copy a file or directory into CaskFS. Directories are copied recursively using optimistic batch sync.')
+  .description('Copy files between local disk and CaskFS. Prefix source with "cask:" to download from CaskFS.')
   .option('-x, --replace', 'Replace files if they already exist', false)
   .option('-d, --dry-run', 'Show what would be copied without actually copying', false)
   .option('-b, --bucket <bucket>', 'Target bucket when copying to GCS')
@@ -135,6 +120,159 @@ program
     handleGlobalOpts(options);
     const cask = getClient(options);
 
+    // ── CaskFS → local ───────────────────────────────────────────────────────
+    if (sourcePath.startsWith('cask:')) {
+      const caskSrc = sourcePath.slice('cask:'.length);
+      let localDest = destPath;
+      if (!path.isAbsolute(localDest)) {
+        localDest = path.resolve(process.cwd(), localDest);
+      }
+
+      // Determine if caskSrc is itself a file (single file or virtual dir).
+      // Check metadata BEFORE calling recursiveCaskLs: in HTTP mode, ls on a
+      // plain file path returns 409 and throws, so we must detect the file case
+      // first and only call ls when we know the source is a directory or virtual dir.
+      let srcIsFile = false;
+      try {
+        await cask.metadata({ filePath: caskSrc, requestor: options.requestor });
+        srcIsFile = true;
+      } catch(e) {}
+
+      // List children. For plain files, ls may throw in HTTP mode (409), so
+      // wrap in try-catch. For directories and virtual dirs, ls returns results.
+      let childFiles = [];
+      try {
+        childFiles = await recursiveCaskLs(cask, caskSrc, { requestor: options.requestor });
+      } catch(e) {}
+
+      // ── single file download ───────────────────────────────────────────────
+      if (srcIsFile && childFiles.length === 0) {
+        let localPath;
+        try {
+          const s = await fs.stat(localDest);
+          localPath = s.isDirectory()
+            ? path.join(localDest, path.posix.basename(caskSrc))
+            : localDest;
+        } catch(e) {
+          localPath = localDest;
+        }
+
+        console.log(`Downloading cask:${caskSrc} → ${localPath}`);
+        if (!options.dryRun) {
+          const buf = await cask.read({ filePath: caskSrc, requestor: options.requestor });
+          await fs.mkdir(path.dirname(localPath), { recursive: true });
+          await fs.writeFile(localPath, buf);
+        }
+        await endClient(cask);
+        return;
+      }
+
+      // ── directory / virtual-dir download ──────────────────────────────────
+      let allCaskFiles;
+      if (srcIsFile) {
+        // Virtual dir: the file at caskSrc + all its children
+        allCaskFiles = [
+          { filepath: caskSrc, filename: path.posix.basename(caskSrc), directory: path.posix.dirname(caskSrc) },
+          ...childFiles,
+        ];
+      } else {
+        allCaskFiles = childFiles;
+      }
+
+      if (allCaskFiles.length === 0) {
+        console.error(`Nothing found at cask:${caskSrc}`);
+        process.exit(1);
+      }
+
+      // Detect virtual dirs: files whose path is a prefix of another file's path
+      const filePaths    = allCaskFiles.map(f => f.filepath);
+      const virtualDirSet = new Set();
+      for (let i = 0; i < filePaths.length; i++) {
+        for (let j = 0; j < filePaths.length; j++) {
+          if (i !== j && filePaths[j].startsWith(filePaths[i] + '/')) {
+            virtualDirSet.add(filePaths[i]);
+            break;
+          }
+        }
+      }
+
+      // Root used for computing relative paths on local disk
+      const caskRoot = srcIsFile ? path.posix.dirname(caskSrc) : caskSrc;
+
+      const downloads = allCaskFiles.map(f => {
+        const rel  = path.posix.relative(caskRoot, f.filepath);
+        let localPath = path.join(localDest, rel);
+        if (virtualDirSet.has(f.filepath)) {
+          const ext = dirExt(path.posix.basename(f.filepath));
+          localPath = path.join(localPath, '__file__' + ext);
+        }
+        return { caskPath: f.filepath, localPath };
+      });
+
+      const totalFiles = downloads.length;
+      console.log('');
+      console.log(`  Source      : cask:${caskSrc}`);
+      console.log(`  Destination : ${localDest}`);
+      console.log(`  Files       : ${totalFiles}`);
+      console.log('');
+
+      if (options.dryRun) {
+        console.log('Dry run — no files will be downloaded.');
+        await endClient(cask);
+        return;
+      }
+
+      if (!options.yes) {
+        const ok = await confirm('Proceed with download?');
+        if (!ok) {
+          console.log('Download cancelled.');
+          await endClient(cask);
+          return;
+        }
+      }
+
+      const dlBar = new cliProgress.SingleBar({
+        format: 'Downloading... {bar} {percentage}% | {files}/{totalFiles} files | {rate} files/s',
+        hideCursor: true,
+      });
+      let dlLastCount = 0;
+      let dlLastTime  = Date.now();
+      dlBar.start(totalFiles, 0, { files: 0, totalFiles, rate: '0' });
+
+      let dlCount  = 0;
+      const dlErrors = [];
+
+      for (const { caskPath, localPath } of downloads) {
+        try {
+          const buf = await cask.read({ filePath: caskPath, requestor: options.requestor });
+          await fs.mkdir(path.dirname(localPath), { recursive: true });
+          await fs.writeFile(localPath, buf);
+          dlCount++;
+        } catch(err) {
+          dlErrors.push({ path: caskPath, message: err.message });
+        }
+
+        const processed = dlCount + dlErrors.length;
+        const now       = Date.now();
+        const elapsed   = (now - dlLastTime) / 1000;
+        const delta     = processed - dlLastCount;
+        const rate      = elapsed > 0 ? (delta / elapsed).toFixed(1) : '0';
+        dlLastCount = processed;
+        dlLastTime  = now;
+        dlBar.update(processed, { files: processed, totalFiles, rate });
+      }
+
+      dlBar.stop();
+
+      console.log(`\nDownloaded from: cask:${caskSrc}`);
+      console.log(`  files downloaded : ${dlCount}`);
+      if (dlErrors.length > 0) console.log(`  errors           : ${dlErrors.length}`);
+
+      await endClient(cask);
+      return;
+    }
+
+    // ── local → CaskFS: normalize source path ────────────────────────────────
     if (!path.isAbsolute(sourcePath)) {
       sourcePath = path.resolve(process.cwd(), sourcePath);
     }
@@ -164,13 +302,15 @@ program
       return;
     }
 
-    // ── directory: pre-scan ──────────────────────────────────────────────────
-    let allFiles = await fs.readdir(sourcePath, { withFileTypes: true, recursive: true });
-    allFiles = allFiles
-      .filter(f => f.isFile() && !f.name.startsWith('.') && !f.parentPath.match(/\/\./))
-      .map(f => path.join(f.parentPath, f.name));
+    // ── directory: pre-scan with sentinel support ─────────────────────────────
+    const { files: crawled, errors: crawlErrors } = await crawlLocal(sourcePath, destPath);
 
-    const totalFiles = allFiles.length;
+    if (crawlErrors.length > 0) {
+      for (const e of crawlErrors) console.error(`  Error: ${e}`);
+      process.exit(1);
+    }
+
+    const totalFiles = crawled.length;
 
     console.log('');
     console.log(`  Source      : ${sourcePath}`);
@@ -212,20 +352,21 @@ program
     let lastBatchTime  = Date.now();
     pBar.start(totalFiles, 0, { files: 0, totalFiles, rate: '0' });
 
-    // srcFile → destFile lookup for doesNotExist individual writes
+    // destFile → srcFile/gitInfo lookup for doesNotExist individual writes
     const srcByDest     = new Map();
     const gitInfoByDest = new Map();
 
     const processor = new FileProcessor({ workers: config.cp.workers });
 
-    for (let i = 0; i < allFiles.length; i += BATCH_SIZE) {
-      const batchSrc = allFiles.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < crawled.length; i += BATCH_SIZE) {
+      const batchPairs = crawled.slice(i, i + BATCH_SIZE);
+      const batchSrc   = batchPairs.map(p => p.srcFile);
 
       // Compute hashes and git info via the worker pool
       const processed = await processor.processBatch(batchSrc);
 
-      const batchDescriptors = processed.map(({ filePath: srcFile, hash, gitInfo }) => {
-        const destFile = path.join(destPath, path.relative(sourcePath, srcFile));
+      const batchDescriptors = processed.map(({ filePath: srcFile, hash, gitInfo }, idx) => {
+        const destFile = batchPairs[idx].destFile;
         srcByDest.set(destFile, srcFile);
         gitInfoByDest.set(destFile, gitInfo);
         const gitMeta = buildGitMetadata(gitInfo);

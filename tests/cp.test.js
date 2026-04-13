@@ -179,6 +179,100 @@ describe('CLI – cp (direct-pg)', () => {
     const { stdout } = await runCask(['read', '/cp-replace/updated.txt'], { env: env() });
     assert.ok(stdout.includes('Updated single content'), `expected updated content:\n${stdout}`);
   });
+
+  it('should upload a __file__ sentinel as the CaskFS file at the directory path', async () => {
+    // Build: sentinelDir/doc.pdf/__file__.pdf  +  sentinelDir/doc.pdf/child.txt
+    const sentinelRoot = path.join(tmpDir, 'sentinelDir');
+    const docDir       = path.join(sentinelRoot, 'doc.pdf');
+    await fs.mkdir(docDir, { recursive: true });
+    await fs.writeFile(path.join(docDir, '__file__.pdf'), 'PDF sentinel content');
+    await fs.writeFile(path.join(docDir, 'child.txt'),   'Child file content');
+
+    const { code, stderr } = await runCask(
+      ['cp', sentinelRoot, '/cp-sentinel/', '-y'],
+      { env: env() }
+    );
+    assert.strictEqual(code, 0, `cp sentinel exited non-zero: ${stderr}`);
+
+    // The sentinel should be readable at /cp-sentinel/doc.pdf
+    const { code: r1, stdout: s1 } = await runCask(['read', '/cp-sentinel/doc.pdf'], { env: env() });
+    assert.strictEqual(r1, 0, 'read sentinel file exited non-zero');
+    assert.ok(s1.includes('PDF sentinel content'), `unexpected content: ${s1}`);
+
+    // The child file should be at /cp-sentinel/doc.pdf/child.txt
+    const { code: r2, stdout: s2 } = await runCask(['read', '/cp-sentinel/doc.pdf/child.txt'], { env: env() });
+    assert.strictEqual(r2, 0, 'read child file exited non-zero');
+    assert.ok(s2.includes('Child file content'), `unexpected content: ${s2}`);
+  });
+
+  it('should exit non-zero when multiple sentinels exist in one directory', async () => {
+    const badDir = path.join(tmpDir, 'badSentinel');
+    const subDir = path.join(badDir, 'report.pdf');
+    await fs.mkdir(subDir, { recursive: true });
+    await fs.writeFile(path.join(subDir, '__file__.pdf'), 'one');
+    await fs.writeFile(path.join(subDir, '__file__.txt'), 'two');
+
+    const { code } = await runCask(
+      ['cp', badDir, '/cp-bad-sentinel/', '-y'],
+      { env: env() }
+    );
+    assert.notStrictEqual(code, 0, 'expected non-zero exit for multiple sentinels');
+  });
+
+  it('should download a directory from CaskFS to local', async () => {
+    // dataDir was uploaded to /cp-dir/ in earlier tests — re-use it
+    const dlDir = path.join(tmpDir, 'downloaded');
+    await fs.mkdir(dlDir, { recursive: true });
+
+    const { code, stderr } = await runCask(
+      ['cp', 'cask:/cp-dir', dlDir, '-y'],
+      { env: env() }
+    );
+    assert.strictEqual(code, 0, `cask→local exited non-zero: ${stderr}`);
+
+    const f1 = await fs.readFile(path.join(dlDir, 'file1.txt'), 'utf-8');
+    assert.ok(f1.includes('Content of file1'), `unexpected file1 content: ${f1}`);
+
+    const f3 = await fs.readFile(path.join(dlDir, 'subdir', 'file3.txt'), 'utf-8');
+    assert.ok(f3.includes('Content of file3'), `unexpected file3 content: ${f3}`);
+  });
+
+  it('should download a single file from CaskFS to local', async () => {
+    const dlSingle = path.join(tmpDir, 'dl-single');
+    await fs.mkdir(dlSingle, { recursive: true });
+
+    const { code, stderr } = await runCask(
+      ['cp', 'cask:/cp-single/single.txt', dlSingle],
+      { env: env() }
+    );
+    assert.strictEqual(code, 0, `single file download exited non-zero: ${stderr}`);
+
+    const content = await fs.readFile(path.join(dlSingle, 'single.txt'), 'utf-8');
+    assert.ok(content.includes('Single file content'), `unexpected content: ${content}`);
+  });
+
+  it('should create __file__ sentinel when downloading a virtual dir from CaskFS', async () => {
+    // Set up a virtual dir: write a file at /cp-vdir/doc.pdf AND a child at /cp-vdir/doc.pdf/child.txt
+    await runCask(['write', '/cp-vdir/doc.pdf',            '-d', singleFile], { env: env() });
+    await runCask(['write', '/cp-vdir/doc.pdf/child.txt',  '-d', singleFile], { env: env() });
+
+    const dlVdir = path.join(tmpDir, 'dl-vdir');
+    await fs.mkdir(dlVdir, { recursive: true });
+
+    const { code, stderr } = await runCask(
+      ['cp', 'cask:/cp-vdir', dlVdir, '-y'],
+      { env: env() }
+    );
+    assert.strictEqual(code, 0, `virtual dir download exited non-zero: ${stderr}`);
+
+    // The virtual dir file becomes a __file__.pdf sentinel inside a doc.pdf/ directory
+    const sentinel = await fs.readFile(path.join(dlVdir, 'doc.pdf', '__file__.pdf'), 'utf-8');
+    assert.ok(sentinel.length > 0, 'sentinel file should not be empty');
+
+    // The child file lands normally
+    const child = await fs.readFile(path.join(dlVdir, 'doc.pdf', 'child.txt'), 'utf-8');
+    assert.ok(child.length > 0, 'child file should not be empty');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -304,5 +398,92 @@ describe('CLI – cp (http)', () => {
 
     const { stdout } = await runCask(['read', '/cp-replace/updated.txt'], { env: env() });
     assert.ok(stdout.includes('Updated single content'), `expected updated content:\n${stdout}`);
+  });
+
+  it('should upload a __file__ sentinel as the CaskFS file at the directory path (http)', async () => {
+    const sentinelRoot = path.join(tmpDir, 'sentinelDir');
+    const docDir       = path.join(sentinelRoot, 'doc.pdf');
+    await fs.mkdir(docDir, { recursive: true });
+    await fs.writeFile(path.join(docDir, '__file__.pdf'), 'PDF sentinel content');
+    await fs.writeFile(path.join(docDir, 'child.txt'),   'Child file content');
+
+    const { code, stderr } = await runCask(
+      ['cp', sentinelRoot, '/cp-sentinel/', '-y'],
+      { env: env() }
+    );
+    assert.strictEqual(code, 0, `cp sentinel exited non-zero: ${stderr}`);
+
+    const { code: r1, stdout: s1 } = await runCask(['read', '/cp-sentinel/doc.pdf'], { env: env() });
+    assert.strictEqual(r1, 0, 'read sentinel file exited non-zero');
+    assert.ok(s1.includes('PDF sentinel content'), `unexpected content: ${s1}`);
+
+    const { code: r2, stdout: s2 } = await runCask(['read', '/cp-sentinel/doc.pdf/child.txt'], { env: env() });
+    assert.strictEqual(r2, 0, 'read child file exited non-zero');
+    assert.ok(s2.includes('Child file content'), `unexpected content: ${s2}`);
+  });
+
+  it('should exit non-zero when multiple sentinels exist in one directory (http)', async () => {
+    const badDir = path.join(tmpDir, 'badSentinel');
+    const subDir = path.join(badDir, 'report.pdf');
+    await fs.mkdir(subDir, { recursive: true });
+    await fs.writeFile(path.join(subDir, '__file__.pdf'), 'one');
+    await fs.writeFile(path.join(subDir, '__file__.txt'), 'two');
+
+    const { code } = await runCask(
+      ['cp', badDir, '/cp-bad-sentinel/', '-y'],
+      { env: env() }
+    );
+    assert.notStrictEqual(code, 0, 'expected non-zero exit for multiple sentinels');
+  });
+
+  it('should download a directory from CaskFS to local (http)', async () => {
+    const dlDir = path.join(tmpDir, 'downloaded');
+    await fs.mkdir(dlDir, { recursive: true });
+
+    const { code, stderr } = await runCask(
+      ['cp', 'cask:/cp-dir', dlDir, '-y'],
+      { env: env() }
+    );
+    assert.strictEqual(code, 0, `cask→local exited non-zero: ${stderr}`);
+
+    const f1 = await fs.readFile(path.join(dlDir, 'file1.txt'), 'utf-8');
+    assert.ok(f1.includes('Content of file1'), `unexpected file1 content: ${f1}`);
+
+    const f3 = await fs.readFile(path.join(dlDir, 'subdir', 'file3.txt'), 'utf-8');
+    assert.ok(f3.includes('Content of file3'), `unexpected file3 content: ${f3}`);
+  });
+
+  it('should download a single file from CaskFS to local (http)', async () => {
+    const dlSingle = path.join(tmpDir, 'dl-single');
+    await fs.mkdir(dlSingle, { recursive: true });
+
+    const { code, stderr } = await runCask(
+      ['cp', 'cask:/cp-single/single.txt', dlSingle],
+      { env: env() }
+    );
+    assert.strictEqual(code, 0, `single file download exited non-zero: ${stderr}`);
+
+    const content = await fs.readFile(path.join(dlSingle, 'single.txt'), 'utf-8');
+    assert.ok(content.includes('Single file content'), `unexpected content: ${content}`);
+  });
+
+  it('should create __file__ sentinel when downloading a virtual dir from CaskFS (http)', async () => {
+    await runCask(['write', '/cp-vdir/doc.pdf',            '-d', singleFile], { env: env() });
+    await runCask(['write', '/cp-vdir/doc.pdf/child.txt',  '-d', singleFile], { env: env() });
+
+    const dlVdir = path.join(tmpDir, 'dl-vdir');
+    await fs.mkdir(dlVdir, { recursive: true });
+
+    const { code, stderr } = await runCask(
+      ['cp', 'cask:/cp-vdir', dlVdir, '-y'],
+      { env: env() }
+    );
+    assert.strictEqual(code, 0, `virtual dir download exited non-zero: ${stderr}`);
+
+    const sentinel = await fs.readFile(path.join(dlVdir, 'doc.pdf', '__file__.pdf'), 'utf-8');
+    assert.ok(sentinel.length > 0, 'sentinel file should not be empty');
+
+    const child = await fs.readFile(path.join(dlVdir, 'doc.pdf', 'child.txt'), 'utf-8');
+    assert.ok(child.length > 0, 'child file should not be empty');
   });
 });

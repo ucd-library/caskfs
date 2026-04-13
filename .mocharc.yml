@@ -10,5 +10,6 @@ spec:
   - tests/http-fs.test.js
   - tests/cli.test.js
   - tests/cp.test.js
+
 timeout: 30000
 require: tests/helpers/env.js

@@ -55,6 +55,9 @@ class Cas {
     } else if( context.data.readPath ) {
       this.logger.debug('Staging write from readPath', context.logSignal);
       digests = await this.writePath(tmpFile, context.data);
+      // writePath skips creating tmpFile when the hash already exists in CAS;
+      // nullify so the stat below falls back to the existing hash file.
+      if( tmpFile && !fs.existsSync(tmpFile) ) tmpFile = null;
     } else if( context.data.data ) {
       this.logger.debug('Staging write from data', context.logSignal);
       digests = await this.writeData(tmpFile, context.data);
