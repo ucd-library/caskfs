@@ -24,6 +24,7 @@ export function styles() {
       background-color: var(--ucd-blue-20, #F7FAFD);
       box-shadow: 0px 3px 8px 0px rgba(0, 0, 0, 0.20);
       font-size: 1rem;
+      --cork-icon-button-size: 1.25rem;
     }
   `;
 
@@ -38,5 +39,6 @@ return html`
   <div class='container' ?hidden=${!this.currentToast}>
     <cork-icon icon=${this.currentToast?.icon} class=${this.currentToast?.brandColor} invisible-if-empty></cork-icon>
     <div>${this.currentToast?.text}</div>
+    <cork-icon-button icon="fas.xmark" basic @click=${() => this.currentToast = null} ?hidden=${!this.dismissable}></cork-icon-button>
   </div>
 `;}

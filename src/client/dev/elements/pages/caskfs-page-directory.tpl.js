@@ -9,6 +9,35 @@ export function styles() {
     caskfs-page-directory {
       display: block;
     }
+    caskfs-page-directory .page-container {
+      position: relative;
+    }
+    caskfs-page-directory .drag-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1000;
+      background-color: color-mix(in srgb, var(--ucd-blue-60, #b0d0ed) 80%, transparent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    caskfs-page-directory .drag-overlay .drag-message {
+      background: white;
+      color: var(--ucd-blue, #022851);
+      padding: 2rem;
+      border-radius: 8px;
+      font-size: 1rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      --cork-icon-size: 2rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+      font-weight: 700;
+    }
     caskfs-page-directory .content {
       display: block;
     }
@@ -30,7 +59,6 @@ export function styles() {
         height: auto;
         align-self: stretch;
       }
-      
     }
   `;
 
@@ -39,10 +67,12 @@ export function styles() {
 
 export function render() { 
 return html`
-  <div>
+  <div class="page-container"
+    @drop=${this._onDrop}
+    @dragover=${this._onDragOver}
+    @dragleave=${this._onDragLeave}>
     <div><h1 class="page-title">Directory</h1></div>
     <ol class="breadcrumbs">
-      <li><a href="${appUrlUtils.fullLocation()}">Home</a></li>
       <li>Directory</li>
     </ol>
     <div class="l-container u-space-mt--large">
@@ -50,6 +80,12 @@ return html`
         <caskfs-directory-controls></caskfs-directory-controls>
         <div class='spacer'></div>
         <caskfs-directory-list></caskfs-directory-list>
+      </div>
+    </div>
+    <div class="drag-overlay" ?hidden=${!this.dragging} style="height: ${this.dragZoneHeight}px;padding-top: ${this.dragZonePaddingTop}px;">
+      <div class="drag-message">
+        <cork-icon icon="fas.upload"></cork-icon>
+        <div>Drop files here to upload them to this directory.</div>
       </div>
     </div>
   </div>

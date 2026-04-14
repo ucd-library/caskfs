@@ -6,6 +6,8 @@ class MimeTypeUtils {
     // strip parameters: "type/subtype; charset=utf-8" -> "type/subtype"
     const [type] = mimeType.toLowerCase().split(';', 1);
 
+    if (type === 'image/tiff' || type === 'image/x-tiff') return false;
+
     // images
     if (type.startsWith('image/')) return 'image';
 
@@ -32,6 +34,12 @@ class MimeTypeUtils {
     ) {
       return 'text';
     }
+
+    // audio
+    if (type.startsWith('audio/')) return 'audio';
+
+    // video
+    if (type.startsWith('video/')) return 'video';
 
     return false;
   }

@@ -6,8 +6,9 @@ import DirectoryPathController from '../../controllers/DirectoryPathController.j
 import DirectoryItemSelectController from '../../controllers/DirectoryItemSelectController.js';
 
 import './caskfs-delete-form.js';
-import './caskfs-upload-form.js';
+import './caskfs-upload-button.js';
 import './caskf-sort-form.js';
+import './caskfs-upload-tracker-toggle.js';
 
 export default class CaskfsDirectoryControls extends Mixin(LitElement)
   .with(LitCorkUtils) {
@@ -50,12 +51,6 @@ export default class CaskfsDirectoryControls extends Mixin(LitElement)
   _onBulkDeleteClick(){
     this.AppStateModel.showDialogModal({
       content: () => html`<caskfs-delete-form .items=${this.ctl.select.selected}></caskfs-delete-form>`,
-    });
-  }
-
-  _onUploadClick(){
-    this.AppStateModel.showDialogModal({
-      content: () => html`<caskfs-upload-form></caskfs-upload-form>`,
     });
   }
 

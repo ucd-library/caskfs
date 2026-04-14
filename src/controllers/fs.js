@@ -179,10 +179,14 @@ async function handleWrite(filePath, req, res, replace) {
 
     let metadata = {};
     if (req.query.metadata) {
-      try { metadata = JSON.parse(req.query.metadata); } catch(e) {}
+      try { 
+        metadata = JSON.parse(req.query.metadata); 
+      } catch(e) {
+        return res.status(400).json({ error: 'Invalid JSON in metadata query parameter' });
+      }
     }
 
-    const ctx = await caskFs.write({
+    let opts = {
       filePath,
       readStream: req,
       mimeType,
@@ -192,7 +196,15 @@ async function handleWrite(filePath, req, res, replace) {
       replace,
       requestor: req.user || config.acl.defaultRequestor || 'http',
       corkTraceId: req.corkTraceId,
-    });
+    };
+
+    if( req.get('x-cask-hash') ) {
+      opts.hash = req.get('x-cask-hash');
+    } else {
+      opts.readStream = req;
+    }
+    
+    const ctx = await caskFs.write(opts);
 
     if (ctx.data?.error) {
       const err = ctx.data.error;
@@ -235,6 +247,20 @@ router.post('/sync', silentJson, async (req, res) => {
       { files }
     );
     res.status(200).json(result);
+  } catch (e) {
+    return handleError(res, req, e);
+  }
+});
+
+// only allow new file
+router.post(/(.*)/, async (req, res) => {
+  try {
+    let opts = getWriteOptions(req);
+    let result = await caskFs.write(opts);
+    res.status(201).json({
+      filePath: result.data.filePath,
+      actions: result.data.actions
+    });
   } catch (e) {
     return handleError(res, req, e);
   }

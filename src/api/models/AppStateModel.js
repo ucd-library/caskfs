@@ -142,8 +142,8 @@ class AppStateModelImpl extends AppStateModel {
 
   }
 
-  refresh(){
-    const state = this.store.data;
+  refresh(stateUpdate={}) {
+    const state = {...this.store.data, ...stateUpdate};
     this.set(state);
     this.store.emit(this.store.events.APP_STATE_UPDATE, state);
   }

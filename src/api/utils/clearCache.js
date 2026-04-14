@@ -1,7 +1,7 @@
 import { Registry, BaseStore, LruStore, getLogger } from '@ucd-lib/cork-app-utils';
 const logger = getLogger('clearCache');
 
-const defaultOpts = { skipModels: ['IconModel', 'AppStateModel'] };
+const defaultOpts = { skipModels: ['IconModel', 'AppStateModel'], skipStores: ['fs.upload.file', 'fs.upload.file.entry'] };
 
 export default (opts={}) => {
   clearCache({ ...defaultOpts, ...opts });
@@ -11,6 +11,7 @@ export default (opts={}) => {
  * @description Clear all LruStore caches in all models
  * @param {Object} opts
  * @param {Array} opts.skipModels - list of model names to skip when clearing cache
+ * @param {Array} opts.skipStores - list of store names to skip when clearing cache
  */
 function clearCache(opts={}){
 
@@ -45,6 +46,11 @@ function clearCache(opts={}){
       // only clear LruStore instances
       if ( !(store instanceof LruStore) ) {
         logger.debug(`Store ${storeName} is not LruStore, skipping`);
+        continue;
+      }
+
+      if ( opts.skipStores?.includes(store.name) ) {
+        logger.debug(`Skipping store: ${store.name}`);
         continue;
       }
 

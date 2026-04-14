@@ -69,7 +69,10 @@ const config = {
     port : env.CASKFS_WEBAPP_PORT || 3000,
     isDevEnv : env.CASKFS_WEBAPP_ENV === 'dev',
     basepath : env.CASKFS_WEBAPP_PATH_PREFIX || '',
-    bundleName: 'caskfs-webapp.js'
+    bundleName: 'caskfs-webapp.js',
+    previewThresholdImage : parseInt(env.CASKFS_WEBAPP_PREVIEW_THRESHOLD_IMAGE) || 1024 * 1024 * 5, // 5mb
+    previewThresholdText : parseInt(env.CASKFS_WEBAPP_PREVIEW_THRESHOLD_TEXT) || 1024 * 10, // 10kb
+    previewRangeSize : parseInt(env.CASKFS_WEBAPP_PREVIEW_RANGE_SIZE) || 1024 * 10, // 10kb
   },
 
   cloudStorage : {

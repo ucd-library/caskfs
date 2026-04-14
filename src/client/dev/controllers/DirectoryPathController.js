@@ -1,15 +1,17 @@
 import { Registry, getLogger } from '@ucd-lib/cork-app-utils';
 import AppComponentController from './AppComponentController.js';
 import appUrlUtils from '../utils/appUrlUtils.js';
+import controllerUtils from '../utils/controllerUtils.js';
 
 export default class DirectoryPathController {
 
-  constructor(host){
+  constructor(host, opts = {}) {
     this.host = host;
-    host.addController(this);
+    controllerUtils.addController(host, this);
     this.AppStateModel = Registry.getModel('AppStateModel');
     this.appComponentController = new AppComponentController(host);
     this.logger = getLogger('DirectoryPathController');
+    this.alwaysSyncOnAppStateUpdate = opts.alwaysSyncOnAppStateUpdate || false;
 
     this.pathPrefix = {
       'directory': appUrlUtils.fullPath('directory', {returnArray: true}),
@@ -35,6 +37,11 @@ export default class DirectoryPathController {
 
   get emptyOrRoot(){
     return this.path.length <= 1;
+  }
+
+  get parentPath(){
+    if ( this.path.length <= 1 ) return null;
+    return '/' + this.path.slice(1, -1).join('/');
   }
 
   /**
@@ -132,7 +139,7 @@ export default class DirectoryPathController {
     this.updateComplete = Promise.all([Promise.resolve(), deferred]).then(() => undefined);
 
     try {
-      if ( !this.appComponentController.isOnActivePage ) {
+      if ( !this.appComponentController.isOnActivePage && !this.alwaysSyncOnAppStateUpdate ) {
         return;
       }
       this.syncState(e);

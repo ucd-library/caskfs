@@ -1,4 +1,5 @@
 import { styleMap } from 'lit/directives/style-map.js';
+import controllerUtils from '../utils/controllerUtils.js';
 
 /**
  * @typedef {Object} DropdownControllerOptions
@@ -22,7 +23,7 @@ export default class DropdownController {
 
   constructor(host, opts={}) {
     this.host = host;
-    host.addController(this);
+    controllerUtils.addController(host, this);
 
     this._open = false;
 
@@ -86,9 +87,17 @@ export default class DropdownController {
     this.open = false;
   }
 
-  _onHostFocusOut(){
+  _onHostFocusOut(e){
     setTimeout(() => {
-      if ( !this.host.renderRoot.activeElement ) {
+
+      const getDeepActiveElement = () => {
+        let el = document.activeElement;
+        while (el?.shadowRoot?.activeElement) {
+          el = el.shadowRoot.activeElement;
+        }
+        return el;
+      }
+      if (!this.host.contains(getDeepActiveElement())) {
         this.open = false;
       }
     }, this.hostFocusOutTime);
