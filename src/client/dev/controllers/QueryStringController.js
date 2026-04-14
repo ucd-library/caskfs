@@ -7,6 +7,8 @@ import controllerUtils from '../utils/controllerUtils.js';
  */
 export default class QueryStringController {
 
+  static get controllerType() { return 'QueryStringController'; }
+
   constructor(host, opts={}){
     this.types = opts.types || {};
     this.pageSize = opts.pageSize || 20;
