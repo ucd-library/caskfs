@@ -158,14 +158,53 @@ router.get(/(.*)/, async (req, res) => {
   }
 });
 
+function getWriteOptions(req) {
+  let opts = {
+    filePath: req.params[0],
+  }
+
+  if (req.query.mimeType) {
+    opts.mimeType = req.query.mimeType;
+  }
+  if( req.get('x-cask-hash') ) {
+    opts.hash = req.get('x-cask-hash');
+  } else {
+    opts.readStream = req;
+  }
+
+  if (req.method === 'PUT') {
+    opts.replace = true;
+  }
+  return opts;
+}
+
 // only allow new file
-router.post(/(.*)/, (req, res) => {
-  res.status(404).json({ error: 'Not Found' });
+router.post(/(.*)/, async (req, res) => {
+  try {
+    let opts = getWriteOptions(req);
+    let result = await caskFs.write(opts);
+    res.status(201).json({
+      filePath: result.data.filePath,
+      actions: result.data.actions
+    });
+  } catch (e) {
+    return handleError(res, req, e);
+  }
 });
 
 // allow upsert via put
-router.put(/(.*)/, (req, res) => {
-  res.status(404).json({ error: 'Not Found' });
+router.put(/(.*)/, async (req, res) => {
+  try {
+    let opts = getWriteOptions(req);
+
+    let result = await caskFs.write(opts);
+    res.status(201).json({
+      filePath: result.data.filePath,
+      actions: result.data.actions
+    });
+  } catch (e) {
+    return handleError(res, req, e);
+  }
 });
 
 // metadata updates via patch

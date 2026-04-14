@@ -8,7 +8,6 @@ import AppComponentController from '../../controllers/AppComponentController.js'
 import ScrollController from '../../controllers/ScrollController.js';
 
 import '../components/caskfs-delete-form.js';
-import '../components/caskfs-file-preview.js';
 
 export default class CaskfsPageFileSingle extends Mixin(LitElement)
   .with(LitCorkUtils, MainDomElement) {
@@ -38,7 +37,7 @@ export default class CaskfsPageFileSingle extends Mixin(LitElement)
     this._injectModel('AppStateModel', 'FsModel');
   }
 
-  async _onAppStateUpdate(e) {
+  async _onAppStateUpdate() {
     if ( !this.ctl.appComponent.isOnActivePage ) return;
     await this.getMetadata();
     this.ctl.scroll.scrollToTop();
@@ -59,17 +58,6 @@ export default class CaskfsPageFileSingle extends Mixin(LitElement)
           .items=${{filepath: this.ctl.directoryPath.pathname}} 
           .successLocation=${this.ctl.directoryPath.breadcrumbParent?.url}>
         </caskfs-delete-form>`
-    });
-  }
-
-  _onDisplayFileClick(){
-    this.AppStateModel.showDialogModal({
-      title: this.data.filename,
-      fullWidth: true,
-      content: () => html`
-        <caskfs-file-preview
-          filepath=${this.ctl.directoryPath.pathname}
-        ></caskfs-file-preview>`
     });
   }
 

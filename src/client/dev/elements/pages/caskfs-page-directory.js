@@ -3,12 +3,17 @@ import {render, styles} from "./caskfs-page-directory.tpl.js";
 import { LitCorkUtils, Mixin } from '@ucd-lib/cork-app-utils';
 import { MainDomElement } from "@ucd-lib/theme-elements/utils/mixins/main-dom-element.js";
 
+import uploadUtils from '../../utils/uploadUtils.js';
+import DirectoryPathController from '../../controllers/DirectoryPathController.js';
+
 export default class CaskfsPageDirectory extends Mixin(LitElement)
   .with(LitCorkUtils, MainDomElement) {
 
   static get properties() {
     return {
-      
+      dragging: { type: Boolean },
+      dragZoneHeight: { type: Number },
+      dragZonePaddingTop: { type: Number },
     }
   }
 
@@ -19,6 +24,42 @@ export default class CaskfsPageDirectory extends Mixin(LitElement)
   constructor() {
     super();
     this.render = render.bind(this);
+    this.dragging = false;
+    this.dragZoneHeight = 200;
+    this.dragZonePaddingTop = 0;
+
+    this.ctl = { 
+      directoryPath: new DirectoryPathController(this)
+    }
+
+    this._injectModel('FsModel');
+  }
+
+  /**
+   * @description Handle dragover event on page. Used to upload files
+   * @param {*} e 
+   */
+  _onDragOver(e) {
+    e.preventDefault();
+    const rect = this.getBoundingClientRect();
+    this.dragZoneHeight = Math.round(window.innerHeight - rect.top);
+    this.dragZonePaddingTop = Math.round(Math.max(0, -rect.top));
+    this.dragging = true;
+  }
+
+  /**
+   * @description Handle dragleave event on page.
+   */
+  _onDragLeave(e) {
+    if (this.contains(e.relatedTarget)) return;
+    this.dragging = false;
+  }
+
+  async _onDrop(e) {
+    e.preventDefault();
+    this.dragging = false;
+    const files = await uploadUtils.getFilesFromDragEvent(e);
+    this.FsModel.upload(files, this.ctl.directoryPath.pathname);
   }
 
 }

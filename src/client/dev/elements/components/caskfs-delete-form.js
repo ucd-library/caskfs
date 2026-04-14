@@ -105,7 +105,7 @@ export default class CaskfsDeleteForm extends Mixin(LitElement)
       if ( this.successLocation ) {
         this.AppStateModel.setLocation(this.successLocation);
       } else {
-        this.AppStateModel.refresh();
+        this.AppStateModel.refresh({ scrollToLastPosition: true });
       }
     }
 

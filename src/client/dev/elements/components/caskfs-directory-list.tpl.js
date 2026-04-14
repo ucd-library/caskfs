@@ -76,19 +76,19 @@ export function render() {
         </caskfs-fs-typeahead>
       </div>
       <div>
-        <div ?hidden=${!this.contents.length}>
+        <div ?hidden=${!this.ctl.directoryList.contents.length}>
           <div>
-            <caskfs-fs-items .items=${this.contents.map(item => item.data)}></caskfs-fs-items>
+            <caskfs-fs-items .items=${this.ctl.directoryList.contents.map(item => item.data)}></caskfs-fs-items>
           </div>
           <ucd-theme-pagination
             current-page=${this.ctl.qs.query.page || 1}
-            max-pages=${this.totalPages}
+            max-pages=${this.ctl.directoryList.totalPages}
             ellipses
             xs-screen
             @page-change=${this._onPageChange}
           ></ucd-theme-pagination>
         </div>
-        <div ?hidden=${this.contents.length} class='no-contents'>
+        <div ?hidden=${this.ctl.directoryList.contents.length} class='no-contents'>
           <cork-icon icon="fas.circle-exclamation" class='primary'></cork-icon>
           <div>This directory is empty</div>
         </div>

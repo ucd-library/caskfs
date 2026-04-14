@@ -1,4 +1,5 @@
 import { Registry } from '@ucd-lib/cork-app-utils';
+import controllerUtils from '../utils/controllerUtils.js';
 
 const SCROLL_STATE = {
   scrollY: 0,
@@ -16,7 +17,7 @@ export default class ScrollController {
   constructor(host, opts={}){
     this.host = host;
     this.opts = opts;
-    host.addController(this);
+    controllerUtils.addController(host, this);
     this.AppStateModel = Registry.getModel('AppStateModel');
   }
 
@@ -70,6 +71,14 @@ export default class ScrollController {
    */
   scrollToTop(){
     window.scrollTo(0,0);
+  }
+
+  /**
+   * @description Scroll to a specific Y position
+   * @param {number} y 
+   */
+  scrollToY(y){
+    window.scrollTo(0, y);
   }
 
   /**

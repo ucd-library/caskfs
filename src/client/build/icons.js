@@ -20,7 +20,8 @@ export function buildIconsets(){
         'diagram-project', 'arrow-up-right-from-square', 'layer-group',
         'fingerprint', 'right-from-bracket', 'right-to-bracket',
         'arrows-to-circle', 'copy', 'eye', 'plus', 'crosshairs',
-        'code', 'arrow-right'
+        'code', 'arrow-right', 'circle-check', 'bars-progress',
+        'circle-notch', 'circle-chevron-right', 'download'
       ]
     }, 
     { name: 'ucdlib-core', 

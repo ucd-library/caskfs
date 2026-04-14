@@ -3,6 +3,7 @@ import DirectoryStore from '../stores/DirectoryStore.js';
 
 import payload from '../utils/payload.js';
 import appUrlUtils from '../../client/dev/utils/appUrlUtils.js';
+import serviceUtils from '../utils/serviceUtils.js';
 
 class DirectoryService extends BaseService {
 
@@ -20,23 +21,10 @@ class DirectoryService extends BaseService {
     let id = payload.getKey(ido);
     const store = this.store.data.list;
 
-    const appStateOptions = {
-      errorSettings: {message: 'Unable to list directory contents'}
-    }
-
-    if ( modelAppStateOptions.errorSettings ) {
-      appStateOptions.errorSettings = {
-        ...appStateOptions.errorSettings,
-        ...modelAppStateOptions.errorSettings
-      };
-    }
-
-    if ( modelAppStateOptions.loaderSettings ){
-      appStateOptions.loaderSettings = {
-        ...appStateOptions.loaderSettings,
-        ...modelAppStateOptions.loaderSettings
-      };
-    }
+    const appStateOptions = serviceUtils.mergeAppStateOptions(
+      { errorSettings: {message: 'Unable to list directory contents'} },
+      modelAppStateOptions
+    );
 
     await this.checkRequesting(
       id, store,

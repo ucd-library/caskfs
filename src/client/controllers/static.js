@@ -42,7 +42,10 @@ export default (app) => {
       next({
         routes,
         title: appTitle,
-        basePath
+        basePath,
+        previewThresholdImage : config.webapp.previewThresholdImage,
+        previewThresholdText : config.webapp.previewThresholdText,
+        previewRangeSize : config.webapp.previewRangeSize
       });
     },
 
