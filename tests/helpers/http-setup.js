@@ -50,8 +50,7 @@ export async function setup() {
 
   // CaskFs constructor sets config.rootDir = testRootDir, so the controller singleton
   // will use this same path when it calls diskPath() during request handling.
-  await caskFs.dbClient.powerWash();
-  await caskFs.dbClient.init();
+  await caskFs.powerWash();
 
   const { caskRouter } = await import('../../src/client/index.js');
 
@@ -79,7 +78,7 @@ export async function teardown() {
     server = null;
   }
   if (caskFs) {
-    await caskFs.dbClient.powerWash();
+    await caskFs.powerWash();
     await caskFs.dbClient.end();
   }
   if (testRootDir) {

@@ -72,6 +72,8 @@ class Directory {
       return parentId;
     }
 
+    let created = false;
+
     for (let part of parts) {
       let fullPath = path.posix.join(currentPath, part);
 
@@ -92,6 +94,7 @@ class Directory {
       );
       parentId = res.rows[0].directory_id;
       currentPath = fullPath;
+      created = true;
 
       // if we don't have a rootAcl yet, check if the root directory has one
       if( !rootAcl ) {

@@ -1,6 +1,6 @@
 import { Command } from 'commander';
-import CaskFs from '../index.js';
 import {optsWrapper, handleGlobalOpts} from './opts-wrapper.js';
+import { getClient, endClient, assertDirectPg } from './lib/client.js';
 import cliProgress from 'cli-progress';
 
 const program = new Command();
@@ -11,27 +11,30 @@ const types = ['bucket', 'partition'];
 program
   .command('test <type> <file-path>')
   .description(`Test auto-path extraction for a given file path. Type is either; ${types.join(', ')}`)
-  .action(async (type, filePath) => {
-    handleGlobalOpts({});
+  .action(async (type, filePath, options={}) => {
+    handleGlobalOpts(options);
+    const cask = getClient(options);
+    assertDirectPg(cask, 'auto-path test');
 
-    const cask = new CaskFs();
     if (!types.includes(type)) {
       console.error(`Invalid type "${type}". Must be one of: ${types.join(', ')}`);
-      cask.dbClient.end();
+      await endClient(cask);
       return;
     }
     console.log(await cask.autoPath[type].getFromPath(filePath));
-    cask.dbClient.end();
+    await endClient(cask);
   });
+
 program
   .command('load <file-path>')
   .description('Load auto-path rules from a JSON file')
-  .action(async (filePath) => {
-    handleGlobalOpts({});
+  .action(async (filePath, options={}) => {
+    handleGlobalOpts(options);
+    const cask = getClient(options);
+    assertDirectPg(cask, 'auto-path load');
 
-    const cask = new CaskFs();
     await cask.loadAutoPathRulesFromFile(filePath);
-    cask.dbClient.end();
+    await endClient(cask);
   });
 
 program
@@ -44,6 +47,8 @@ program
   .description('Set an auto-partition rule for extracting partition keys from file paths')
   .action(async (type, name, options) => {
     handleGlobalOpts(options);
+    const cask = getClient(options);
+    assertDirectPg(cask, 'auto-path set');
 
     if( !options.position && !options.filterRegex ) {
       console.error('Either --position or --filter-regex is required');
@@ -57,19 +62,17 @@ program
       getValue: options.getValue
     };
 
-    const cask = new CaskFs();
-
     if( Object.keys(cask.autoPath).indexOf(type) === -1 ) {
       console.error(`Invalid type "${type}". Must be one of: ${types.join(', ')}`);
-      cask.dbClient.end();
+      await endClient(cask);
       return;
     }
 
-    let pbar; 
+    let pbar;
     opts.cb = ({total, completed}) => {
       if( !pbar ) {
         pbar = new cliProgress.Bar(
-          {etaBuffer: 50}, 
+          {etaBuffer: 50},
           cliProgress.Presets.shades_classic
         );
         pbar.start(total, completed);
@@ -80,7 +83,7 @@ program
     };
 
     await cask.autoPath[type].set(opts);
-    await cask.dbClient.end();
+    await endClient(cask);
 
     console.log('Auto-path rule set successfully');
   });
@@ -90,34 +93,35 @@ program
   .argument('<type>', `Type of auto-path rule to remove. Must be one of: ${types.join(', ')}`)
   .argument('<name>', 'Name of the auto-path rule to remove')
   .description('Remove an auto-path rule')
-  .action(async (type, name) => {
-    handleGlobalOpts({});
+  .action(async (type, name, options={}) => {
+    handleGlobalOpts(options);
 
     if (!types.includes(type)) {
       console.error(`Invalid type "${type}". Must be one of: ${types.join(', ')}`);
-      cask.dbClient.end();
       return;
     }
 
-    const cask = new CaskFs();
+    const cask = getClient(options);
+    assertDirectPg(cask, 'auto-path remove');
     await cask.autoPath[type].remove(name);
-    cask.dbClient.end();
+    await endClient(cask);
   });
 
 program
   .command('list <type>')
   .description(`List all auto-path rules of a given type. Type is either; ${types.join(', ')}`)
-  .action(async (type) => {
-    handleGlobalOpts({});
+  .action(async (type, options={}) => {
+    handleGlobalOpts(options);
+    const cask = getClient(options);
+    assertDirectPg(cask, 'auto-path list');
 
-    const cask = new CaskFs();
     if (!types.includes(type)) {
       console.error(`Invalid type "${type}". Must be one of: ${types.join(', ')}`);
-      cask.dbClient.end();
+      await endClient(cask);
       return;
     }
     console.table(await cask.autoPath[type].getConfig(true));
-    cask.dbClient.end();
+    await endClient(cask);
   });
 
 program.parse(process.argv);

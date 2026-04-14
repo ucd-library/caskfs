@@ -1,4 +1,7 @@
 import assert from 'assert';
+import os from 'os';
+import path from 'path';
+import fs from 'fs/promises';
 import { setup, teardown } from './helpers/http-setup.js';
 
 // Content is 28 bytes:
@@ -142,4 +145,74 @@ describe('HTTP File Read Endpoint', () => {
       assert.strictEqual(await res.text(), 'Support!');
     });
   });
+});
+
+// ---------------------------------------------------------------------------
+// Transfer (import / export) endpoint tests
+// ---------------------------------------------------------------------------
+
+const TRANSFER_FILES = [
+  { path: '/transfer-test/a.txt',     content: 'alpha' },
+  { path: '/transfer-test/b.txt',     content: 'beta'  },
+  { path: '/transfer-test/sub/c.txt', content: 'gamma' },
+];
+
+describe('HTTP Transfer Endpoints', () => {
+  let caskFs, baseUrl, tmpDir, exportFile;
+
+  before(async () => {
+    ({ caskFs, baseUrl } = await setup());
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'caskfs-transfer-test-'));
+    exportFile = path.join(tmpDir, 'test-export.tar.gz');
+
+    for (const f of TRANSFER_FILES) {
+      await caskFs.write({
+        filePath: f.path,
+        data: Buffer.from(f.content),
+        requestor: 'test-user',
+        ignoreAcl: true,
+      });
+    }
+  });
+
+  after(async () => {
+    await teardown();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  describe('GET /transfer/export', () => {
+    it('should return 400 when rootDir is missing', async () => {
+      const res = await fetch(`${baseUrl}/transfer/export`);
+      assert.strictEqual(res.status, 400);
+    });
+
+    it('should return 200 with content-type application/gzip', async () => {
+      const res = await fetch(`${baseUrl}/transfer/export?rootDir=/transfer-test`);
+      assert.strictEqual(res.status, 200);
+      assert.ok(
+        res.headers.get('content-type').includes('application/gzip'),
+        `expected application/gzip, got: ${res.headers.get('content-type')}`
+      );
+    });
+
+    it('should include a content-disposition header with a .tar.gz filename', async () => {
+      const res = await fetch(`${baseUrl}/transfer/export?rootDir=/transfer-test`);
+      const cd = res.headers.get('content-disposition') || '';
+      assert.ok(cd.includes('.tar.gz'), `expected .tar.gz in content-disposition: ${cd}`);
+    });
+
+    it('should stream a non-empty archive body', async () => {
+      const res = await fetch(`${baseUrl}/transfer/export?rootDir=/transfer-test`);
+      const buf = Buffer.from(await res.arrayBuffer());
+      assert.ok(buf.length > 0, 'archive body should not be empty');
+
+      // gzip magic bytes: 0x1f 0x8b
+      assert.strictEqual(buf[0], 0x1f, 'first byte should be 0x1f (gzip magic)');
+      assert.strictEqual(buf[1], 0x8b, 'second byte should be 0x8b (gzip magic)');
+
+      // Save for the import tests below
+      await fs.writeFile(exportFile, buf);
+    });
+  });
+
 });

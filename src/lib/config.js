@@ -86,16 +86,45 @@ const config = {
     enabled : (env.CASKFS_ACL_ENABLED !== 'false'),
     defaultRequestor : env.CASKFS_ACL_DEFAULT_REQUESTOR, // mostly used for internal scripts / integration tests
     adminRole : env.CASKFS_ACL_ADMIN_ROLE || 'admin',
+    superAdminUser : env.CASKFS_ACL_SUPER_ADMIN_USER || 'admin',
     enabledCache : (env.CASKFS_ACL_ENABLED_CACHE === 'true'),
     cacheTTL : parseInt(env.CASKFS_ACL_CACHE_TTL) || 10 // seconds
   },
 
   sync : {
+    defaultBatchSize : parseInt(env.CASKFS_SYNC_DEFAULT_BATCH_SIZE) || 100,
     maxFilesPerBatch : parseInt(env.CASKFS_SYNC_MAX_FILES_PER_BATCH) || 1000
+  },
+
+  cp : {
+    workers : parseInt(env.CASKFS_CP_WORKERS) || 3,
   },
 
   git : {
     metadataProperties : ['remote', 'branch', 'commit', 'tag', 'lastCommitTime']
+  },
+
+  oidc : {
+    url      : env.CASKFS_OIDC_URL       || null,
+    clientId : env.CASKFS_OIDC_CLIENT_ID || 'caskfs-cli',
+  },
+
+  headerAuth : {
+    // When enabled, the server trusts an upstream proxy to populate x-user with
+    // a JSON object describing the authenticated user. Only enable this behind a
+    // gateway that sets the header — never expose it directly to the internet.
+    enabled    : env.CASKFS_HEADER_AUTH_ENABLED === 'true',
+    header     : env.CASKFS_HEADER_AUTH_HEADER || 'x-user',
+
+    // Comma-separated list of dot-notation paths to try in order for the username.
+    // The first path that resolves to a non-null value is used.
+    userPaths  : (env.CASKFS_HEADER_AUTH_USER_PATHS  || 'username,name,sub')
+      .split(',').map(s => s.trim()).filter(Boolean),
+
+    // Comma-separated list of dot-notation paths to try in order for the roles.
+    // A string value is promoted to a single-element array automatically.
+    rolesPaths : (env.CASKFS_HEADER_AUTH_ROLES_PATHS || 'roles,groups')
+      .split(',').map(s => s.trim()).filter(Boolean),
   }
 
 }

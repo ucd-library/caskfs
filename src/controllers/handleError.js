@@ -3,7 +3,7 @@ import { MissingResourceError, AclAccessError } from '../lib/errors.js';
 import { ApiValidationError } from './validate.js';
 
 function handleError(res, req, error, details) {
-  logger.error('Error in request', {error, corkTraceId: req.corkTraceId});
+  // logger.error('Error in request', {error, corkTraceId: req.corkTraceId});
 
   if ( error instanceof MissingResourceError ) {
     return res.status(404).json({ error: error.message });

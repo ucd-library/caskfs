@@ -4,6 +4,7 @@ import apiRoutes from '../controllers/index.js';
 import staticRoutes from './controllers/static.js';
 import logger from './logger.js';
 import {logReqMiddleware} from '@ucd-lib/logger';
+import headerAuthMiddleware from '../lib/middleware/header-auth.js';
 
 /**
  * @function caskRouter
@@ -28,6 +29,11 @@ function caskRouter(opts = {}) {
   if ( opts.logRequests ) {
     router.use(logReqMiddleware(logger));
   }
+
+  if ( config.headerAuth.enabled ) {
+    router.use(headerAuthMiddleware);
+  }
+
   router.use('/api', apiRoutes);
 
   if ( !opts.disableWebApp ) {
@@ -57,6 +63,12 @@ function startServer(opts = {}) {
   const logRequests = opts.logRequests === undefined ? true : opts.logRequests;
 
   app.use(basepath, caskRouter({ disableWebApp, logRequests }));
+
+  if ( config.headerAuth.enabled ) {
+    logger.warn('Header auth is ENABLED — the server will trust user identity from the '
+      + `"${config.headerAuth.header}" request header without verification. `
+      + 'Only use this behind a trusted reverse proxy or API gateway.');
+  }
 
   app.listen(port, () => {
     logger.info(`CaskFs web application running on port ${port}`);

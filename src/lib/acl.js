@@ -1,6 +1,7 @@
 import { getLogger } from './logger.js';
 import { AclAccessError } from './errors.js';
 import config from './config.js';
+import path from 'path';
 
 class AclCache {
 
@@ -64,6 +65,7 @@ class Acl {
     this.logger = getLogger('acl');
     this.enabled = config.acl.enabled !== undefined ? config.acl.enabled : false;
     this.cache = new AclCache();
+    this.ALLOWED_PERMISSIONS = new Set(['read', 'write', 'admin']);
   }
 
   /**
@@ -130,6 +132,8 @@ class Acl {
 
     if( !opts.requestor ) return false;
 
+    if( opts.requestor === config.acl.superAdminUser ) return true;
+
     let cached = this.cache.getUserRole(opts.requestor, role);
     if( cached !== null ) return cached;
 
@@ -164,24 +168,17 @@ class Acl {
       throw new Error('filePath, permission and dbClient are required');
     }
 
-    let cached = this.cache.getDirPermissions(opts.requestor || 'PUBLIC', filePath, permission);
-    if( cached !== null ) return cached;
-
-    let permissionFilter;
-    if( !opts.requestor ) {
-      // cheat and only allow read access for public if no user is provided
-      if( permission !== 'read' ) return false;
-      permissionFilter = `can_read = true`;
-    } else if( permission === 'read' ) {
-      permissionFilter = `can_read = true`;
-    } else if( permission === 'write' ) {
-      permissionFilter = `can_write = true`;
-    } else if( permission === 'admin' ) {
-      permissionFilter = `is_admin = true`;
-    } else {
+    if( !this.ALLOWED_PERMISSIONS.has(permission) ) {
       throw new AclAccessError('Invalid permission', opts.requestor, filePath, permission);
     }
 
+    let cached = this.cache.getDirPermissions(opts.requestor || 'PUBLIC', filePath, permission);
+    if( cached !== null ) return cached;
+
+    if( !opts.requestor ) {
+      // cheat and only allow read access for public if no user is provided
+      if( permission !== 'read' ) return false;
+    }
     let args = [filePath];
 
     // handle user being null (public access)
@@ -196,6 +193,7 @@ class Acl {
         SELECT user_id FROM ${config.database.schema}.acl_user WHERE name = $2
       )`);
       userSelectQuery = 'user_id = (SELECT user_id FROM acluser)';
+      // userSelectQuery = '(user_id = (SELECT user_id FROM acluser) OR user_id IS NULL)';
       args.push(user);
     }
 
@@ -234,13 +232,18 @@ class Acl {
 
     let resp = await dbClient.query(`
       WITH ${withQueries.join(', ')}
-      SELECT * from ${config.database.schema}.directory_user_permissions_lookup
-      WHERE directory_id = (SELECT directory_id FROM dir)
-      AND ${userSelectQuery}
-      AND ${permissionFilter}
-      `, args);
+      SELECT * FROM ${config.database.schema}.has_permission(
+        (SELECT directory_id FROM dir)::UUID,
+        '${permission}',
+        ${user ? `(SELECT user_id FROM acluser)::UUID` : 'NULL'}
+      )
+    `, args);
 
-    let value = resp.rows.length > 0;
+    let value = false;
+    if( resp.rows.length > 0 ) {
+      value = resp.rows[0].has_permission;
+    }
+
     this.cache.setDirPermissions(opts.requestor || 'PUBLIC', filePath, permission, value);
     return value;
   }
@@ -778,25 +781,23 @@ class Acl {
     }
   }
 
-  /**
-   * @method refreshLookupTable
-   * @description Refresh the directory_user_permissions_lookup materialized view.
-   * This should be run after any changes to ACLs or permissions.  The view is used
-   * for permission checks and is refreshed concurrently to avoid locking but is required
-   * to ensure all query ACL checks are up to date.
-   *
-   * @param {Object} opts
-   * @param {Object} opts.dbClient Required. database client instance
-   * 
-   * @returns {Promise<void>}
-   */
-  refreshLookupTable(opts={}) {
-    let { dbClient } = opts;
-    if( !dbClient ) {
-      throw new Error('dbClient is required');
-    }
-
-    return dbClient.query(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${config.database.schema}.directory_user_permissions_lookup`);
+  async dumpAclState(dbClient, directory='/writable') {
+    const roles = await dbClient.query(
+      "SELECT * FROM caskfs.acl_user_roles_view ORDER BY \"user\", role"
+    );
+    const perms = await dbClient.query(
+      "SELECT directory, \"user\", can_read, can_write, is_admin, acl_root_directory " +
+      "FROM caskfs.directory_user_permissions_by_permission " +
+      "WHERE directory LIKE $1 ORDER BY directory, \"user\"",
+      [directory + '%']
+    );
+    const files = await dbClient.query(
+      "SELECT directory_id, directory, file_id, filename FROM caskfs.file_view WHERE directory = $1 ORDER BY filename",
+      [directory]
+    );
+    console.table(roles.rows);
+    console.table(perms.rows);
+    console.table(files.rows);
   }
 
 }

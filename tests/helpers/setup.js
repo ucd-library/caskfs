@@ -41,15 +41,14 @@ export async function setup() {
   });
 
   // Drop and re-create the schema for a clean slate
-  await caskFs.dbClient.powerWash();
-  await caskFs.dbClient.init();
+  await caskFs.powerWash();
 
   return caskFs;
 }
 
 export async function teardown() {
   if (caskFs) {
-    await caskFs.dbClient.powerWash();
+    await caskFs.powerWash();
     await caskFs.dbClient.end();
   }
   if (testRootDir) {

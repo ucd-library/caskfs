@@ -3,7 +3,9 @@
 import { Command } from 'commander';
 import fs from 'fs/promises';
 import fsSync from 'fs';
-import CaskFs from '../index.js';
+import readline from 'readline';
+import FileProcessor from './lib/file-processor.js';
+import { buildGitMetadata, dirExt, crawlLocal, recursiveCaskLs } from './lib/cp-utils.js';
 import {createContext} from '../lib/context.js';
 import {silenceLoggers} from '../lib/logger.js';
 import path from 'path';
@@ -13,7 +15,8 @@ import git from '../lib/git.js';
 import {parse as parseYaml} from 'yaml';
 import {optsWrapper, handleGlobalOpts} from './opts-wrapper.js';
 import cliProgress from 'cli-progress';
-import printLogo from './print-logo.js';
+import printLogo, { printConnection } from './print-logo.js';
+import { getClient, endClient, assertDirectPg } from './lib/client.js';
 import { fileURLToPath } from 'url';
 
 
@@ -28,23 +31,36 @@ optsWrapper(program)
 // set default requestor to current user if not set
 config.acl.defaultRequestor = os.userInfo().username;
 
+/**
+ * @function confirm
+ * @description Prompt the user for a yes/no answer; resolves true for yes.
+ * @param {String} question
+ * @returns {Promise<Boolean>}
+ */
+function confirm(question) {
+  return new Promise(resolve => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(`${question} (yes/no): `, answer => {
+      rl.close();
+      resolve(answer.trim().toLowerCase().startsWith('y'));
+    });
+  });
+}
+
 program
   .name('CaskFs')
-  // .option('-V, --version', 'show version')
   .action(async () => {
-
-    let versionInfo = pkg.version;
-    try {
-      let latest = await getLatestVersion();
-      if( latest !== versionInfo ) {
-        versionInfo = `${versionInfo} (latest: ${colors.green(latest)}. Run '${colors.yellow(`npm install -g @ucd-lib/caskfs@${latest}`)}' to update)`;
-      } else {
-        versionInfo += colors.green(' (latest)');
-      }
-    } catch(e) {}
-
-
     printLogo(pkg);
+  });
+
+program
+  .command('info')
+  .description('Show active connection and CaskFS version')
+  .action(async (options) => {
+    handleGlobalOpts(options);
+    printLogo(pkg);
+    console.log('');
+    printConnection(options.environment);
   });
 
 program
@@ -58,9 +74,8 @@ program
   .description('Write a file')
   .action(async (filePath, options) => {
     let opts = {};
-    const cask = new CaskFs();
-
     handleGlobalOpts(options);
+    const cask = getClient(options);
 
     if (options.dataFile === '-') {
       opts.readStream = process.stdin;
@@ -90,162 +105,358 @@ program
 
     await cask.write(opts);
 
-    cask.dbClient.end();
+    await endClient(cask);
   });
 
 program
   .command('cp <source-path> <dest-path>')
-  .description('Copy a file or directory into the CaskFS. If source-path is a directory, all files in the directory will be copied recursively.')
-  .option('-x, --replace', 'Replace the file if it already exists', false)
+  .description('Copy files between local disk and CaskFS. Prefix source with "cask:" to download from CaskFS.')
+  .option('-x, --replace', 'Replace files if they already exist', false)
   .option('-d, --dry-run', 'Show what would be copied without actually copying', false)
   .option('-b, --bucket <bucket>', 'Target bucket when copying to GCS')
+  .option('-y, --yes', 'Skip the confirmation prompt', false)
   .action(async (sourcePath, destPath, options) => {
     silenceLoggers();
-    
     handleGlobalOpts(options);
-    
-    if( !path.isAbsolute(sourcePath) ) {
-      sourcePath = path.resolve(process.cwd(), sourcePath);
-    }
+    const cask = getClient(options);
 
-    if( options.dryRun ) {
-      console.log(`****
-* Dry run mode, no files will be copied
-****\n`);
-    }
-
-    let stats = {
-      fileTypes : {
-        linkedData: 0,
-        binary : 0
-      },
-      insertedFiles : 0,
-      replacedFiles : 0,
-      updatedMetadata : 0,
-      parsedLinkedData : 0,
-      casWrites : 0,
-      casDeletes : 0
-    };
-
-    const cask = new CaskFs();
-    let location;
-
-    // is the source path a file or directory?
-    let stat = await fs.stat(sourcePath);
-    let git;
-    if( !stat.isDirectory() ) {
-      destPath = path.resolve(destPath, path.basename(sourcePath));
-
-      try {
-        git = await git.info(sourcePath);
-      } catch(e) {}
-      
-      let context = createContext({
-        filePath: destPath,
-        requestor: options.requestor,
-        bucket: options.bucket,
-        readPath: sourcePath,
-        replace: options.replace,
-        git
-      });
-      
-      location = await cask.getCasLocation(context);
-      console.log(`Copying file ${sourcePath} to (${location}) ${destPath}`);
-      if( !options.dryRun ) {
-        await cask.write(context);
+    // ── CaskFS → local ───────────────────────────────────────────────────────
+    if (sourcePath.startsWith('cask:')) {
+      const caskSrc = sourcePath.slice('cask:'.length);
+      let localDest = destPath;
+      if (!path.isAbsolute(localDest)) {
+        localDest = path.resolve(process.cwd(), localDest);
       }
-      cask.dbClient.end();
+
+      // Determine if caskSrc is itself a file (single file or virtual dir).
+      // Check metadata BEFORE calling recursiveCaskLs: in HTTP mode, ls on a
+      // plain file path returns 409 and throws, so we must detect the file case
+      // first and only call ls when we know the source is a directory or virtual dir.
+      let srcIsFile = false;
+      try {
+        await cask.metadata({ filePath: caskSrc, requestor: options.requestor });
+        srcIsFile = true;
+      } catch(e) {}
+
+      // List children. For plain files, ls may throw in HTTP mode (409), so
+      // wrap in try-catch. For directories and virtual dirs, ls returns results.
+      let childFiles = [];
+      try {
+        childFiles = await recursiveCaskLs(cask, caskSrc, { requestor: options.requestor });
+      } catch(e) {}
+
+      // ── single file download ───────────────────────────────────────────────
+      if (srcIsFile && childFiles.length === 0) {
+        let localPath;
+        try {
+          const s = await fs.stat(localDest);
+          localPath = s.isDirectory()
+            ? path.join(localDest, path.posix.basename(caskSrc))
+            : localDest;
+        } catch(e) {
+          localPath = localDest;
+        }
+
+        console.log(`Downloading cask:${caskSrc} → ${localPath}`);
+        if (!options.dryRun) {
+          const buf = await cask.read({ filePath: caskSrc, requestor: options.requestor });
+          await fs.mkdir(path.dirname(localPath), { recursive: true });
+          await fs.writeFile(localPath, buf);
+        }
+        await endClient(cask);
+        return;
+      }
+
+      // ── directory / virtual-dir download ──────────────────────────────────
+      let allCaskFiles;
+      if (srcIsFile) {
+        // Virtual dir: the file at caskSrc + all its children
+        allCaskFiles = [
+          { filepath: caskSrc, filename: path.posix.basename(caskSrc), directory: path.posix.dirname(caskSrc) },
+          ...childFiles,
+        ];
+      } else {
+        allCaskFiles = childFiles;
+      }
+
+      if (allCaskFiles.length === 0) {
+        console.error(`Nothing found at cask:${caskSrc}`);
+        process.exit(1);
+      }
+
+      // Detect virtual dirs: files whose path is a prefix of another file's path
+      const filePaths    = allCaskFiles.map(f => f.filepath);
+      const virtualDirSet = new Set();
+      for (let i = 0; i < filePaths.length; i++) {
+        for (let j = 0; j < filePaths.length; j++) {
+          if (i !== j && filePaths[j].startsWith(filePaths[i] + '/')) {
+            virtualDirSet.add(filePaths[i]);
+            break;
+          }
+        }
+      }
+
+      // Root used for computing relative paths on local disk
+      const caskRoot = srcIsFile ? path.posix.dirname(caskSrc) : caskSrc;
+
+      const downloads = allCaskFiles.map(f => {
+        const rel  = path.posix.relative(caskRoot, f.filepath);
+        let localPath = path.join(localDest, rel);
+        if (virtualDirSet.has(f.filepath)) {
+          const ext = dirExt(path.posix.basename(f.filepath));
+          localPath = path.join(localPath, '__file__' + ext);
+        }
+        return { caskPath: f.filepath, localPath };
+      });
+
+      const totalFiles = downloads.length;
+      console.log('');
+      console.log(`  Source      : cask:${caskSrc}`);
+      console.log(`  Destination : ${localDest}`);
+      console.log(`  Files       : ${totalFiles}`);
+      console.log('');
+
+      if (options.dryRun) {
+        console.log('Dry run — no files will be downloaded.');
+        await endClient(cask);
+        return;
+      }
+
+      if (!options.yes) {
+        const ok = await confirm('Proceed with download?');
+        if (!ok) {
+          console.log('Download cancelled.');
+          await endClient(cask);
+          return;
+        }
+      }
+
+      const dlBar = new cliProgress.SingleBar({
+        format: 'Downloading... {bar} {percentage}% | {files}/{totalFiles} files | {rate} files/s',
+        hideCursor: true,
+      });
+      let dlLastCount = 0;
+      let dlLastTime  = Date.now();
+      dlBar.start(totalFiles, 0, { files: 0, totalFiles, rate: '0' });
+
+      let dlCount  = 0;
+      const dlErrors = [];
+
+      for (const { caskPath, localPath } of downloads) {
+        try {
+          const buf = await cask.read({ filePath: caskPath, requestor: options.requestor });
+          await fs.mkdir(path.dirname(localPath), { recursive: true });
+          await fs.writeFile(localPath, buf);
+          dlCount++;
+        } catch(err) {
+          dlErrors.push({ path: caskPath, message: err.message });
+        }
+
+        const processed = dlCount + dlErrors.length;
+        const now       = Date.now();
+        const elapsed   = (now - dlLastTime) / 1000;
+        const delta     = processed - dlLastCount;
+        const rate      = elapsed > 0 ? (delta / elapsed).toFixed(1) : '0';
+        dlLastCount = processed;
+        dlLastTime  = now;
+        dlBar.update(processed, { files: processed, totalFiles, rate });
+      }
+
+      dlBar.stop();
+
+      console.log(`\nDownloaded from: cask:${caskSrc}`);
+      console.log(`  files downloaded : ${dlCount}`);
+      if (dlErrors.length > 0) console.log(`  errors           : ${dlErrors.length}`);
+
+      await endClient(cask);
       return;
     }
 
-    // recursively get all files in sourcePath
-    let files = await fs.readdir(sourcePath, { withFileTypes: true, recursive: true });
-    files = files.filter(f => f.isFile()).map(f => path.join(f.parentPath, f.name));
+    // ── local → CaskFS: normalize source path ────────────────────────────────
+    if (!path.isAbsolute(sourcePath)) {
+      sourcePath = path.resolve(process.cwd(), sourcePath);
+    }
 
-    let failed = [];
-    let context;
+    // ── single file ──────────────────────────────────────────────────────────
+    const stat = await fs.stat(sourcePath);
+    if (!stat.isDirectory()) {
+      const destFile = path.join(destPath, path.basename(sourcePath));
+      let gitInfo;
+      try { gitInfo = await git.info(sourcePath); } catch(e) {}
 
-    console.log('Copying files from directory', sourcePath);
-    console.log('');
-    
-    let pbar = new cliProgress.Bar(
-      {etaBuffer: 50}, 
-      cliProgress.Presets.shades_classic
-    ); 
-    let total = files.filter(f => !f.match(/\/\./)).length;
-    let filesCopied = 0;
-    pbar.start(total, 0);
-
-    for( let file of files ) {
-      if( file.match(/\/\./) ) continue; // skip hidden files
-
-      let destFile = path.join(destPath, path.relative(sourcePath, file))
-
-      try {
-        git = await git.info(file);
-      } catch(e) {}
-
-      context = createContext({
-        filePath: destFile,
+      const context = createContext({
+        filePath:  destFile,
         requestor: options.requestor,
-        bucket: options.bucket,
-        readPath: file,
-        replace: options.replace,
-        git
+        bucket:    options.bucket,
+        readPath:  sourcePath,
+        replace:   options.replace,
+        git:       gitInfo,
       });
+      const location = await cask.getCasLocation(context);
+      console.log(`Copying ${sourcePath} → (${location}) ${destFile}`);
 
-      location = await cask.getCasLocation(context);
-      // console.log(`Copying file ${file} to (${location}) ${destFile}`);
-      if( !options.dryRun ) {
-        try {
-          await cask.write(context);
+      if (!options.dryRun) {
+        await cask.write(context);
+      }
+      await endClient(cask);
+      return;
+    }
 
-          if( context.data.actions.detectedLd ) {
-            stats.fileTypes.linkedData++;
-          } else {
-            stats.fileTypes.binary++;
-          }
-          if( context.data.actions.fileInsert ) stats.insertedFiles++;
-          if( context.data.actions.replacedFile ) stats.replacedFiles++;
-          if( context.data.actions.updatedMetadata ) stats.updatedMetadata++;
-          if( context.data.actions.parsedLinkedData ) stats.parsedLinkedData++;
-          if( context.data.actions.fileCopiedToCas ) stats.casWrites++;
-          if( context.data.actions.deletedOldHashFile ) stats.casDeletes++;
+    // ── directory: pre-scan with sentinel support ─────────────────────────────
+    const { files: crawled, errors: crawlErrors } = await crawlLocal(sourcePath, destPath);
 
-          pbar.update(filesCopied++);
-        } catch (err) {
-          // console.error(`Failed to copy ${file} to ${destFile}: ${err.message}`);
-          // console.error(err.stack);
-          // if( err.details ) {
-          //   console.error(err.details);
-          // }
-          failed.push(file);
-        }
+    if (crawlErrors.length > 0) {
+      for (const e of crawlErrors) console.error(`  Error: ${e}`);
+      process.exit(1);
+    }
+
+    const totalFiles = crawled.length;
+
+    console.log('');
+    console.log(`  Source      : ${sourcePath}`);
+    console.log(`  Destination : cask:${destPath}`);
+    console.log(`  Files       : ${totalFiles}`);
+    console.log('');
+
+    if (options.dryRun) {
+      console.log('Dry run — no files will be copied.');
+      await endClient(cask);
+      return;
+    }
+
+    if (!options.yes) {
+      const ok = await confirm('Proceed with copy?');
+      if (!ok) {
+        console.log('Copy cancelled.');
+        await endClient(cask);
+        return;
       }
     }
 
-    pbar.stop();
+    // ── batch sync ───────────────────────────────────────────────────────────
+    const BATCH_SIZE = 100;
+    const isHttp = cask.mode === 'http';
+    const cpStats = {
+      filesProcessed:  0,
+      filesInserted:   0,
+      metadataUpdates: 0,
+      noChanges:       0,
+      errors:          [],
+    };
 
-    console.log(`\nCopied ${filesCopied-failed.length} files to CaskFS`);
+    const pBar = new cliProgress.SingleBar({
+      format: 'Copying... {bar} {percentage}% | {files}/{totalFiles} files | {rate} files/s',
+      hideCursor: true,
+    });
+    let lastBatchFiles = 0;
+    let lastBatchTime  = Date.now();
+    pBar.start(totalFiles, 0, { files: 0, totalFiles, rate: '0' });
 
-    if( failed.length > 0 ) {
-      console.log(`\nThe following ${failed.length} files failed to copy:`);
-      failed.forEach(f => console.log(`  - ${f}`));
+    // destFile → srcFile/gitInfo lookup for doesNotExist individual writes
+    const srcByDest     = new Map();
+    const gitInfoByDest = new Map();
+
+    const processor = new FileProcessor({ workers: config.cp.workers });
+
+    for (let i = 0; i < crawled.length; i += BATCH_SIZE) {
+      const batchPairs = crawled.slice(i, i + BATCH_SIZE);
+      const batchSrc   = batchPairs.map(p => p.srcFile);
+
+      // Compute hashes and git info via the worker pool
+      const processed = await processor.processBatch(batchSrc);
+
+      const batchDescriptors = processed.map(({ filePath: srcFile, hash, gitInfo }, idx) => {
+        const destFile = batchPairs[idx].destFile;
+        srcByDest.set(destFile, srcFile);
+        gitInfoByDest.set(destFile, gitInfo);
+        const gitMeta = buildGitMetadata(gitInfo);
+        return {
+          filePath: destFile,
+          hash,
+          metadata: Object.keys(gitMeta).length ? gitMeta : undefined,
+        };
+      });
+
+      // Optimistic batch: resolve which files are already in CAS
+      let result;
+      try {
+        if (isHttp) {
+          result = await cask.optimisticBatchWrite(batchDescriptors);
+        } else {
+          result = await cask.sync({ requestor: options.requestor }, {
+            files:   batchDescriptors,
+            replace: options.replace,
+          });
+        }
+      } catch(err) {
+        for (const d of batchDescriptors) cpStats.errors.push({ path: d.filePath, message: err.message });
+        cpStats.filesProcessed += batchSrc.length;
+        continue;
+      }
+
+      cpStats.filesInserted   += result.fileInserts?.length    || 0;
+      cpStats.metadataUpdates += result.metadataUpdates?.length || 0;
+      cpStats.noChanges       += result.noChanges?.length      || 0;
+      for (const e of (result.errors || [])) cpStats.errors.push(e);
+
+      // Full streaming write for files whose hash is not yet in CAS
+      for (const destFile of (result.doesNotExist || [])) {
+        const srcFile = srcByDest.get(destFile);
+        if (!srcFile) continue;
+
+        const gitInfo = gitInfoByDest.get(destFile);
+        const gitMeta = buildGitMetadata(gitInfo);
+
+        try {
+          if (isHttp) {
+            await cask.write({
+              filePath: destFile,
+              readPath: srcFile,
+              replace:  options.replace,
+              bucket:   options.bucket,
+              metadata: Object.keys(gitMeta).length ? gitMeta : undefined,
+            });
+          } else {
+            await cask.write(createContext({
+              filePath:  destFile,
+              requestor: options.requestor,
+              bucket:    options.bucket,
+              readPath:  srcFile,
+              replace:   options.replace,
+              git:       gitInfo,
+            }));
+          }
+          cpStats.filesInserted++;
+        } catch(err) {
+          cpStats.errors.push({ path: destFile, message: err.message });
+        }
+      }
+
+      cpStats.filesProcessed += batchSrc.length;
+
+      const now     = Date.now();
+      const elapsed = (now - lastBatchTime) / 1000;
+      const delta   = cpStats.filesProcessed - lastBatchFiles;
+      const rate    = elapsed > 0 ? (delta / elapsed).toFixed(1) : '0';
+      lastBatchFiles = cpStats.filesProcessed;
+      lastBatchTime  = now;
+
+      pBar.update(cpStats.filesProcessed, { files: cpStats.filesProcessed, totalFiles, rate });
     }
 
-    console.log('\nCopy statistics:');
-    console.log(`  - Total files processed: ${filesCopied}`);
-    console.log(`  - New files inserted: ${stats.insertedFiles}`);
-    console.log(`  - Existing files replaced: ${stats.replacedFiles}`);
-    console.log(`  - Files with updated metadata (includes inserts): ${stats.updatedMetadata}`);
-    console.log(`  - Binary files copied: ${stats.fileTypes.binary}`);
-    console.log(`  - Linked Data files copied: ${stats.fileTypes.linkedData}`);
-    console.log(`  - Linked Data files parsed: ${stats.parsedLinkedData}`);
-    console.log(`  - CAS writes: ${stats.casWrites}`);
-    console.log(`  - CAS deletes: ${stats.casDeletes}`);
+    pBar.stop();
+    processor.close();
 
-    cask.dbClient.end();
-    return;
+    console.log(`\nCopied from: ${sourcePath}`);
+    console.log(`  files processed  : ${cpStats.filesProcessed}`);
+    console.log(`  files inserted   : ${cpStats.filesInserted}`);
+    console.log(`  metadata updated : ${cpStats.metadataUpdates}`);
+    console.log(`  no changes       : ${cpStats.noChanges}`);
+    if (cpStats.errors.length > 0) {
+      console.log(`  errors           : ${cpStats.errors.length}`);
+    }
+
+    await endClient(cask);
   });
 
 program
@@ -253,14 +464,13 @@ program
   .description('Get metadata for a file')
   .action(async (filePath, options={}) => {
     handleGlobalOpts(options);
-
-    const cask = new CaskFs();
+    const cask = getClient(options);
     const context = createContext({
       filePath,
       requestor: options.requestor
     });
     console.log(await cask.metadata(context));
-    cask.dbClient.end();
+    await endClient(cask);
   });
 
 program
@@ -268,15 +478,14 @@ program
   .description('Get contents of a file')
   .action(async (filePath, options={}) => {
     handleGlobalOpts(options);
-
-    const cask = new CaskFs();
+    const cask = getClient(options);
     const context = createContext({
       filePath,
       requestor: options.requestor,
       user: options.user
     });
     console.log((await cask.read(context)).toString('utf-8'));
-    cask.dbClient.end();
+    await endClient(cask);
   });
 
 program
@@ -285,8 +494,7 @@ program
   .option('-o, --format <format>', 'RDF format to output: jsonld, compact, flattened, expanded, nquads or json. Default is jsonld', 'jsonld')
   .action(async (filePath, options) => {
     handleGlobalOpts(options);
-
-    const cask = new CaskFs();
+    const cask = getClient(options);
 
     options.filePath = filePath;
     let resp = await cask.rdf.read(options);
@@ -296,7 +504,7 @@ program
     } else {
       process.stdout.write(resp);
     }
-    cask.dbClient.end();
+    await endClient(cask);
   });
 
 program
@@ -313,8 +521,7 @@ program
   .option('-d, --debug-query', 'Output the SQL query used to find the literals', false)
   .action(async (options) => {
     handleGlobalOpts(options);
-
-    const cask = new CaskFs();
+    const cask = getClient(options);
 
     if( options.partitionKeys ) {
       options.partitionKeys = options.partitionKeys.split(',').map(k => k.trim());
@@ -326,7 +533,7 @@ program
       console.log('SQL Query:');
       console.log(resp.query);
       console.log(resp.args);
-      cask.dbClient.end();
+      await endClient(cask);
       return;
     }
 
@@ -335,7 +542,7 @@ program
     } else {
       process.stdout.write(resp.results);
     }
-    cask.dbClient.end();
+    await endClient(cask);
   });
 
 program
@@ -350,8 +557,7 @@ program
   .option('-d, --debug-query', 'Output the SQL query used to find the files', false)
   .action(async (filePath, options) => {
     handleGlobalOpts(options);
-
-    const cask = new CaskFs();
+    const cask = getClient(options);
 
     if( options.partitionKeys ) {
       options.partitionKeys = options.partitionKeys.split(',').map(k => k.trim());
@@ -367,7 +573,7 @@ program
 
     options.filePath = filePath;
     console.log(JSON.stringify(await cask.relationships(options), null, 2));
-    cask.dbClient.end();
+    await endClient(cask);
   });
 
 program
@@ -384,25 +590,24 @@ program
   .option('-d, --debug-query', 'Output the SQL query used to find the files', false)
   .action(async (options) => {
     handleGlobalOpts(options);
-
-    const cask = new CaskFs();
+    const cask = getClient(options);
 
     if( options.partitionKeys ) {
       options.partitionKeys = options.partitionKeys.split(',').map(k => k.trim());
     }
 
     let resp = await cask.rdf.find(options);
-    cask.dbClient.end();
-    
+
     if( options.debugQuery ) {
       console.log('SQL Query:');
       console.log(resp.query);
       console.log(resp.args);
+      await endClient(cask);
       return;
     }
 
     console.log(resp);
-    cask.dbClient.end();
+    await endClient(cask);
   });
 
 program
@@ -415,18 +620,17 @@ program
 
     options.filePath = filePath;
 
-    const cask = new CaskFs();
+    const cask = getClient(options);
 
     if( options.directory ) {
       options.directory = filePath;
-      const resp = await cask.deleteDirectory(options);
+      await cask.deleteDirectory(options);
     } else {
       const resp = await cask.deleteFile(options);
       console.log(resp);
     }
 
-    
-    cask.dbClient.end();
+    await endClient(cask);
   });
 
 program
@@ -436,9 +640,8 @@ program
   .action(async (directory, options) => {
     handleGlobalOpts(options);
 
-    let partitionKeys = options.partitionKeys ? options.partitionKeys.split(',').map(k => k.trim()) : undefined;
-    const caskfs = new CaskFs();
-    const resp = await caskfs.ls({
+    const cask = getClient(options);
+    const resp = await cask.ls({
       directory,
       requestor: options.requestor
     });
@@ -446,6 +649,7 @@ program
     if (options.output === 'json') {
       delete resp.query;
       console.log(JSON.stringify(resp, null, 2));
+      await endClient(cask);
       return;
     }
 
@@ -456,12 +660,11 @@ program
     }
 
     resp.files.forEach(f => {
-      let keys = f.partition_keys ? f.partition_keys.join(',') : '';
       let directory = f.directory ? f.directory.replace(/\/+$/, '') + '/' : '';
       console.log(`f ${directory}${f.filename} `);
     });
 
-    caskfs.dbClient.end();
+    await endClient(cask);
   });
 
 program.command('acl', 'Manage ACL rules');
@@ -469,13 +672,27 @@ program.command('auto-path', 'Manage auto-path rules');
 program.command('env', 'Manage cask cli environment');
 program.command('admin', 'CaskFS administrative commands');
 program.command('archive', 'Import and export CaskFS archives');
+program.command('auth', 'Authenticate with a CaskFS server');
+
+// Forward global options to external subcommands via environment variables.
+// Commander consumes parent-level options before spawning the child process,
+// so they must be re-injected another way.
+program.hook('preSubcommand', (thisCommand, subCommand) => {
+  if (!subCommand._executableHandler) return;
+  const opts = thisCommand.opts();
+  if (opts.impersonate) process.env.CASKFS_IMPERSONATE = opts.impersonate;
+  if (opts.env)         process.env.CASKFS_ENV_OVERRIDE = opts.env;
+  if (opts.publicUser)  process.env.CASKFS_PUBLIC_USER  = 'true';
+});
 
 program
   .command('init-pg')
   .description('Initialize the PostgreSQL database')
   .option('-r, --user-roles-file <user-roles-file>', 'Path to a JSON or YAML file containing user roles to initialize after setting up the database')
   .action(async (options) => {
-    const cask = new CaskFs();
+    handleGlobalOpts(options);
+    const cask = getClient(options);
+    assertDirectPg(cask, 'init-pg');
 
     await cask.dbClient.init();
 
@@ -484,18 +701,20 @@ program
       await cask.ensureUserRoles(handleGlobalOpts({}), userRoles);
     }
 
-    cask.dbClient.end();
+    await endClient(cask);
   });
 
 program
   .command('init-user-roles <user-roles-file>')
   .description('Initialize user roles in the PostgreSQL database')
-  .action(async (userRolesFile) => {
-    let userRoles = JSON.parse(await fs.readFile(options.userRolesFile, 'utf-8'));
+  .action(async (userRolesFile, options={}) => {
+    handleGlobalOpts(options);
+    const cask = getClient(options);
+    assertDirectPg(cask, 'init-user-roles');
 
-    const cask = new CaskFs();
+    let userRoles = JSON.parse(await fs.readFile(userRolesFile, 'utf-8'));
     await cask.ensureUserRoles(handleGlobalOpts({}), userRoles);
-    cask.dbClient.end();
+    await endClient(cask);
   });
 
 program
@@ -505,10 +724,11 @@ program
     handleGlobalOpts(options);
     console.log(`Current User: ${options.requestor || 'public (no user)'}`);
     if( options.requestor ) {
-      const cask = new CaskFs();
-      let resp = await cask.acl.getUserRoles({ 
-        user: options.requestor, 
-        dbClient: cask.dbClient 
+      const cask = getClient(options);
+      assertDirectPg(cask, 'whoami');
+      let resp = await cask.acl.getUserRoles({
+        user: options.requestor,
+        dbClient: cask.dbClient
       });
       console.log('Roles:');
       if( resp.length === 0 ) {
@@ -516,7 +736,7 @@ program
       } else {
         console.log(' - '+resp.join('\n - '));
       }
-      cask.dbClient.end();
+      await endClient(cask);
     }
   });
 
@@ -540,24 +760,5 @@ program
     const { startServer } = await import('../client/index.js');
     startServer(options);
   });
-
-async function loadUserRolesFile(userRolesFile) {
-  if( !path.isAbsolute(userRolesFile) ) {
-    userRolesFile = path.resolve(process.cwd(), userRolesFile);
-  }
-  if( !fsSync.existsSync(userRolesFile) ) {
-    console.error(`User roles file ${userRolesFile} does not exist`);
-    process.exit(1);
-  }
-
-  let data = await fs.readFile(userRolesFile, 'utf-8');
-  let userRoles;
-  if( userRolesFile.match(/\.ya?ml$/) ) {
-    userRoles = parseYaml(data);
-  } else {
-    userRoles = JSON.parse(data);
-  }
-  return userRoles;
-}
 
 program.parse(process.argv);

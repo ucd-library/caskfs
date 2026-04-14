@@ -640,22 +640,6 @@ class Rdf {
 
     let dbClient = opts.dbClient || this.dbClient;
 
-    // let aclJoin = '';
-    // if( await acl.aclLookupRequired(aclOpts) ) {
-    //   aclJoin = `LEFT JOIN ${config.database.schema}.directory_user_permissions_lookup acl_lookup ON acl_lookup.directory_id = ref_by_view.directory_id`;
-      
-    //   let aclWhere = [
-    //     '(acl_lookup.user_id IS NULL AND acl_lookup.can_read = TRUE)'
-    //   ];
-
-    //   if( opts.userId !== null ) {
-    //     aclWhere.push(`(acl_lookup.user_id = $${args.length + 1} AND acl_lookup.can_read = TRUE)`);
-    //     args.push(opts.userId);
-    //   }
-
-    //   where.push(`(${aclWhere.join(' OR ')})`);
-    // }
-
     let predicate = '';
     if( opts.predicate ) {
       predicate = opts.predicate;

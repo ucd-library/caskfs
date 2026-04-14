@@ -39,11 +39,14 @@ class Cas {
     let digests;
 
     // create a temp file to write the stream to
-    let tmpFile = path.join(config.rootDir, 'tmp', uuidV4());
-    this.logger.debug('Staging write to temp file', tmpFile, context.logSignal);
+    let tmpFile;
+    if( !context.data.hash ) {
+      tmpFile = path.join(config.rootDir, 'tmp', uuidV4());
+      this.logger.debug('Staging write to temp file', tmpFile, context.logSignal);
 
-    // ensure the directory exists
-    await fsp.mkdir(path.dirname(tmpFile), {recursive: true});
+      // ensure the directory exists
+      await fsp.mkdir(path.dirname(tmpFile), {recursive: true});
+    }
 
     // stage by write tmp file and calculate digests
     if( context.data.readStream ) {
@@ -52,12 +55,15 @@ class Cas {
     } else if( context.data.readPath ) {
       this.logger.debug('Staging write from readPath', context.logSignal);
       digests = await this.writePath(tmpFile, context.data);
-    } else if( context.data ) {
+      // writePath skips creating tmpFile when the hash already exists in CAS;
+      // nullify so the stat below falls back to the existing hash file.
+      if( tmpFile && !fs.existsSync(tmpFile) ) tmpFile = null;
+    } else if( context.data.data ) {
       this.logger.debug('Staging write from data', context.logSignal);
       digests = await this.writeData(tmpFile, context.data);
-    } else if( context.hash ) {
+    } else if( context.data.hash ) {
       this.logger.debug('Staging write from existing hash', context.logSignal);
-      digests = await this.writeHash(tmpFile, context.data);
+      digests = await this.writeHash(context.data);
     } else {
       throw new Error('No input specified for write operation');
     }
@@ -68,7 +74,7 @@ class Cas {
     let hashFile = this.diskPath(digests[primaryHash]);
 
     // get file stats
-    let stats = await fsp.stat(tmpFile);
+    let stats = await fsp.stat(tmpFile || hashFile);
 
     let stagedFile = { 
       hash_value: digests[primaryHash],
@@ -191,10 +197,10 @@ class Cas {
     await this.init();
 
     // just using an existing hash, so no file operations needed
-    fullPath = this.diskPath(opts.hash);
+    let fullPath = this.diskPath(opts.hash);
 
     // just ensure the file exists
-    if( !await this.exists(fullPath) ) {
+    if( !await this.storage.exists(fullPath) ) {
       throw new HashNotFoundError(`File with hash ${opts.hash} does not exist in CASKFS`);
     }
 

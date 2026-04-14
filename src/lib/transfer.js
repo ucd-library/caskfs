@@ -1,13 +1,13 @@
 import tarStream from 'tar-stream';
 import zlib from 'zlib';
-import fs from 'fs';
+import fs, { fstatSync } from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
 import { pipeline } from 'stream/promises';
 import config from './config.js';
 import { getLogger } from './logger.js';
 import { DuplicateFileError } from './errors.js';
-import Database from './database/index.js';
+import { createContext } from './context.js';
 
 const RDF_MIME_TYPES = new Set([
   'application/ld+json',
@@ -61,6 +61,56 @@ class Transfer {
   }
 
   // ---------------------------------------------------------------------------
+  // PREFLIGHT
+  // ---------------------------------------------------------------------------
+
+  /**
+   * @method exportPreflight
+   * @description Return hash and file counts for a prospective export without
+   * streaming any data.  Used by the CLI to confirm before starting a full export.
+   *
+   * @param {Object} opts
+   * @param {String} opts.rootDir - Only count files under this CaskFS path
+   * @returns {Promise<{hashCount: number, fileCount: number}>}
+   */
+  async exportPreflight(opts={}) {
+    const rootDir   = (opts.rootDir || '/').replace(/\/+$/, '') || '/';
+    const dirFilter = rootDir === '/'
+      ? 'TRUE'
+      : `(fv.directory = $1 OR fv.directory LIKE $1 || '/%')`;
+    const params = rootDir === '/' ? [] : [rootDir];
+
+    // Use DISTINCT ON to get one row per hash so we sum each CAS file's size
+    // exactly once, regardless of how many filesystem paths reference it.
+    const result = await this.dbClient.query(`
+      WITH unique_hashes AS (
+        SELECT DISTINCT ON (h.hash_id) h.hash_id, fv.size
+        FROM ${this.schema}.hash h
+        JOIN ${this.schema}.file_view fv ON fv.hash_value = h.value
+        WHERE ${dirFilter}
+        ORDER BY h.hash_id
+      )
+      SELECT
+        (SELECT COUNT(DISTINCT h.hash_id)::int
+         FROM ${this.schema}.hash h
+         JOIN ${this.schema}.file_view fv ON fv.hash_value = h.value
+         WHERE ${dirFilter})                          AS hash_count,
+        (SELECT COUNT(fv.file_id)::int
+         FROM ${this.schema}.file_view fv
+         WHERE ${dirFilter})                          AS file_count,
+        COALESCE(SUM(size), 0)::bigint               AS disk_size
+      FROM unique_hashes
+    `, params);
+
+    const row = result.rows[0] || { hash_count: 0, file_count: 0, disk_size: 0 };
+    return {
+      hashCount: row.hash_count,
+      fileCount: row.file_count,
+      diskSize:  Number(row.disk_size),
+    };
+  }
+
+  // ---------------------------------------------------------------------------
   // EXPORT
   // ---------------------------------------------------------------------------
 
@@ -70,7 +120,8 @@ class Transfer {
    * streaming .tar.gz archive.  Each unique hash is written exactly once regardless of how
    * many CaskFS file paths reference it.
    *
-   * @param {String} destPath - absolute path to write the .tar.gz archive to
+   * @param {String|import('stream').Writable} dest - absolute file path to write to, or a
+   *   Writable stream to pipe into (e.g. an HTTP response)
    * @param {Object} opts
    * @param {String} opts.rootDir - required. only export files under this CaskFS path
    * @param {Boolean} [opts.includeAcl=false] - include ACL data in the export
@@ -79,12 +130,12 @@ class Transfer {
    *
    * @returns {Promise<{hashCount: number, fileCount: number}>} export summary
    */
-  async export(destPath, opts={}) {
+  async export(dest, opts={}) {
     if (!opts.rootDir) throw new Error('opts.rootDir is required for export');
 
     const pack = tarStream.pack();
     const gzip = zlib.createGzip();
-    const output = fs.createWriteStream(destPath);
+    const output = typeof dest === 'string' ? fs.createWriteStream(dest) : dest;
 
     let summary = { hashCount: 0, fileCount: 0 };
 
@@ -263,389 +314,6 @@ class Transfer {
     );
     await this._addBufferEntry(pack, 'auto-partition/buckets.json',
       Buffer.from(JSON.stringify(buckets.rows, null, 2)));
-  }
-
-  // ---------------------------------------------------------------------------
-  // IMPORT
-  // ---------------------------------------------------------------------------
-
-  /**
-   * @method import
-   * @description Import CAS files and optional ACL / auto-partition data from a .tar.gz archive
-   * produced by export().  A single database connection is held open for the duration of the
-   * import; each hash's file records are committed in their own transaction.
-   *
-   * @param {String} srcPath - absolute path to the .tar.gz archive to import
-   * @param {Object} [opts={}]
-   * @param {Boolean} [opts.overwrite=false] - replace existing file records; default throws DuplicateFileError
-   * @param {String} [opts.aclConflict='fail'] - 'fail' | 'skip' | 'merge' on ACL conflicts
-   * @param {String} [opts.autoPartitionConflict='fail'] - 'fail' | 'skip' | 'merge' on rule conflicts
-   * @param {Function} [opts.cb] - optional progress callback `({type, current, total, hash}) => {}`
-   *
-   * @returns {Promise<{hashCount: number, fileCount: number, skippedFiles: number}>}
-   */
-  async import(srcPath, opts={}) {
-    const input = fs.createReadStream(srcPath);
-    const gunzip = zlib.createGunzip();
-    const extract = tarStream.extract();
-
-    // Raw CAS files come before their .json entries (alphabetical sort).
-    // Track size so the .json processing can populate the hash record correctly.
-    const rawFileCache = new Map();
-    const aclData = {};
-    const autoPartitionData = {};
-    const summary = { hashCount: 0, fileCount: 0, skippedFiles: 0 };
-
-    // One dedicated DB connection for the entire import operation.
-    const db = new Database({ type: config.database.client });
-    await db.connect();
-
-    extract.on('entry', (header, stream, next) => {
-      this._processImportEntry(header, stream, opts, rawFileCache, aclData, autoPartitionData, summary, db)
-        .then(() => next())
-        .catch(err => {
-          stream.resume(); // drain so tar-stream can advance
-          next(err);
-        });
-    });
-
-    try {
-      await pipeline(input, gunzip, extract);
-
-      if (Object.keys(aclData).length > 0) {
-        await this._importAcl(aclData, opts, db);
-      }
-      if (Object.keys(autoPartitionData).length > 0) {
-        await this._importAutoPartition(autoPartitionData, opts);
-      }
-    } finally {
-      await db.end();
-    }
-
-    return summary;
-  }
-
-  /**
-   * @method _processImportEntry
-   * @description Dispatch a single tar entry to the appropriate import handler.
-   *
-   * @param {Object} header - tar entry header (name, size, …)
-   * @param {stream.Readable} stream - entry content stream; must be fully consumed
-   * @param {Object} opts - import options
-   * @param {Map} rawFileCache - shared map of hash → {size}
-   * @param {Object} aclData - accumulator for buffered ACL JSON
-   * @param {Object} autoPartitionData - accumulator for buffered auto-partition JSON
-   * @param {Object} summary - mutable import summary counters
-   * @param {import('./database/index.js').default} db - dedicated database connection
-   * @returns {Promise<void>}
-   */
-  async _processImportEntry(header, stream, opts, rawFileCache, aclData, autoPartitionData, summary, db) {
-    const name = header.name;
-
-    if (name.startsWith('cas/')) {
-      if (name.endsWith('.json')) {
-        const buf = await this._readStream(stream);
-        const meta = JSON.parse(buf.toString());
-        const fileInfo = rawFileCache.get(meta.value) || { size: 0 };
-        rawFileCache.delete(meta.value);
-
-        const result = await this._importCasMetadata(meta, opts, fileInfo, db);
-        summary.fileCount += result.imported;
-        summary.skippedFiles += result.skipped;
-      } else {
-        const hash = path.basename(name);
-        const destPath = this.cas.diskPath(hash);
-        const { existed, size } = await this._writeCasRawFile(stream, destPath);
-        rawFileCache.set(hash, { size });
-        if (!existed) summary.hashCount++;
-      }
-    } else if (name.startsWith('acl/')) {
-      const buf = await this._readStream(stream);
-      const key = path.basename(name, '.json');
-      aclData[key] = JSON.parse(buf.toString());
-    } else if (name.startsWith('auto-partition/')) {
-      const buf = await this._readStream(stream);
-      const key = path.basename(name, '.json');
-      autoPartitionData[key] = JSON.parse(buf.toString());
-    } else {
-      await this._drainStream(stream);
-    }
-  }
-
-  /**
-   * @method _writeCasRawFile
-   * @description Write a raw CAS file from the tar stream to its on-disk CAS location.
-   * If the file already exists the stream is drained without writing.
-   *
-   * @param {stream.Readable} stream - tar entry stream
-   * @param {String} destPath - absolute path to the target CAS file
-   * @returns {Promise<{existed: boolean, size: number}>}
-   */
-  async _writeCasRawFile(stream, destPath) {
-    await this.cas.init();
-
-    if (await this.cas.storage.exists(destPath)) {
-      await this._drainStream(stream);
-      const stat = await fsp.stat(destPath);
-      return { existed: true, size: stat.size };
-    }
-
-    await fsp.mkdir(path.dirname(destPath), { recursive: true });
-    await pipeline(stream, fs.createWriteStream(destPath));
-    const stat = await fsp.stat(destPath);
-    return { existed: false, size: stat.size };
-  }
-
-  /**
-   * @method _importCasMetadata
-   * @description For a given hash's metadata object (parsed from the .json archive entry),
-   * insert or update all referenced file records in the database within a single transaction.
-   * RDF files are parsed and their triples inserted. The on-disk .json metadata file is
-   * regenerated from the DB state after all records are committed.
-   *
-   * @param {Object} meta - parsed .json metadata object from the archive
-   * @param {Object} opts - import options (overwrite, cb, …)
-   * @param {Object} fileInfo - {size} from the raw CAS file step
-   * @param {import('./database/index.js').default} db - dedicated database connection
-   * @returns {Promise<{imported: number, skipped: number}>}
-   */
-  async _importCasMetadata(meta, opts={}, fileInfo={}, db) {
-    let imported = 0;
-    let skipped = 0;
-
-    if (!meta.value || !meta.files || meta.files.length === 0) {
-      return { imported, skipped };
-    }
-
-    const hash = meta.value;
-    const casFilePath = this.cas.diskPath(hash);
-    const size = fileInfo.size || 0;
-    // Use the known primary digest; the hash column value IS the sha256 digest.
-    const digests = { [config.digests[0]]: hash };
-
-    try {
-      await db.query('BEGIN');
-
-      for (const fileRecord of meta.files) {
-        const filePath = path.join(fileRecord.directory, fileRecord.filename);
-        const fileExists = await db.fileExists(filePath);
-
-        if (fileExists) {
-          if (!opts.overwrite) {
-            throw new DuplicateFileError(filePath);
-          }
-          // Overwrite: update the existing record.
-          const existing = await db.getFile({ filePath });
-          const dirId = await this.directory.mkdir(fileRecord.directory, { dbClient: db });
-          await db.updateFile({
-            directoryId: dirId,
-            filePath,
-            hash,
-            metadata: fileRecord.metadata || {},
-            digests,
-            size,
-            user: 'import'
-          });
-          await db.clearFilePartitionKeys(existing.file_id);
-          for (const pk of (fileRecord.partitionKeys || [])) {
-            await db.addPartitionKeyToFile(existing.file_id, pk);
-          }
-          // Re-insert RDF if this is an RDF file.
-          const mimeType = (fileRecord.metadata || {}).mimeType;
-          if (RDF_MIME_TYPES.has(mimeType) || filePath.endsWith(JSONLD_EXT)) {
-            await this.rdf.delete(existing, { dbClient: db, ignoreAcl: true });
-            await this.rdf.insert(existing.file_id, { dbClient: db, filepath: casFilePath });
-          }
-        } else {
-          const dirId = await this.directory.mkdir(fileRecord.directory, { dbClient: db });
-          const fileId = await db.insertFile({
-            directoryId: dirId,
-            filePath,
-            hash,
-            metadata: fileRecord.metadata || {},
-            digests,
-            size,
-            user: 'import'
-          });
-          for (const pk of (fileRecord.partitionKeys || [])) {
-            await db.addPartitionKeyToFile(fileId, pk);
-          }
-          const mimeType = (fileRecord.metadata || {}).mimeType;
-          if (RDF_MIME_TYPES.has(mimeType) || filePath.endsWith(JSONLD_EXT)) {
-            await this.rdf.insert(fileId, { dbClient: db, filepath: casFilePath });
-          }
-          imported++;
-        }
-      }
-
-      await db.query('COMMIT');
-    } catch (err) {
-      await db.query('ROLLBACK');
-      throw err;
-    }
-
-    return { imported, skipped };
-  }
-
-  /**
-   * @method _importAcl
-   * @description Apply buffered ACL data to the database.  Conflict behaviour is controlled
-   * by opts.aclConflict: 'fail' (default), 'skip', or 'merge'.
-   *
-   * @param {Object} aclData - {roles, users, 'user-roles', permissions}
-   * @param {Object} opts
-   * @param {import('./database/index.js').default} db - dedicated database connection
-   * @returns {Promise<void>}
-   */
-  async _importAcl(aclData, opts={}, db) {
-    const conflict = opts.aclConflict || 'fail';
-
-    // Roles
-    for (const { name } of (aclData.roles || [])) {
-      const exists = await db.query(
-        `SELECT 1 FROM ${this.schema}.acl_role WHERE name = $1`, [name]
-      );
-      if (exists.rows.length > 0) {
-        if (conflict === 'fail') throw new Error(`ACL role already exists: ${name}`);
-        continue; // skip or merge (roles carry no extra data)
-      }
-      await db.query(
-        `INSERT INTO ${this.schema}.acl_role (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`, [name]
-      );
-    }
-
-    // Users
-    for (const { name } of (aclData.users || [])) {
-      const exists = await db.query(
-        `SELECT 1 FROM ${this.schema}.acl_user WHERE name = $1`, [name]
-      );
-      if (exists.rows.length > 0) {
-        if (conflict === 'fail') throw new Error(`ACL user already exists: ${name}`);
-        continue;
-      }
-      await db.query(
-        `INSERT INTO ${this.schema}.acl_user (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`, [name]
-      );
-    }
-
-    // User-role mappings
-    for (const { user, role } of (aclData['user-roles'] || [])) {
-      const roleRow = await db.query(
-        `SELECT role_id FROM ${this.schema}.acl_role WHERE name = $1`, [role]
-      );
-      const userRow = await db.query(
-        `SELECT user_id FROM ${this.schema}.acl_user WHERE name = $1`, [user]
-      );
-      if (roleRow.rows.length === 0 || userRow.rows.length === 0) {
-        if (conflict === 'fail') {
-          throw new Error(`Cannot map user-role: role=${role} user=${user} — one or both missing`);
-        }
-        continue;
-      }
-      const roleId = roleRow.rows[0].role_id;
-      const userId = userRow.rows[0].user_id;
-      const exists = await db.query(
-        `SELECT 1 FROM ${this.schema}.acl_role_user WHERE role_id = $1 AND user_id = $2`,
-        [roleId, userId]
-      );
-      if (exists.rows.length > 0) {
-        if (conflict === 'fail') {
-          throw new Error(`User-role mapping already exists: ${user} -> ${role}`);
-        }
-        continue;
-      }
-      await db.query(
-        `INSERT INTO ${this.schema}.acl_role_user (role_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-        [roleId, userId]
-      );
-    }
-
-    // Directory permissions
-    for (const { directory, public: isPublic, permissions } of (aclData.permissions || [])) {
-      const dirExists = await db.query(
-        `SELECT 1 FROM ${this.schema}.directory WHERE fullname = $1`, [directory]
-      );
-      if (dirExists.rows.length === 0) {
-        if (conflict === 'fail') {
-          throw new Error(`Directory for ACL does not exist: ${directory}`);
-        }
-        continue;
-      }
-
-      const existing = await db.query(`
-        SELECT rda.root_directory_acl_id
-        FROM ${this.schema}.root_directory_acl rda
-        JOIN ${this.schema}.directory d ON rda.directory_id = d.directory_id
-        WHERE d.fullname = $1
-      `, [directory]);
-
-      if (existing.rows.length > 0) {
-        if (conflict === 'fail') {
-          throw new Error(`ACL already exists for directory: ${directory}`);
-        }
-        if (conflict === 'skip') continue;
-        // merge: fall through and upsert
-      }
-
-      const { rootDirectoryAclId, directoryId } = await this.acl.ensureRootDirectoryAcl({ directory, isPublic: !!isPublic, dbClient: db });
-      await this.acl.setDirectoryAcl({ directoryId, rootDirectoryAclId, dbClient: db });
-      for (const { role, permission } of (permissions || [])) {
-        const roleExists = await db.query(
-          `SELECT 1 FROM ${this.schema}.acl_role WHERE name = $1`, [role]
-        );
-        if (roleExists.rows.length === 0) {
-          if (conflict === 'fail') throw new Error(`Role not found for permission: ${role}`);
-          continue;
-        }
-        await this.acl.setDirectoryPermission({ directory, role, permission, dbClient: db });
-      }
-    }
-
-    if (aclData.permissions && aclData.permissions.length > 0) {
-      await this.acl.refreshLookupTable({ dbClient: db });
-    }
-  }
-
-  /**
-   * @method _importAutoPartition
-   * @description Apply buffered auto-partition and auto-bucket rules.  Conflict behaviour is
-   * controlled by opts.autoPartitionConflict: 'fail' (default), 'skip', or 'merge'.
-   *
-   * @param {Object} autoPartitionData - {partitions, buckets}
-   * @param {Object} opts
-   * @returns {Promise<void>}
-   */
-  async _importAutoPartition(autoPartitionData, opts={}) {
-    const conflict = opts.autoPartitionConflict || 'fail';
-
-    for (const rule of (autoPartitionData.partitions || [])) {
-      const exists = await this.autoPath.partition.exists(rule.name);
-      if (exists) {
-        if (conflict === 'fail') throw new Error(`Partition rule already exists: ${rule.name}`);
-        if (conflict === 'skip') continue;
-        // merge: fall through to set (upserts)
-      }
-      await this.autoPath.partition.set({
-        name: rule.name,
-        index: rule.index,
-        filterRegex: rule.filter_regex,
-        getValue: rule.get_value
-      });
-    }
-
-    for (const rule of (autoPartitionData.buckets || [])) {
-      const exists = await this.autoPath.bucket.exists(rule.name);
-      if (exists) {
-        if (conflict === 'fail') throw new Error(`Bucket rule already exists: ${rule.name}`);
-        if (conflict === 'skip') continue;
-      }
-      await this.autoPath.bucket.set({
-        name: rule.name,
-        index: rule.index,
-        filterRegex: rule.filter_regex,
-        getValue: rule.get_value
-      });
-    }
   }
 
   // ---------------------------------------------------------------------------

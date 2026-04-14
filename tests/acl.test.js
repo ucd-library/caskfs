@@ -31,9 +31,9 @@ async function aclSetup(opts={}) {
   }
 
   // Create the directory if it has no files yet (mkdir is idempotent)
-  if (opts.directory) {
-    await caskFs.directory.mkdir(opts.directory, { dbClient: caskFs.dbClient });
-  }
+  // if (opts.directory) {
+  //   await caskFs.directory.mkdir(opts.directory, { dbClient: caskFs.dbClient });
+  // }
 
   // Wire up user → role → permission
   if (opts.role && opts.user) {
@@ -364,7 +364,6 @@ describe('ACL', () => {
         role: 'admins',
         dbClient: caskFs.dbClient,
       });
-      await aclImpl.refreshLookupTable({ dbClient: caskFs.dbClient });
 
       const result = await caskFs.ls({ directory: '/vault/secret', requestor: 'charlie' });
       assert.ok(result.files.some(f => f.filename === 'private.txt'));
@@ -507,7 +506,6 @@ describe('ACL', () => {
         role: 'admin',
         dbClient: caskFs.dbClient,
       });
-      await aclImpl.refreshLookupTable({ dbClient: caskFs.dbClient });
     });
 
     after(aclTeardown);

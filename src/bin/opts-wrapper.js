@@ -12,9 +12,11 @@ let optsWrapper = (program) => {
 
 let handleEnv = (opts) => {
   let gOpts = programInstance.opts();
-  if( gOpts.env ) {
-    opts.environment = {name: gOpts.env};
-    environment.loadEnv(gOpts.env);
+  // Fall back to env var set by the parent cask process for external subcommands.
+  const envName = gOpts.env || process.env.CASKFS_ENV_OVERRIDE;
+  if( envName ) {
+    const config = environment.loadEnv(envName);
+    opts.environment = { name: envName, config };
   } else {
     opts.environment = environment.getDefaultEnv();
     if( opts.environment ) {
@@ -26,9 +28,13 @@ let handleEnv = (opts) => {
 
 let handleUser = (opts) => {
   let gOpts = programInstance.opts();
-  if( gOpts.impersonate ) {
-    opts.requestor = gOpts.impersonate;
-  } else if( gOpts.publicUser ) {
+  // Fall back to env vars set by the parent cask process when this file
+  // is running as an external subcommand (e.g. cask-acl, cask-auto-path).
+  const impersonate = gOpts.impersonate || process.env.CASKFS_IMPERSONATE;
+  const publicUser  = gOpts.publicUser  || process.env.CASKFS_PUBLIC_USER === 'true';
+  if( impersonate ) {
+    opts.requestor = impersonate;
+  } else if( publicUser ) {
     opts.requestor = null;
   } else {
     opts.requestor = os.userInfo().username;

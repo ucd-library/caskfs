@@ -1,6 +1,6 @@
 {
   "name": "@ucd-lib/caskfs",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Content-Addressed Storage with Knowledge graph - File System",
   "main": "src/index.js",
   "type": "module",

@@ -4,6 +4,7 @@ import caskFs from './caskFs.js';
 import { pipeline } from 'stream/promises';
 import { Validator } from './validate.js';
 import { MissingResourceError } from '../lib/errors.js';
+import config from '../lib/config.js';
 
 const router = Router();
 
@@ -158,25 +159,98 @@ router.get(/(.*)/, async (req, res) => {
   }
 });
 
-function getWriteOptions(req) {
-  let opts = {
-    filePath: req.params[0],
-  }
+/**
+ * @function handleWrite
+ * @description Shared handler for POST (create) and PUT (upsert) file write requests.
+ * Streams the request body directly into CaskFS as the file content.
+ *
+ * @param {String} filePath - Destination path in CaskFS
+ * @param {import('express').Request} req - Express request (used as the read stream)
+ * @param {import('express').Response} res - Express response
+ * @param {Boolean} replace - If true, overwrite an existing file (PUT semantics)
+ */
+async function handleWrite(filePath, req, res, replace) {
+  try {
+    const mimeType = req.headers['content-type']?.split(';')[0]?.trim() || 'application/octet-stream';
 
-  if (req.query.mimeType) {
-    opts.mimeType = req.query.mimeType;
-  }
-  if( req.get('x-cask-hash') ) {
-    opts.hash = req.get('x-cask-hash');
-  } else {
-    opts.readStream = req;
-  }
+    const partitionKeys = req.query['partition-keys']
+      ? req.query['partition-keys'].split(',').map(k => k.trim()).filter(Boolean)
+      : [];
 
-  if (req.method === 'PUT') {
-    opts.replace = true;
+    let metadata = {};
+    if (req.query.metadata) {
+      try { 
+        metadata = JSON.parse(req.query.metadata); 
+      } catch(e) {
+        return res.status(400).json({ error: 'Invalid JSON in metadata query parameter' });
+      }
+    }
+
+    let opts = {
+      filePath,
+      readStream: req,
+      mimeType,
+      partitionKeys,
+      metadata: Object.keys(metadata).length ? metadata : undefined,
+      bucket: req.query.bucket || undefined,
+      replace,
+      requestor: req.user || config.acl.defaultRequestor || 'http',
+      corkTraceId: req.corkTraceId,
+    };
+
+    if( req.get('x-cask-hash') ) {
+      opts.hash = req.get('x-cask-hash');
+    } else {
+      opts.readStream = req;
+    }
+    
+    const ctx = await caskFs.write(opts);
+
+    if (ctx.data?.error) {
+      const err = ctx.data.error;
+      if (err.name === 'DuplicateFileError') {
+        return res.status(409).json({ message: err.message, code: 'DuplicateFileError' });
+      }
+      return res.status(400).json({ message: err.message });
+    }
+
+    const { readStream, dbClient, ...safeData } = ctx.data;
+    res.status(replace ? 200 : 201).json(safeData);
+  } catch (e) {
+    return handleError(res, req, e);
   }
-  return opts;
 }
+
+const silentJson = (req, res, next) => {
+  json()(req, res, (err) => {
+    if (err?.type === 'entity.parse.failed') {
+      return res.status(400).json({ error: 'Invalid JSON' });
+    }
+    next(err);
+  });
+};
+
+/**
+ * POST /fs/sync
+ * @description Optimistic batch write — create or update file records for files whose
+ * CAS content is already present on disk.  Accepts a JSON body; no stream data.
+ * Returns counts and paths for each result category.
+ */
+router.post('/sync', silentJson, async (req, res) => {
+  try {
+    const files = req.body?.files;
+    if (!Array.isArray(files)) {
+      return res.status(400).json({ error: 'files array is required' });
+    }
+    const result = await caskFs.sync(
+      { requestor: req.user, corkTraceId: req.corkTraceId },
+      { files }
+    );
+    res.status(200).json(result);
+  } catch (e) {
+    return handleError(res, req, e);
+  }
+});
 
 // only allow new file
 router.post(/(.*)/, async (req, res) => {
@@ -192,24 +266,21 @@ router.post(/(.*)/, async (req, res) => {
   }
 });
 
-// allow upsert via put
-router.put(/(.*)/, async (req, res) => {
-  try {
-    let opts = getWriteOptions(req);
-
-    let result = await caskFs.write(opts);
-    res.status(201).json({
-      filePath: result.data.filePath,
-      actions: result.data.actions
-    });
-  } catch (e) {
-    return handleError(res, req, e);
-  }
+// create new file — fails with 409 if path already exists
+router.post(/(.*)/, async (req, res) => {
+  const filePath = req.params[0] || '/';
+  await handleWrite(filePath, req, res, false);
 });
 
-// metadata updates via patch
+// create or replace file
+router.put(/(.*)/, async (req, res) => {
+  const filePath = req.params[0] || '/';
+  await handleWrite(filePath, req, res, true);
+});
+
+// metadata updates — not yet implemented
 router.patch(/(.*)/, (req, res) => {
-  res.status(404).json({ error: 'Not Found' });
+  res.status(501).json({ error: 'Not Implemented' });
 });
 
 router.delete(/(.*)/, json(), async (req, res) => {

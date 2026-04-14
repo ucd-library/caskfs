@@ -13,7 +13,7 @@ import { createContext, CaskFSContext } from "./lib/context.js";
 import AutoPathBucket from "./lib/auto-path/bucket.js";
 import AutoPathPartition from "./lib/auto-path/partition.js";
 import Transfer from "./lib/transfer.js";
-import { MissingResourceError, AclAccessError, DuplicateFileError } from "./lib/errors.js";
+import { MissingResourceError, AclAccessError, DuplicateFileError, HashNotFoundError } from "./lib/errors.js";
 
 class CaskFs {
 
@@ -61,7 +61,10 @@ class CaskFs {
       dbClient: this.dbClient,
       cas: this.cas
     });
-    this.directory = new Directory({dbClient: this.dbClient});
+    this.directory = new Directory({
+      dbClient: this.dbClient,
+      acl: acl
+    });
 
     this.autoPath = {
       bucket: new AutoPathBucket({dbClient: this.dbClient, schema: this.schema}),
@@ -111,8 +114,8 @@ class CaskFs {
    *
    * @param {CaskFSContext|Object} context file context to write to in the CASKFS
    * @param {String} context.filePath path to the file to write to in the CASKFS
-   * @param {String} context.readPath path to a file to read and write to the CASKFS
-   * @param {Stream} context.readStream readable stream to read and write to the CASKFS
+   * @param {String} context.readPath path to a file to read from
+   * @param {Stream} context.readStream readable stream to read from
    * @param {String} context.hash existing hash value of a file already in the CASKFS to reference
    * @param {Buffer} context.data data Buffer to write to the CASKFS
    * @param {Boolean} context.replace if true, replace existing file at filePath. Default is false (error if exists)
@@ -150,7 +153,7 @@ class CaskFs {
 
     context.update({
       dbClient,
-      metadata: {},
+      metadata: context.data.metadata || {},
       fileExists: false,
       primaryDigest: config.digests[0],
       actions : {
@@ -200,7 +203,7 @@ class CaskFs {
 
       // attempt to get mime type
       // if passed in, use that, otherwise try to detect from file extension
-      metadata.mimeType = context.data.mimeType || context.data.contentType;
+      metadata.mimeType = metadata.mimeType || context.data.mimeType || context.data.contentType;
       if( !metadata.mimeType ) {
         this.logger.debug('Attempting to auto-detect mime type, not specified in options', context.logSignal);
 
@@ -433,11 +436,20 @@ class CaskFs {
       return context;
     }
 
-    let success = [];
+    let fileInserts = [];
+    let metadataUpdates = [];
+    let noChanges = [];
     let errors = [];
     let doesNotExist = [];
+    let wContext;
 
     for( let file of files ) {
+      // allow filePath to be derived from filename + directory if not provided, 
+      // for convenience when used with transfer export format
+      if( !file.filePath && file.filename && file.directory ) {
+        file.filePath = path.join(file.directory, file.filename);
+      }
+
       if( !file.filePath || !file.hash ) {
         errors.push({file, error: new Error('filePath and hash are required')});
         continue;
@@ -445,23 +457,27 @@ class CaskFs {
 
       // set the global replace for sync
       file.replace = replace;
-      file.requestor = context.requestor;
+      file.requestor = context.data.requestor;
 
       try {
-        await this.write(
-          createContext(file, context.data.dbClient || this.dbClient)
-        );
-        success.push(file.filePath);
-      } catch (error) {
-        if( error instanceof HashNotFoundError ) {
+        wContext = createContext(file, context.data.dbClient || this.dbClient);
+        await this.write(wContext);
+
+        if( wContext.data.error && wContext.data.error instanceof HashNotFoundError ) {
           doesNotExist.push(file.filePath);
+        } else if( wContext.data.actions.fileInsert ) {
+          fileInserts.push(file.filePath);
+        } else if( wContext.data.actions.updatedMetadata ) {
+          metadataUpdates.push(file.filePath);
         } else {
-          errors.push({file, error});
+          noChanges.push(file.filePath);
         }
+      } catch (error) {
+        errors.push({file, error});
       }
     }
 
-    return {success, errors, doesNotExist};
+    return {fileInserts, metadataUpdates, noChanges, errors, doesNotExist};
   }
 
   /**
@@ -909,7 +925,6 @@ class CaskFs {
         role: context.data.role,
         dbClient
       });
-      await acl.refreshLookupTable({dbClient});
     });
   }
 
@@ -988,8 +1003,6 @@ class CaskFs {
       await acl.ensureRole(opts);
       await acl.ensureUserRole(opts);
 
-      await acl.refreshLookupTable({dbClient});
-
       return acl.getRole(opts);
     });
   }
@@ -1013,8 +1026,6 @@ class CaskFs {
       await acl.removeUserRole({
         user: context.user,
       });
-      await acl.refreshLookupTable({dbClient});
-
     });
   }
 
@@ -1046,7 +1057,6 @@ class CaskFs {
         directoryId
       });
 
-      await acl.refreshLookupTable({dbClient});
     });
   }
 
@@ -1081,7 +1091,6 @@ class CaskFs {
         directoryId
       });
 
-      await acl.refreshLookupTable({dbClient});
     });
   }
 
@@ -1106,7 +1115,6 @@ class CaskFs {
         directory: context.data.directory,
         permission: context.data.permission
       });
-      await acl.refreshLookupTable({dbClient});
     });
   }
 
@@ -1129,7 +1137,6 @@ class CaskFs {
       await acl.removeRootDirectoryAcl({
         dbClient, directory: context.data.directory
       });
-      await acl.refreshLookupTable({dbClient});
     });
   }
 
@@ -1463,26 +1470,19 @@ class CaskFs {
    *
    * @returns {Promise<{hashCount: number, fileCount: number}>} export summary
    */
-  export(destPath, opts={}) {
-    return this.transfer.export(destPath, opts);
+  /**
+   * @method exportPreflight
+   * @description Return hash and file counts for a prospective export without streaming data.
+   * @param {Object} opts
+   * @param {String} opts.rootDir - Only count files under this CaskFS path
+   * @returns {Promise<{hashCount: number, fileCount: number}>}
+   */
+  exportPreflight(opts={}) {
+    return this.transfer.exportPreflight(opts);
   }
 
-  /**
-   * @method import
-   * @description Import CAS content and optional ACL / auto-partition data from a .tar.gz
-   * archive produced by export().
-   *
-   * @param {String} srcPath - absolute path to the .tar.gz archive
-   * @param {Object} [opts={}]
-   * @param {Boolean} [opts.overwrite=false] - replace existing file records on conflict
-   * @param {String} [opts.aclConflict='fail'] - 'fail' | 'skip' | 'merge' on ACL conflicts
-   * @param {String} [opts.autoPartitionConflict='fail'] - 'fail' | 'skip' | 'merge' on rule conflicts
-   * @param {Function} [opts.cb] - progress callback
-   *
-   * @returns {Promise<{hashCount: number, fileCount: number, skippedFiles: number}>}
-   */
-  import(srcPath, opts={}) {
-    return this.transfer.import(srcPath, opts);
+  export(destPath, opts={}) {
+    return this.transfer.export(destPath, opts);
   }
 
   /**
