@@ -30,7 +30,7 @@ class ControllerUtils {
       throw new Error(errorMsg);
     }
     for ( const ctl of host._caskControllers ) {
-      if ( ctl.constructor.name === className ) return ctl;
+      if ( (ctl.constructor.controllerType || ctl.constructor.name) === className ) return ctl;
     }
     if ( opts.noError ) return null;
     throw new Error(errorMsg);

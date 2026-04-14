@@ -5,6 +5,8 @@ import controllerUtils from '../utils/controllerUtils.js';
 
 export default class DirectoryPathController {
 
+  static get controllerType() { return 'DirectoryPathController'; }
+
   constructor(host, opts = {}) {
     this.host = host;
     controllerUtils.addController(host, this);
