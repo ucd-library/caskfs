@@ -252,20 +252,6 @@ router.post('/sync', silentJson, async (req, res) => {
   }
 });
 
-// only allow new file
-router.post(/(.*)/, async (req, res) => {
-  try {
-    let opts = getWriteOptions(req);
-    let result = await caskFs.write(opts);
-    res.status(201).json({
-      filePath: result.data.filePath,
-      actions: result.data.actions
-    });
-  } catch (e) {
-    return handleError(res, req, e);
-  }
-});
-
 // create new file — fails with 409 if path already exists
 router.post(/(.*)/, async (req, res) => {
   const filePath = req.params[0] || '/';

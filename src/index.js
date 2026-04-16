@@ -860,6 +860,11 @@ class CaskFs {
       await context.data.dbClient.query('BEGIN');
       metadata = await this.metadata(context);
 
+      // wait to acquire an advisory lock for the file path to prevent multiple concurrent writes/delete to the same file path.
+      // this will automatically release when the transaction is committed or rolled back, so we don't have to worry about manually releasing it.
+      let lockKey = this._lockKeyFromString(context.data.filePath);
+      await context.data.dbClient.query(`SELECT pg_advisory_xact_lock($1)`, [lockKey]);
+
       // remove RDF triples first
       await this.rdf.delete(metadata, {dbClient: context.data.dbClient});
 
@@ -886,6 +891,158 @@ class CaskFs {
       fileDeleted : casResp.fileDeleted,
       referencesRemaining: casResp.referencesRemaining
     };
+  }
+
+  /**
+   * @method copyFile
+   * @description Copy a file within CaskFS to a new path by referencing the same hash value.
+   * The CAS layer is not touched — this is a fast, metadata-only operation. The mimeType is
+   * always copied from the source. Metadata and partition keys are only copied when their
+   * respective flags are set.
+   *
+   * @param {Object|CaskFSContext} context context or object with filePath property (source path)
+   * @param {String} context.filePath source file path to copy from
+   * @param {String} context.requestor user name of the requestor
+   * @param {Object} opts options object
+   * @param {String} opts.destPath Required. destination file path
+   * @param {Boolean} [opts.copyMetadata=false] if true, copy metadata from source to destination
+   * @param {Boolean} [opts.copyPartitions=false] if true, copy partition keys from source to destination
+   * @param {Object} [opts.metadata] metadata to apply to destination; merged over source metadata when copyMetadata is true
+   * @param {Array} [opts.partitionKeys] partition keys for destination; overrides source keys when copyPartitions is true
+   * @param {Boolean} [opts.replace=false] if true, replace an existing file at destPath
+   * @param {Boolean} [opts.move=false] if true, delete the source file after a successful copy
+   * @param {Boolean} [opts.softDelete=false] if true and move is true, perform a soft delete of the source file, leaving the hash file on disk even if no other references exist. Default: false
+   *
+   * @returns {Promise<CaskFSContext>} result context from the write call
+   */
+  async copyFile(context, opts={}) {
+    context = createContext(context, this.dbClient);
+    await this.canReadFile(context);
+
+    const srcPath = context.data.filePath;
+    const destPath = opts.destPath;
+    if (!destPath) throw new Error('opts.destPath is required for copy');
+
+    const srcMeta = await this.metadata(context);
+
+    // build metadata for destination — always carry mimeType from source
+    let destMetadata = opts.copyMetadata ? { ...srcMeta.metadata } : {};
+    if (opts.metadata) {
+      destMetadata = { ...destMetadata, ...opts.metadata };
+    }
+    destMetadata.mimeType = destMetadata.mimeType || srcMeta.metadata?.mimeType;
+
+    // build partition keys for destination
+    let destPartitionKeys;
+    if (opts.copyPartitions) {
+      destPartitionKeys = [...(srcMeta.partition_keys || [])];
+    }
+    if (opts.partitionKeys) {
+      destPartitionKeys = opts.partitionKeys;
+    }
+
+    let writeResult;
+    await this.runInTransaction(async (dbClient) => {
+      writeResult = await this.write({
+        filePath: destPath,
+        hash: srcMeta.hash_value,
+        metadata: destMetadata,
+        partitionKeys: destPartitionKeys,
+        replace: opts.replace || false,
+        requestor: context.data.requestor
+      });
+
+      if (writeResult.hasError()) throw writeResult.getError();
+
+      if (opts.move) {
+        await this.deleteFile({
+          filePath: srcPath,
+          requestor: context.data.requestor,
+          softDelete: opts.softDelete || false
+        });
+      }
+    });
+
+    return writeResult;
+  }
+
+  /**
+   * @method copy
+   * @description Copy a file or directory within CaskFS. Auto-detects whether the source is a
+   * file or a directory. For a file, delegates to copyFile. For a directory, recursively lists
+   * all files and copies each one, collecting errors per file rather than aborting on the first.
+   * The CAS layer is never touched — this is a fast, metadata-only operation.
+   *
+   * @param {Object|CaskFSContext} context
+   * @param {String} context.filePath source file or directory path
+   * @param {String} context.requestor user name of the requestor
+   * @param {Object} opts options object — forwarded to copyFile for each file
+   * @param {String} opts.destPath Required. destination path
+   * @param {Boolean} [opts.copyMetadata=false] copy metadata from source to destination
+   * @param {Boolean} [opts.copyPartitions=false] copy partition keys from source to destination
+   * @param {Object} [opts.metadata] metadata to apply to destination
+   * @param {Array} [opts.partitionKeys] partition keys for destination
+   * @param {Boolean} [opts.replace=false] replace existing files at destination
+   * @param {Boolean} [opts.move=false] delete each source file after a successful copy
+   *
+   * @returns {Promise<CaskFSContext|Object>} copyFile result for a single file;
+   *   { copied, errors } object for a directory
+   */
+  async copy(context, opts={}) {
+    context = createContext(context, this.dbClient);
+
+    const srcPath = context.data.filePath;
+    const destPath = opts.destPath;
+    if (!destPath) throw new Error('opts.destPath is required for copy');
+
+    // detect whether source is a file
+    let srcIsFile = false;
+    try {
+      await this.metadata(context);
+      srcIsFile = true;
+    } catch(e) {}
+
+    if (srcIsFile) {
+      return this.copyFile(context, opts);
+    }
+
+    // directory: page through ls recursively and copy each file
+    const results = { copied: 0, errors: [] };
+
+    const walk = async (dir) => {
+      let offset = 0;
+      const limit = 1000;
+      while (true) {
+        const result = await this.ls({ directory: dir, limit, offset, requestor: context.data.requestor });
+
+        for (const file of (result.files || [])) {
+          const srcFilePath = path.posix.join(file.directory, file.filename);
+          const destFilePath = destPath + srcFilePath.slice(srcPath.length);
+          try {
+            await this.copyFile(
+              { filePath: srcFilePath, requestor: context.data.requestor },
+              { ...opts, destPath: destFilePath }
+            );
+            results.copied++;
+          } catch(e) {
+            results.errors.push({ srcFilePath, error: e.message });
+          }
+          // handle virtual dirs — a path that is both a file and a parent directory
+          try { await walk(srcFilePath); } catch(e) {}
+        }
+
+        for (const subDir of (result.directories || [])) {
+          await walk(subDir.fullname);
+        }
+
+        const fetched = (result.files?.length || 0) + (result.directories?.length || 0);
+        if (fetched < limit) break;
+        offset += limit;
+      }
+    };
+
+    await walk(srcPath);
+    return results;
   }
 
   /**
