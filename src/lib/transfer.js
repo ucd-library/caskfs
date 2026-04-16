@@ -75,28 +75,35 @@ class Transfer {
    */
   async exportPreflight(opts={}) {
     const rootDir   = (opts.rootDir || '/').replace(/\/+$/, '') || '/';
-    const dirFilter = rootDir === '/'
-      ? 'TRUE'
-      : `(fv.directory = $1 OR fv.directory LIKE $1 || '/%')`;
-    const params = rootDir === '/' ? [] : [rootDir];
+    const useDir    = rootDir !== '/';
+    const dirFilter = useDir
+      ? `(d.fullname = $1 OR d.fullname LIKE $1 || '/%')`
+      : 'TRUE';
+    const params    = useDir ? [rootDir] : [];
+    const dirJoin   = useDir
+      ? `JOIN ${this.schema}.directory d ON f.directory_id = d.directory_id`
+      : '';
 
     // Use DISTINCT ON to get one row per hash so we sum each CAS file's size
     // exactly once, regardless of how many filesystem paths reference it.
+    // Avoids file_view which carries an expensive per-row partition_keys subquery.
     const result = await this.dbClient.query(`
       WITH unique_hashes AS (
-        SELECT DISTINCT ON (h.hash_id) h.hash_id, fv.size
-        FROM ${this.schema}.hash h
-        JOIN ${this.schema}.file_view fv ON fv.hash_value = h.value
+        SELECT DISTINCT ON (h.hash_id) h.hash_id, h.size
+        FROM ${this.schema}.file f
+        JOIN ${this.schema}.hash h ON f.hash_id = h.hash_id
+        ${dirJoin}
         WHERE ${dirFilter}
         ORDER BY h.hash_id
       )
       SELECT
-        (SELECT COUNT(DISTINCT h.hash_id)::int
-         FROM ${this.schema}.hash h
-         JOIN ${this.schema}.file_view fv ON fv.hash_value = h.value
+        (SELECT COUNT(DISTINCT f.hash_id)::int
+         FROM ${this.schema}.file f
+         ${dirJoin}
          WHERE ${dirFilter})                          AS hash_count,
-        (SELECT COUNT(fv.file_id)::int
-         FROM ${this.schema}.file_view fv
+        (SELECT COUNT(f.file_id)::int
+         FROM ${this.schema}.file f
+         ${dirJoin}
          WHERE ${dirFilter})                          AS file_count,
         COALESCE(SUM(size), 0)::bigint               AS disk_size
       FROM unique_hashes
