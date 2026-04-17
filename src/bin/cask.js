@@ -110,15 +110,55 @@ program
 
 program
   .command('cp <source-path> <dest-path>')
-  .description('Copy files between local disk and CaskFS. Prefix source with "cask:" to download from CaskFS.')
+  .description('Copy files between local disk and CaskFS, or within CaskFS (cask: → cask:). Prefix paths with "cask:" for CaskFS locations.')
   .option('-x, --replace', 'Replace files if they already exist', false)
   .option('-d, --dry-run', 'Show what would be copied without actually copying', false)
   .option('-b, --bucket <bucket>', 'Target bucket when copying to GCS')
   .option('-y, --yes', 'Skip the confirmation prompt', false)
+  .option('-m, --copy-metadata', 'Copy metadata from source to destination (cask: → cask: only)', false)
+  .option('-p, --copy-partitions', 'Copy partition keys from source to destination (cask: → cask: only)', false)
+  .option('--move', 'Delete the source after a successful copy — mv semantics (cask: → cask: only)', false)
   .action(async (sourcePath, destPath, options) => {
     silenceLoggers();
     handleGlobalOpts(options);
     const cask = getClient(options);
+
+    // ── cask: → cask: (internal copy, metadata-only) ─────────────────────────
+    if (sourcePath.startsWith('cask:') && destPath.startsWith('cask:')) {
+      const caskSrc  = sourcePath.slice('cask:'.length);
+      const caskDest = destPath.slice('cask:'.length);
+
+      if (options.dryRun) {
+        console.log(`Dry run — would copy cask:${caskSrc} → cask:${caskDest}`);
+        await endClient(cask);
+        return;
+      }
+
+      const result = await cask.copy(
+        { filePath: caskSrc, requestor: options.requestor },
+        {
+          destPath:       caskDest,
+          replace:        options.replace,
+          copyMetadata:   options.copyMetadata || false,
+          copyPartitions: options.copyPartitions || false,
+          move:           options.move || false,
+        }
+      );
+
+      if (result && typeof result.copied === 'number') {
+        console.log(`\nCopied from: cask:${caskSrc}`);
+        console.log(`  files copied : ${result.copied}`);
+        if (result.errors?.length > 0) {
+          console.log(`  errors       : ${result.errors.length}`);
+          for (const e of result.errors) console.error(`    ${e.srcFilePath}: ${e.error}`);
+        }
+      } else {
+        console.log(`Copied cask:${caskSrc} → cask:${caskDest}`);
+      }
+
+      await endClient(cask);
+      return;
+    }
 
     // ── CaskFS → local ───────────────────────────────────────────────────────
     if (sourcePath.startsWith('cask:')) {

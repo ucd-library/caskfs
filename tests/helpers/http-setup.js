@@ -45,7 +45,7 @@ export async function setup() {
   await ensureDatabase();
 
   testRootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'caskfs-http-test-'));
-
+  config.acl.defaultRequestor = 'test-user';
   caskFs = new CaskFs({ rootDir: testRootDir });
 
   // CaskFs constructor sets config.rootDir = testRootDir, so the controller singleton

@@ -1,10 +1,17 @@
 import logger from '../client/logger.js';
 import { MissingResourceError, AclAccessError } from '../lib/errors.js';
 import { ApiValidationError } from './validate.js';
+import { DuplicateFileError } from '../lib/errors.js';
 
 function handleError(res, req, error, details) {
   // logger.error('Error in request', {error, corkTraceId: req.corkTraceId});
 
+  if( error instanceof DuplicateFileError ) {
+    return res.status(409).json({
+      filePath: error.filePath,
+      error: error.message 
+    });
+  }
   if ( error instanceof MissingResourceError ) {
     return res.status(404).json({ error: error.message });
   }

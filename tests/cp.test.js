@@ -273,6 +273,79 @@ describe('CLI – cp (direct-pg)', () => {
     const child = await fs.readFile(path.join(dlVdir, 'doc.pdf', 'child.txt'), 'utf-8');
     assert.ok(child.length > 0, 'child file should not be empty');
   });
+
+  // ── cask: → cask: (internal copy) ─────────────────────────────────────────
+
+  it('should internally copy a single file (cask: → cask:)', async () => {
+    // /cp-single/single.txt exists from the earlier upload test
+    const { code, stdout, stderr } = await runCask(
+      ['cp', 'cask:/cp-single/single.txt', 'cask:/cp-internal/single.txt'],
+      { env: env() }
+    );
+    assert.strictEqual(code, 0, `internal cp exited non-zero: ${stderr}`);
+    assert.ok(stdout.includes('Copied'), `expected "Copied" in output:\n${stdout}`);
+  });
+
+  it('should read back the internally copied file', async () => {
+    const { code, stdout, stderr } = await runCask(
+      ['read', '/cp-internal/single.txt'],
+      { env: env() }
+    );
+    assert.strictEqual(code, 0, `read exited non-zero: ${stderr}`);
+    assert.ok(stdout.includes('Single file content'), `unexpected content:\n${stdout}`);
+  });
+
+  it('should internally copy a directory (cask: → cask:)', async () => {
+    // /cp-dir/ was uploaded by the directory copy test
+    const { code, stdout, stderr } = await runCask(
+      ['cp', 'cask:/cp-dir', 'cask:/cp-internal-dir'],
+      { env: env() }
+    );
+    assert.strictEqual(code, 0, `internal dir cp exited non-zero: ${stderr}`);
+    assert.ok(stdout.includes('files copied'), `expected "files copied" in output:\n${stdout}`);
+  });
+
+  it('should read back files from the internally copied directory', async () => {
+    const cases = [
+      ['/cp-internal-dir/file1.txt',        'Content of file1'],
+      ['/cp-internal-dir/file2.txt',        'Content of file2'],
+      ['/cp-internal-dir/subdir/file3.txt', 'Content of file3'],
+    ];
+    for (const [filePath, expected] of cases) {
+      const { code, stdout, stderr } = await runCask(['read', filePath], { env: env() });
+      assert.strictEqual(code, 0, `read ${filePath} exited non-zero: ${stderr}`);
+      assert.ok(stdout.includes(expected), `expected "${expected}" for ${filePath}:\n${stdout}`);
+    }
+  });
+
+  it('should move a file with --move (cask: → cask:)', async () => {
+    await runCask(['write', '/cp-move/src.txt', '-d', singleFile], { env: env() });
+
+    const { code, stderr } = await runCask(
+      ['cp', 'cask:/cp-move/src.txt', 'cask:/cp-move/dest.txt', '--move'],
+      { env: env() }
+    );
+    assert.strictEqual(code, 0, `--move cp exited non-zero: ${stderr}`);
+
+    const { code: dc, stdout: ds } = await runCask(['read', '/cp-move/dest.txt'], { env: env() });
+    assert.strictEqual(dc, 0, 'destination should be readable after move');
+    assert.ok(ds.includes('Single file content'), `unexpected dest content: ${ds}`);
+
+    const { code: sc } = await runCask(['read', '/cp-move/src.txt'], { env: env() });
+    assert.notStrictEqual(sc, 0, 'source should be gone after --move');
+  });
+
+  it('should print a dry-run message and not write (cask: → cask:)', async () => {
+    const { code, stdout, stderr } = await runCask(
+      ['cp', 'cask:/cp-single/single.txt', 'cask:/cp-dryrun/single.txt', '--dry-run'],
+      { env: env() }
+    );
+    assert.strictEqual(code, 0, `dry-run exited non-zero: ${stderr}`);
+    assert.ok(stdout.includes('Dry run'), `expected dry-run message:\n${stdout}`);
+
+    const { code: rc } = await runCask(['read', '/cp-dryrun/single.txt'], { env: env() });
+    assert.notStrictEqual(rc, 0, 'file should not exist after dry run');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -485,5 +558,76 @@ describe('CLI – cp (http)', () => {
 
     const child = await fs.readFile(path.join(dlVdir, 'doc.pdf', 'child.txt'), 'utf-8');
     assert.ok(child.length > 0, 'child file should not be empty');
+  });
+
+  // ── cask: → cask: (internal copy, http) ───────────────────────────────────
+
+  it('should internally copy a single file (cask: → cask:, http)', async () => {
+    const { code, stdout, stderr } = await runCask(
+      ['cp', 'cask:/cp-single/single.txt', 'cask:/cp-internal/single.txt'],
+      { env: env() }
+    );
+    assert.strictEqual(code, 0, `internal cp exited non-zero: ${stderr}`);
+    assert.ok(stdout.includes('Copied'), `expected "Copied" in output:\n${stdout}`);
+  });
+
+  it('should read back the internally copied file (http)', async () => {
+    const { code, stdout, stderr } = await runCask(
+      ['read', '/cp-internal/single.txt'],
+      { env: env() }
+    );
+    assert.strictEqual(code, 0, `read exited non-zero: ${stderr}`);
+    assert.ok(stdout.includes('Single file content'), `unexpected content:\n${stdout}`);
+  });
+
+  it('should internally copy a directory (cask: → cask:, http)', async () => {
+    const { code, stdout, stderr } = await runCask(
+      ['cp', 'cask:/cp-dir', 'cask:/cp-internal-dir'],
+      { env: env() }
+    );
+    assert.strictEqual(code, 0, `internal dir cp exited non-zero: ${stderr}`);
+    assert.ok(stdout.includes('files copied'), `expected "files copied" in output:\n${stdout}`);
+  });
+
+  it('should read back files from the internally copied directory (http)', async () => {
+    const cases = [
+      ['/cp-internal-dir/file1.txt',        'Content of file1'],
+      ['/cp-internal-dir/file2.txt',        'Content of file2'],
+      ['/cp-internal-dir/subdir/file3.txt', 'Content of file3'],
+    ];
+    for (const [filePath, expected] of cases) {
+      const { code, stdout, stderr } = await runCask(['read', filePath], { env: env() });
+      assert.strictEqual(code, 0, `read ${filePath} exited non-zero: ${stderr}`);
+      assert.ok(stdout.includes(expected), `expected "${expected}" for ${filePath}:\n${stdout}`);
+    }
+  });
+
+  it('should move a file with --move (cask: → cask:, http)', async () => {
+    await runCask(['write', '/cp-move/src.txt', '-d', singleFile], { env: env() });
+
+    const { code, stderr } = await runCask(
+      ['cp', 'cask:/cp-move/src.txt', 'cask:/cp-move/dest.txt', '--move'],
+      { env: env() }
+    );
+    assert.strictEqual(code, 0, `--move cp exited non-zero: ${stderr}`);
+
+    const { code: dc, stdout: ds } = await runCask(['read', '/cp-move/dest.txt'], { env: env() });
+    assert.strictEqual(dc, 0, 'destination should be readable after move');
+    assert.ok(ds.includes('Single file content'), `unexpected dest content: ${ds}`);
+
+    const { code: sc } = await runCask(['read', '/cp-move/src.txt'], { env: env() });
+    assert.notStrictEqual(sc, 0, 'source should be gone after --move');
+  });
+
+  it('should print a dry-run message and not write (cask: → cask:, http)', async () => {
+    const { code, stdout, stderr } = await runCask(
+      ['cp', 'cask:/cp-single/single.txt', 'cask:/cp-dryrun/single.txt', '--dry-run'],
+      { env: env() }
+    );
+    assert.strictEqual(code, 0, `dry-run exited non-zero: ${stderr}`);
+    assert.ok(stdout.includes('Dry run'), `expected dry-run message:\n${stdout}`);
+
+    const { code: rc } = await runCask(['read', '/cp-dryrun/single.txt'], { env: env() });
+    assert.notStrictEqual(rc, 0, 'file should not exist after dry run');
   });
 });

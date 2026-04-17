@@ -297,6 +297,42 @@ class HttpCaskFsClient {
   }
 
   /**
+   * @method copy
+   * @description Copy a file or directory within CaskFS via the HTTP server.
+   * Metadata-only operation — the CAS layer is not touched.
+   * For a single file returns the written file descriptor; for a directory
+   * returns { copied, errors }.
+   *
+   * @param {Object} context - CaskFSContext or plain opts object
+   * @param {String} context.filePath - source path
+   * @param {Object} opts
+   * @param {String} opts.destPath - destination path
+   * @param {Boolean} [opts.copyMetadata=false]
+   * @param {Boolean} [opts.copyPartitions=false]
+   * @param {Boolean} [opts.replace=false]
+   * @param {Boolean} [opts.move=false]
+   * @param {Boolean} [opts.softDelete=false]
+   * @returns {Promise<Object>}
+   */
+  async copy(context, opts={}) {
+    const { filePath } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/fs/copy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        srcPath:        filePath,
+        destPath:       opts.destPath,
+        copyMetadata:   opts.copyMetadata   || false,
+        copyPartitions: opts.copyPartitions || false,
+        replace:        opts.replace        || false,
+        move:           opts.move           || false,
+        softDelete:     opts.softDelete     || false,
+      }),
+    });
+    return res.json();
+  }
+
+  /**
    * @method relationships
    * @description Get inbound/outbound file relationships.
    * @param {Object} opts

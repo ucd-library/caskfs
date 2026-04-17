@@ -148,6 +148,127 @@ describe('HTTP File Read Endpoint', () => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /fs/copy endpoint tests
+// ---------------------------------------------------------------------------
+
+describe('POST /fs/copy', () => {
+  let caskFs, baseUrl;
+
+  const SRC_FILE    = '/cp-api-test/src.txt';
+  const SRC_CONTENT = 'copy source content';
+
+  before(async () => {
+    ({ caskFs, baseUrl } = await setup());
+    await caskFs.write({
+      filePath: SRC_FILE,
+      data: Buffer.from(SRC_CONTENT),
+      requestor: 'test-user',
+      ignoreAcl: true,
+    });
+    for (const name of ['a.txt', 'b.txt']) {
+      await caskFs.write({
+        filePath: `/cp-api-test/dir/${name}`,
+        data: Buffer.from(`dir file ${name}`),
+        requestor: 'test-user',
+        ignoreAcl: true,
+      });
+    }
+  });
+
+  after(async () => {
+    await teardown();
+  });
+
+  /**
+   * @function post
+   * @description POST to the /fs/copy endpoint with a JSON body.
+   * @param {Object} body
+   * @returns {Promise<Response>}
+   */
+  async function post(body) {
+    return fetch(`${baseUrl}/fs/copy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it('should return 400 when srcPath is missing', async () => {
+    const res = await post({ destPath: '/cp-api-test/dest.txt' });
+    assert.strictEqual(res.status, 400);
+  });
+
+  it('should return 400 when destPath is missing', async () => {
+    const res = await post({ srcPath: SRC_FILE });
+    assert.strictEqual(res.status, 400);
+  });
+
+  it('should copy a single file and return 200 with file descriptor', async () => {
+    const res = await post({ srcPath: SRC_FILE, destPath: '/cp-api-test/dest.txt' });
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.ok(body.hash_value, 'response should include hash_value');
+  });
+
+  it('should make the copied file readable at the destination', async () => {
+    const res = await fetch(`${baseUrl}/fs/cp-api-test/dest.txt`);
+    assert.strictEqual(res.status, 200);
+    const text = await res.text();
+    assert.strictEqual(text, SRC_CONTENT);
+  });
+
+  it('should return 409 when dest already exists and replace is false', async () => {
+    const res = await post({ srcPath: SRC_FILE, destPath: '/cp-api-test/dest.txt', replace: false });
+    console.log(res.status, await res.text());
+    assert.strictEqual(res.status, 409);
+  });
+
+  it('should overwrite an existing destination when replace is true', async () => {
+    const res = await post({ srcPath: SRC_FILE, destPath: '/cp-api-test/dest.txt', replace: true });
+    assert.strictEqual(res.status, 200);
+  });
+
+  it('should copy a directory and return copied count', async () => {
+    const res = await post({ srcPath: '/cp-api-test/dir', destPath: '/cp-api-test/dir-copy' });
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.strictEqual(body.copied, 2);
+    assert.strictEqual(body.errors.length, 0);
+  });
+
+  it('should make copied directory files readable', async () => {
+    for (const name of ['a.txt', 'b.txt']) {
+      const res = await fetch(`${baseUrl}/fs/cp-api-test/dir-copy/${name}`);
+      assert.strictEqual(res.status, 200, `${name} should be readable after dir copy`);
+      const text = await res.text();
+      assert.strictEqual(text, `dir file ${name}`);
+    }
+  });
+
+  it('should move a file (source deleted) when move is true', async () => {
+    await caskFs.write({
+      filePath: '/cp-api-test/move-src.txt',
+      data: Buffer.from('move content'),
+      requestor: 'test-user',
+      ignoreAcl: true,
+    });
+
+    const res = await post({
+      srcPath:  '/cp-api-test/move-src.txt',
+      destPath: '/cp-api-test/move-dest.txt',
+      move: true,
+    });
+    assert.strictEqual(res.status, 200);
+
+    const destRes = await fetch(`${baseUrl}/fs/cp-api-test/move-dest.txt`);
+    assert.strictEqual(destRes.status, 200, 'destination should be readable after move');
+
+    const srcRes = await fetch(`${baseUrl}/fs/cp-api-test/move-src.txt?metadata=true`);
+    assert.strictEqual(srcRes.status, 404, 'source should be gone after move');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Transfer (import / export) endpoint tests
 // ---------------------------------------------------------------------------
 

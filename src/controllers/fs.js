@@ -252,6 +252,33 @@ router.post('/sync', silentJson, async (req, res) => {
   }
 });
 
+/**
+ * POST /fs/copy
+ * @description Internal copy — copy a file or directory within CaskFS without
+ * touching the CAS layer. Accepts a JSON body; no stream data.
+ */
+router.post('/copy', silentJson, async (req, res) => {
+  try {
+    const { srcPath, destPath, copyMetadata, copyPartitions, replace, move, softDelete } = req.body || {};
+    if (!srcPath)  return res.status(400).json({ error: 'srcPath is required' });
+    if (!destPath) return res.status(400).json({ error: 'destPath is required' });
+
+    const result = await caskFs.copy(
+      { filePath: srcPath, requestor: req.user || config.acl.defaultRequestor },
+      { destPath, copyMetadata, copyPartitions, replace, move, softDelete }
+    );
+
+    if (result && typeof result.copied === 'number') {
+      return res.status(200).json(result);
+    }
+
+    const { readStream, dbClient, ...safeData } = result.data || {};
+    res.status(200).json(safeData.file);
+  } catch (e) {
+    return handleError(res, req, e);
+  }
+});
+
 // create new file — fails with 409 if path already exists
 router.post(/(.*)/, async (req, res) => {
   const filePath = req.params[0] || '/';
