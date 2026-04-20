@@ -676,14 +676,24 @@ program
 program
   .command('ls <directory>')
   .option('-o, --output <output>', 'Output format: text (default) or json', 'text')
+  .option('-l, --limit <limit>', 'Page size (default: 20)', parseInt)
+  .option('-n, --page <page>', 'Page number, 1-based (default: 1)', parseInt)
+  .option('-s, --offset <offset>', 'Number of results to skip (alternative to --page)', parseInt)
   .description('List files')
   .action(async (directory, options) => {
     handleGlobalOpts(options);
 
+    const pageSize = options.limit || 20;
+    const offset = options.offset !== undefined
+      ? options.offset
+      : ((options.page || 1) - 1) * pageSize;
+
     const cask = getClient(options);
     const resp = await cask.ls({
       directory,
-      requestor: options.requestor
+      requestor: options.requestor,
+      limit: pageSize,
+      offset
     });
 
     if (options.output === 'json') {
@@ -700,9 +710,29 @@ program
     }
 
     resp.files.forEach(f => {
-      let directory = f.directory ? f.directory.replace(/\/+$/, '') + '/' : '';
-      console.log(`f ${directory}${f.filename} `);
+      let dir = f.directory ? f.directory.replace(/\/+$/, '') + '/' : '';
+      console.log(`f ${dir}${f.filename}`);
     });
+
+    const limit = resp.limit || pageSize;
+    const respOffset = resp.offset || 0;
+    const total = resp.totalCount || 0;
+    const currentPage = Math.floor(respOffset / limit) + 1;
+    const totalPages = Math.ceil(total / limit);
+    const rangeStart = total === 0 ? 0 : respOffset + 1;
+    const rangeEnd = Math.min(respOffset + limit, total);
+
+    const limitFlag = options.limit ? ` --limit ${limit}` : '';
+
+    console.log('');
+    console.log(`Page ${currentPage} of ${totalPages} (items ${rangeStart}-${rangeEnd} of ${total})`);
+
+    if (currentPage > 1) {
+      console.log(`  prev: cask ls ${directory}${limitFlag} --page ${currentPage - 1}`);
+    }
+    if (currentPage < totalPages) {
+      console.log(`  next: cask ls ${directory}${limitFlag} --page ${currentPage + 1}`);
+    }
 
     await endClient(cask);
   });
