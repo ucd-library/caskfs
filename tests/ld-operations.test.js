@@ -1,4 +1,5 @@
 import assert from 'assert';
+import fsp from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { setup, teardown } from './helpers/setup.js';
@@ -417,6 +418,81 @@ describe('Linked Data Operations', () => {
       assert.ok(Array.isArray(result.args), 'should return args array');
       assert.ok(result.query.toLowerCase().includes('select'), 'query should contain SELECT');
       assert.ok(!result.results, 'should not have results when debugQuery is true');
+    });
+  });
+
+  // ─── nq file lifecycle ─────────────────────────────────────────────────────
+
+  describe('nq file lifecycle', () => {
+    let hashes = {};
+
+    before(async () => {
+      for (const [key, filePath] of [
+        ['alice', ALICE_PATH], ['bob', BOB_PATH],
+        ['pub1', PUB1_PATH],   ['pub2', PUB2_PATH],
+      ]) {
+        const meta = await caskFs.metadata({ filePath, requestor: TEST_USER, ignoreAcl: true });
+        hashes[key] = meta.hash_value;
+      }
+    });
+
+    it('should have a .nq file on disk for every written LD fixture', async () => {
+      for (const [key, hash] of Object.entries(hashes)) {
+        const exists = await caskFs.cas.quadExists(hash);
+        assert.ok(exists, `expected .nq file for ${key} (hash: ${hash})`);
+      }
+    });
+
+    it("Alice's .nq file should contain her subject URI", async () => {
+      const nquads = await caskFs.cas.readQuads(hashes.alice);
+      assert.ok(nquads.includes(ALICE_URI), "Alice's .nq should contain her URI");
+    });
+
+    it("pub1's .nq file should contain its subject URI and schema:author predicate", async () => {
+      const nquads = await caskFs.cas.readQuads(hashes.pub1);
+      assert.ok(nquads.includes(PUB1_URI), "pub1's .nq should contain pub1 URI");
+      assert.ok(nquads.includes(SCHEMA_AUTHOR), "pub1's .nq should contain schema:author");
+    });
+
+    it("pub1's .nq file should reference Alice and Bob as objects", async () => {
+      const nquads = await caskFs.cas.readQuads(hashes.pub1);
+      assert.ok(nquads.includes(ALICE_URI), "pub1's .nq should reference Alice");
+      assert.ok(nquads.includes(BOB_URI), "pub1's .nq should reference Bob");
+    });
+
+    it('rdf.read() nquads output should include every line from the .nq file', async () => {
+      const readResult = await caskFs.rdf.read({ filePath: PUB1_PATH, format: 'nquads' });
+      const fileNquads = await caskFs.cas.readQuads(hashes.pub1);
+      const fileLines = fileNquads.trim().split('\n').filter(Boolean);
+      for (const line of fileLines) {
+        assert.ok(readResult.includes(line.trim()), `rdf.read() missing nquad: ${line.trim().slice(0, 80)}`);
+      }
+    });
+
+    it('rdf.read() should throw when the .nq file is missing', async () => {
+      const tempPath = '/nq-missing-test/temp.jsonld.json';
+      const ctx = await caskFs.write({
+        filePath: tempPath,
+        data: Buffer.from(JSON.stringify({
+          '@id': 'https://example.org/temp/missing-nq',
+          '@type': 'http://schema.org/Thing',
+          'http://schema.org/name': 'Missing NQ Test'
+        })),
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+      const hash = ctx.data.file?.hash_value;
+
+      // remove .nq file to simulate missing data
+      await fsp.unlink(caskFs.cas.quadPath(hash));
+
+      await assert.rejects(
+        () => caskFs.rdf.read({ filePath: tempPath }),
+        /Quad file not found/
+      );
+
+      // cleanup — delete the file record; the orphaned hash file is swept by teardown
+      await caskFs.deleteFile({ filePath: tempPath, requestor: TEST_USER, ignoreAcl: true });
     });
   });
 

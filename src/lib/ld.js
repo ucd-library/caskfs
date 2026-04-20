@@ -68,18 +68,21 @@ class Rdf {
     let parts = path.parse(filePath);
 
     let data = await dbClient.query(
-      `SELECT file_nquads, cask_nquads FROM ${config.database.schema}.file_quads_view WHERE filename = $1 AND directory = $2`, 
+      `SELECT hash_value, cask_nquads FROM ${config.database.schema}.file_quads_view WHERE filename = $1 AND directory = $2`,
       [parts.base, parts.dir]
     );
     if( data.rows.length === 0 ) {
       throw new Error(`No RDF data found for file: ${filePath}`);
     }
 
+    let row = data.rows[0];
     let nquads = [];
-    if( data.rows[0].file_nquads ) nquads.push(data.rows[0].file_nquads);
-    if( data.rows[0].cask_nquads ) nquads.push(data.rows[0].cask_nquads);
 
-    // not get all of the quads for this subject
+    let fileNquads = await this.cas.readQuads(row.hash_value);
+    nquads.push(fileNquads);
+    if( row.cask_nquads ) nquads.push(row.cask_nquads);
+
+    // get all of the quads for this subject
     // TODO: do we only do this for all file types?? or do we just do it for binary files?
     let subject = config.schemaPrefix+filePath;
     this.logger.info('Looking for linked files for subject', subject);
@@ -87,21 +90,20 @@ class Rdf {
     // TODO: add flag for limiting to same partition keys as the file
     let linkedFiles = await this.find({ subject, dbClient });
 
-    let linkedFileQuads;
     if( linkedFiles.totalCount > 0 ) {
       for( let lf of linkedFiles.results ) {
         if( lf.filepath === filePath ) continue;
 
-        linkedFileQuads = await dbClient.query(
-          `SELECT file_nquads FROM ${config.database.schema}.file_quads_view WHERE filename = $1 AND directory = $2`, 
+        let linkedFileRow = await dbClient.query(
+          `SELECT hash_value FROM ${config.database.schema}.file_quads_view WHERE filename = $1 AND directory = $2`,
           [lf.filename, lf.directory]
         );
 
-        if( !linkedFileQuads.rows.length ) continue;
-        linkedFileQuads = linkedFileQuads.rows[0].file_nquads;
-        linkedFileQuads = this.quadsParser.parse(linkedFileQuads)
+        if( !linkedFileRow.rows.length ) continue;
+        let linkedFileNquads = await this.cas.readQuads(linkedFileRow.rows[0].hash_value);
+        let filtered = this.quadsParser.parse(linkedFileNquads)
           .filter(q => q.subject.value === subject);
-        nquads.push(await this._objectToNQuads(linkedFileQuads));
+        nquads.push(await this._objectToNQuads(filtered));
       }
     }
 

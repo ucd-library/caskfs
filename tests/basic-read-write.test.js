@@ -1,6 +1,14 @@
 import assert from 'assert';
 import { setup, teardown } from './helpers/setup.js';
 
+const LD_FILE_PATH = '/ld-test/sample.jsonld.json';
+const LD_SUBJECT = 'https://example.org/test/sample';
+const LD_DATA = JSON.stringify({
+  '@id': LD_SUBJECT,
+  '@type': 'http://schema.org/Thing',
+  'http://schema.org/name': 'Sample LD'
+});
+
 const TEST_FILE_PATH = '/test-dir/hello.txt';
 const TEST_CONTENT = 'Hello, CaskFS!';
 const UPDATED_CONTENT = 'Updated content!';
@@ -162,6 +170,54 @@ describe('Basic Read/Write Operations', () => {
         () => caskFs.deleteFile({ filePath: TEST_FILE_PATH, requestor: TEST_USER, ignoreAcl: true }),
         { name: 'MissingResource' }
       );
+    });
+  });
+
+  describe('LD file .nq companion files', () => {
+    let ldHash;
+
+    it('should create a .nq file on disk when writing a JSON-LD file', async () => {
+      const ctx = await caskFs.write({
+        filePath: LD_FILE_PATH,
+        data: Buffer.from(LD_DATA),
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+      assert.ok(!ctx.data.error, `write should not error: ${ctx.data.error?.message}`);
+      assert.ok(ctx.data.actions.detectedLd, 'file should be detected as linked data');
+      ldHash = ctx.data.file?.hash_value;
+      assert.ok(ldHash, 'should have a hash_value');
+
+      const exists = await caskFs.cas.quadExists(ldHash);
+      assert.ok(exists, '.nq file should exist on disk after writing a JSON-LD file');
+    });
+
+    it('.nq file should contain the subject URI', async () => {
+      const nquads = await caskFs.cas.readQuads(ldHash);
+      assert.ok(typeof nquads === 'string', '.nq content should be a string');
+      assert.ok(nquads.length > 0, '.nq file should not be empty');
+      assert.ok(nquads.includes(LD_SUBJECT), '.nq file should contain the subject URI');
+    });
+
+    it('should not create a .nq file when writing a non-LD file', async () => {
+      const ctx = await caskFs.write({
+        filePath: '/ld-test/plain.txt',
+        data: Buffer.from('plain text, not linked data'),
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+      assert.ok(!ctx.data.error);
+      const hash = ctx.data.file?.hash_value;
+      const exists = await caskFs.cas.quadExists(hash);
+      assert.strictEqual(exists, false, '.nq file should not exist for a non-LD file');
+    });
+
+    it('should remove the .nq file when the hash is hard-deleted', async () => {
+      await caskFs.deleteFile({ filePath: LD_FILE_PATH, requestor: TEST_USER, ignoreAcl: true });
+      await caskFs.cas.delete(ldHash);
+
+      const exists = await caskFs.cas.quadExists(ldHash);
+      assert.strictEqual(exists, false, '.nq file should be removed when the hash is deleted');
     });
   });
 });

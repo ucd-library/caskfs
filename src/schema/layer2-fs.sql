@@ -489,7 +489,6 @@ SELECT
     END AS filepath,
     f.metadata,
     h.value AS hash_value,
-    h.nquads AS file_nquads,
     f.nquads AS cask_nquads
 FROM caskfs.file f
 LEFT JOIN caskfs.directory d ON f.directory_id = d.directory_id

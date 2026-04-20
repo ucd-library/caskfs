@@ -223,6 +223,49 @@ describe('CAS Layer', () => {
       // cleanup
       await cas.abortWrite(ctx.stagedFile.tmpFile);
     });
+
+    it('should write a .nq file alongside the hash file when nquads are provided', async () => {
+      const content = Buffer.from('nquads-finalize-test-' + Date.now());
+      const nquads = '<https://example.org/s> <https://example.org/p> <https://example.org/o> .\n';
+      const ctx = makeContext({ data: content });
+
+      await cas.stageWrite(ctx);
+      await cas.finalizeWrite(ctx.stagedFile.tmpFile, ctx.stagedFile.hashFile, nquads, {});
+
+      assert.ok(fs.existsSync(cas.quadPath(ctx.stagedFile.hash_value)), '.nq file should exist after finalizeWrite with nquads');
+      const written = await cas.readQuads(ctx.stagedFile.hash_value);
+      assert.strictEqual(written, nquads);
+
+      // cleanup
+      await fsp.unlink(cas.quadPath(ctx.stagedFile.hash_value));
+      await fsp.unlink(ctx.stagedFile.hashFile);
+    });
+
+    it('should write .nq file when hash already exists but .nq is missing', async () => {
+      const content = Buffer.from('nquads-missing-test-' + Date.now());
+      const nquads = '<https://example.org/s2> <https://example.org/p2> <https://example.org/o2> .\n';
+
+      // first pass: write hash file only (no nquads — simulates pre-migration data)
+      const ctx1 = makeContext({ data: content });
+      await cas.stageWrite(ctx1);
+      await cas.finalizeWrite(ctx1.stagedFile.tmpFile, ctx1.stagedFile.hashFile, null, {});
+      const hash = ctx1.stagedFile.hash_value;
+
+      assert.ok(!fs.existsSync(cas.quadPath(hash)), '.nq file should not exist yet');
+
+      // second pass: same content, now with nquads — hash exists, .nq missing
+      const ctx2 = makeContext({ data: content });
+      await cas.stageWrite(ctx2);
+      await cas.finalizeWrite(ctx2.stagedFile.tmpFile, ctx2.stagedFile.hashFile, nquads, {});
+
+      assert.ok(fs.existsSync(cas.quadPath(hash)), '.nq file should be written when hash exists but .nq is missing');
+      const written = await cas.readQuads(hash);
+      assert.strictEqual(written, nquads);
+
+      // cleanup
+      await fsp.unlink(cas.quadPath(hash));
+      await fsp.unlink(ctx1.stagedFile.hashFile);
+    });
   });
 
   describe('abortWrite()', () => {
@@ -384,6 +427,28 @@ describe('CAS Layer', () => {
       });
     });
 
+    it('should also delete the .nq file when hard-deleting an LD hash', async () => {
+      const ldData = JSON.stringify({
+        '@id': 'https://example.org/test/delete-ld',
+        '@type': 'http://schema.org/Thing',
+        'http://schema.org/name': 'Delete LD test'
+      });
+      const writeCtx = await caskFs.write({
+        filePath: '/cas-test/delete-ld.jsonld.json',
+        data: Buffer.from(ldData),
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+      const hash = writeCtx.data.file?.hash_value;
+      assert.ok(await cas.quadExists(hash), '.nq file should exist after writing LD file');
+
+      await caskFs.deleteFile({ filePath: '/cas-test/delete-ld.jsonld.json', requestor: TEST_USER, ignoreAcl: true });
+      const result = await cas.delete(hash);
+
+      assert.strictEqual(result.fileDeleted, true);
+      assert.strictEqual(await cas.quadExists(hash), false, '.nq file should be removed with the hash');
+    });
+
     it('should not delete the file when references remain', async () => {
       const content = Buffer.from('shared-hash-content-' + Date.now());
 
@@ -432,6 +497,72 @@ describe('CAS Layer', () => {
       const count = await cas.getUnusedHashCount();
       assert.ok(Number.isInteger(count), 'count should be an integer');
       assert.ok(count >= 0, 'count should be non-negative');
+    });
+  });
+
+  // ── Quad file (.nq) operations ─────────────────────────────────────────────
+
+  describe('quadPath()', () => {
+    it('should return diskPath(hash) + ".nq"', () => {
+      const hash = 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890';
+      assert.strictEqual(cas.quadPath(hash), cas.diskPath(hash) + '.nq');
+    });
+
+    it('should be an absolute path ending with <hash>.nq', () => {
+      const hash = 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890';
+      const result = cas.quadPath(hash);
+      assert.ok(path.isAbsolute(result), 'quadPath should be absolute');
+      assert.ok(result.includes('cas'), 'quadPath should be inside the cas directory');
+      assert.ok(result.endsWith(hash + '.nq'));
+    });
+  });
+
+  describe('writeQuads() / readQuads() / quadExists()', () => {
+    const TEST_NQUADS = '<https://example.org/s> <https://example.org/p> <https://example.org/o> .\n';
+    // Use a synthetic hash — no CAS content file needed for quad-only operations
+    const QUAD_HASH = 'aaaa110000000000000000000000000000000000000000000000000000000000';
+
+    after(async () => {
+      const quadFile = cas.quadPath(QUAD_HASH);
+      if (fs.existsSync(quadFile)) await fsp.unlink(quadFile);
+    });
+
+    it('quadExists() should return false when no .nq file exists', async () => {
+      assert.strictEqual(await cas.quadExists(QUAD_HASH), false);
+    });
+
+    it('writeQuads() should write the .nq file to disk', async () => {
+      await cas.writeQuads(QUAD_HASH, TEST_NQUADS);
+      assert.ok(fs.existsSync(cas.quadPath(QUAD_HASH)), '.nq file should exist after writeQuads');
+    });
+
+    it('quadExists() should return true after writeQuads', async () => {
+      assert.strictEqual(await cas.quadExists(QUAD_HASH), true);
+    });
+
+    it('readQuads() should return the exact string that was written', async () => {
+      const content = await cas.readQuads(QUAD_HASH);
+      assert.strictEqual(content, TEST_NQUADS);
+    });
+
+    it('readQuads() should return a readable stream when stream=true', async () => {
+      const stream = await cas.readQuads(QUAD_HASH, { stream: true });
+      assert.ok(typeof stream.pipe === 'function', 'should return a readable stream');
+
+      const chunks = [];
+      await new Promise((resolve, reject) => {
+        stream.on('data', c => chunks.push(c));
+        stream.on('end', resolve);
+        stream.on('error', reject);
+      });
+      assert.strictEqual(Buffer.concat(chunks).toString(), TEST_NQUADS);
+    });
+
+    it('readQuads() should throw when .nq file does not exist', async () => {
+      await assert.rejects(
+        () => cas.readQuads('b'.repeat(64)),
+        /Quad file not found/
+      );
     });
   });
 

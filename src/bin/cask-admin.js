@@ -68,6 +68,63 @@ program
   });
 
 program
+  .command('reindex-ld')
+  .description('Generate .nq quad files on disk for linked data hashes that do not have one. Reads nquads from the hash.nquads database column.')
+  .option('-f, --force', 'Overwrite existing .nq files', false)
+  .option('-b, --batch-size <size>', 'Number of hashes to process per batch', parseInt, 100)
+  .action(async (options) => {
+    handleGlobalOpts(options);
+    const cask = getClient(options);
+    assertDirectPg(cask, 'admin reindex-ld');
+
+    await cask.cas.init();
+
+    const batchSize = options.batchSize || 100;
+    let offset = 0;
+    let total = 0;
+    let written = 0;
+    let skipped = 0;
+
+    while( true ) {
+      let res;
+      try {
+        res = await cask.cas.dbClient.query(`
+          SELECT value, nquads, bucket
+          FROM ${config.database.schema}.hash
+          WHERE nquads IS NOT NULL AND nquads != ''
+          ORDER BY created
+          LIMIT $1 OFFSET $2
+        `, [batchSize, offset]);
+      } catch(e) {
+        if( e.message && e.message.includes('column') && e.message.includes('nquads') ) {
+          console.log('hash.nquads column does not exist — nothing to reindex.');
+          break;
+        }
+        throw e;
+      }
+
+      if( res.rows.length === 0 ) break;
+
+      for( let row of res.rows ) {
+        total++;
+        const exists = await cask.cas.quadExists(row.value, { bucket: row.bucket });
+        if( exists && !options.force ) {
+          skipped++;
+          continue;
+        }
+        await cask.cas.writeQuads(row.value, row.nquads, { bucket: row.bucket });
+        written++;
+        console.log(`[${written + skipped}/${total + (offset > 0 ? offset : 0)}] wrote ${row.value}`);
+      }
+
+      offset += batchSize;
+    }
+
+    console.log(`\nDone. Written: ${written}, Skipped (already exist): ${skipped}, Total processed: ${total}`);
+    await endClient(cask);
+  });
+
+program
   .command('unused-hash-count')
   .description('Count unused hashes in the CaskFS')
   .action(async (options={}) => {

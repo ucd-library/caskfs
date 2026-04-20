@@ -91,19 +91,103 @@ class Cas {
 
 
   /**
+   * @method quadPath
+   * @description Return the filesystem or GCS path for the .nq quad file associated with a hash.
+   *
+   * @param {String} hash hash value
+   * @returns {String} path to the .nq file
+   */
+  quadPath(hash) {
+    return this.diskPath(hash) + '.nq';
+  }
+
+  /**
+   * @method writeQuads
+   * @description Write an N-Quads string to the .nq file for the given hash.
+   *
+   * @param {String} hash hash value
+   * @param {String} nquads N-Quads string to write
+   * @param {Object} opts options passed through to the storage backend (e.g. opts.bucket for GCS)
+   * @returns {Promise}
+   */
+  async writeQuads(hash, nquads, opts={}) {
+    await this.init();
+    const quadFile = this.quadPath(hash);
+    await this.storage.mkdir(path.dirname(quadFile), {recursive: true});
+    await this.storage.writeFile(quadFile, nquads, opts);
+  }
+
+  /**
+   * @method readQuads
+   * @description Read the N-Quads string from the .nq file for the given hash.
+   *
+   * @param {String} hash hash value
+   * @param {Object} opts options object
+   * @param {Boolean} opts.stream if true, return a readable stream instead of a string
+   * @param {String} opts.bucket GCS bucket override (auto-resolved from DB if not provided)
+   * @param {Object} opts.dbClient optional postgres client for bucket resolution
+   * @returns {Promise<String>|ReadableStream}
+   */
+  async readQuads(hash, opts={}) {
+    await this.init();
+    const quadFile = this.quadPath(hash);
+
+    let readOpts = { ...opts };
+    if( this.cloudStorageEnabled && !readOpts.bucket ) {
+      readOpts.bucket = await this._getHashBucket(hash, opts.dbClient);
+    }
+
+    if( !await this.storage.exists(quadFile, readOpts) ) {
+      throw new Error(`Quad file not found for hash ${hash}: ${quadFile}`);
+    }
+
+    if( opts.stream ) {
+      return this.storage.createReadStream(quadFile, readOpts);
+    }
+    return this.storage.readFile(quadFile, { ...readOpts, encoding: 'utf8' });
+  }
+
+  /**
+   * @method quadExists
+   * @description Check whether the .nq quad file exists for the given hash.
+   *
+   * @param {String} hash hash value
+   * @param {Object} opts options object
+   * @param {String} opts.bucket GCS bucket override (auto-resolved from DB if not provided)
+   * @param {Object} opts.dbClient optional postgres client for bucket resolution
+   * @returns {Promise<Boolean>}
+   */
+  async quadExists(hash, opts={}) {
+    await this.init();
+    const quadFile = this.quadPath(hash);
+
+    let existsOpts = { ...opts };
+    if( this.cloudStorageEnabled && !existsOpts.bucket ) {
+      existsOpts.bucket = await this._getHashBucket(hash, opts.dbClient);
+    }
+
+    return this.storage.exists(quadFile, existsOpts);
+  }
+
+  /**
    * @method finalizeWrite
    * @description Finalize a write operation by moving the temp file to its final location
-   * if a file with the same hash does not already exist.
-   * 
+   * if a file with the same hash does not already exist.  If nquads are provided, the .nq
+   * companion file is written whenever it does not yet exist (regardless of whether the hash
+   * file itself is new).
+   *
    * @param {String} tmpFile path to the temp file
    * @param {String} hashFile path to the final file location based on hash
+   * @param {String} nquads N-Quads string for linked data files, or null for binary files
    * @param {Object} opts copy options, mostly for bucket storage backends.
-   * 
+   *
    * @returns {Promise<Boolean>} resolves with true if the file was copied, false if it already existed
    */
   async finalizeWrite(tmpFile, hashFile, nquads, opts={}) {
     let copied = false;
     await this.init();
+
+    const hashValue = path.basename(hashFile);
 
     if( !await this.storage.exists(hashFile, opts) ) {
       copied = true;
@@ -111,10 +195,10 @@ class Cas {
       await this.storage.copyFile(tmpFile, hashFile, opts);
 
       if( nquads ) {
-        await opts.dbClient.query(`
-          UPDATE ${config.database.schema}.hash SET nquads = $1 WHERE value = $2
-        `, [nquads, path.basename(hashFile)]);
+        await this.writeQuads(hashValue, nquads, opts);
       }
+    } else if( nquads && !await this.quadExists(hashValue, opts) ) {
+      await this.writeQuads(hashValue, nquads, opts);
     }
 
     if( fs.existsSync(tmpFile) ) {
@@ -292,15 +376,23 @@ class Cas {
         this.logger.info(`Deleting unreferenced file with hash ${hash} at path ${fullPath}`);
       }
 
-      if( await this.storage.exists(fullPath) ) {
-        await this.storage.unlink(fullPath);
+      let deleteOpts = {};
+      if( this.cloudStorageEnabled ) {
+        deleteOpts.bucket = await this._getHashBucket(hash, dbClient);
+      }
+
+      if( await this.storage.exists(fullPath, deleteOpts) ) {
+        await this.storage.unlink(fullPath, deleteOpts);
+      }
+
+      const quadFile = this.quadPath(hash);
+      if( await this.storage.exists(quadFile, deleteOpts) ) {
+        await this.storage.unlink(quadFile, deleteOpts);
       }
 
       await dbClient.query(`
         DELETE FROM ${config.database.schema}.hash WHERE value = $1
       `, [hash]);
-
-      // Should we look to cleanup dirs for fs storage backend?
 
       fileDeleted = true;
     }
@@ -479,15 +571,33 @@ class Cas {
   /**
    * @method _getHashFilePath
    * @description Get the relative file path for a given hash value.
-   * 
+   *
    * @param {String} hash hash value for the file
-   * 
+   *
    * @returns {String} relative file path
    */
   _getHashFilePath(hash) {
-    return hash.substring(0,3) + '/' + 
-      hash.substring(3,6) + '/' + 
+    return hash.substring(0,3) + '/' +
+      hash.substring(3,6) + '/' +
       hash;
+  }
+
+  /**
+   * @method _getHashBucket
+   * @description Resolve the GCS bucket name for a given hash value by querying the database.
+   * Falls back to the configured default bucket if none is stored.
+   *
+   * @param {String} hash hash value
+   * @param {Object} dbClient optional postgres client
+   * @returns {Promise<String>} bucket name
+   */
+  async _getHashBucket(hash, dbClient) {
+    let client = dbClient || this.dbClient;
+    let res = await client.query(
+      `SELECT bucket FROM ${config.database.schema}.hash WHERE value = $1`,
+      [hash]
+    );
+    return (res.rows[0] && res.rows[0].bucket) || config.cloudStorage.defaultBucket;
   }
 
 }

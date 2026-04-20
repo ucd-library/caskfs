@@ -45,6 +45,7 @@ class GCSStorage {
   }
 
   async getFileBucket(filePath, opts={}) {
+    if( opts.bucket ) return opts.bucket;
     let bucket = await (opts.dbClient || this.dbClient).getFileBucket(filePath);
     if( !bucket ) {
       throw new Error(`No bucket found for file path: ${filePath}`);
