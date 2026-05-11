@@ -58,7 +58,9 @@ class Cas {
       // writePath skips creating tmpFile when the hash already exists in CAS;
       // nullify so the stat below falls back to the existing hash file.
       if( tmpFile && !fs.existsSync(tmpFile) ) tmpFile = null;
-    } else if( context.data.data ) {
+    } else if( context.data.data !== undefined && context.data.data !== null ) {
+      // Note: zero-length payloads ('' or Buffer.alloc(0)) are valid input;
+      // do not use a truthy check here.
       this.logger.debug('Staging write from data', context.logSignal);
       digests = await this.writeData(tmpFile, context.data);
     } else if( context.data.hash ) {
