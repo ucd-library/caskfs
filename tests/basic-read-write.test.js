@@ -173,6 +173,81 @@ describe('Basic Read/Write Operations', () => {
     });
   });
 
+  describe('zero-length payloads', () => {
+    const EMPTY_STRING_PATH = '/empty/marker-string';
+    const EMPTY_BUFFER_PATH = '/empty/marker-buffer';
+
+    it("should write a file with data: '' (empty string)", async () => {
+      const ctx = await caskFs.write({
+        filePath: EMPTY_STRING_PATH,
+        data: '',
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+
+      assert.ok(!ctx.data.error, `write should not error: ${ctx.data.error?.message}`);
+      assert.strictEqual(ctx.data.actions.fileInsert, true, 'should have inserted a new file record');
+      assert.ok(ctx.data.file?.hash_value, 'should have a hash_value for the empty payload');
+    });
+
+    it('should round-trip an empty string write as a zero-byte file', async () => {
+      const buffer = await caskFs.read({
+        filePath: EMPTY_STRING_PATH,
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+
+      assert.ok(Buffer.isBuffer(buffer), 'should return a Buffer');
+      assert.strictEqual(buffer.length, 0, 'empty string write should read back as 0 bytes');
+    });
+
+    it('should write a file with data: Buffer.alloc(0)', async () => {
+      const ctx = await caskFs.write({
+        filePath: EMPTY_BUFFER_PATH,
+        data: Buffer.alloc(0),
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+
+      assert.ok(!ctx.data.error, `write should not error: ${ctx.data.error?.message}`);
+      assert.strictEqual(ctx.data.actions.fileInsert, true, 'should have inserted a new file record');
+      assert.ok(ctx.data.file?.hash_value, 'should have a hash_value for the empty Buffer payload');
+    });
+
+    it('should produce the same hash for empty string and empty Buffer', async () => {
+      const stringMeta = await caskFs.metadata({
+        filePath: EMPTY_STRING_PATH,
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+      const bufferMeta = await caskFs.metadata({
+        filePath: EMPTY_BUFFER_PATH,
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+
+      assert.strictEqual(
+        stringMeta.hash_value,
+        bufferMeta.hash_value,
+        "'' and Buffer.alloc(0) are the same bytes and should hash identically"
+      );
+    });
+
+    it('should still throw when no data field is supplied at all', async () => {
+      const ctx = await caskFs.write({
+        filePath: '/empty/no-data-field',
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+      assert.ok(ctx.data.error, 'should have an error when no input source is supplied');
+      assert.match(
+        ctx.data.error.message,
+        /No input specified for write operation/,
+        'error message should still call out missing input'
+      );
+    });
+  });
+
   describe('LD file .nq companion files', () => {
     let ldHash;
 
