@@ -13,6 +13,17 @@ import ScrollController from '../../controllers/ScrollController.js';
 import uploadUtils from '../../utils/uploadUtils.js';
 import FsDisplayUtils from '../../utils/FsDisplayUtils.js';
 
+/**
+ * @description Displays a simplified list of files in a directory, along with upload functionality.
+ * On single file page, used to display either:
+ * 1. file subdirectory contents if regular file, or
+ * 2. sibling content if file is part of a file subdirectory
+ * @property {Boolean} dragging - whether a file is currently being dragged over the page
+ * @property {Number} dragZoneHeight - height of the drag zone, which changes based on the position of the drag event
+ * @property {Number} dragZonePaddingTop - padding top of the drag zone, which changes based on the position of the drag event
+ * @property {Boolean} hasParentFile - whether the current directory has a parent file (i.e. whether we are showing sibling content or subdirectory content)
+ * @property {Object} parentFile - display object for parent file, if it exists
+ */
 export default class CaskfsDirectorySimpleList extends Mixin(LitElement)
   .with(LitCorkUtils, MainDomElement) {
 
@@ -56,11 +67,12 @@ export default class CaskfsDirectorySimpleList extends Mixin(LitElement)
 
     this.hasParentFile = false;
     this.parentFile = null;
-    const parentFileRes = await this.FsModel.getMetadata(this.ctl.directoryPath.parentPath, { errorSettings: { suppressError: true } });
-    if ( parentFileRes.state === 'loaded') {
-      this.hasParentFile = true;
-      this.parentFile = new FsDisplayUtils(parentFileRes.payload);
-
+    if (this.ctl.directoryPath.parentPath !== '/' ){
+      const parentFileRes = await this.FsModel.getMetadata(this.ctl.directoryPath.parentPath, { errorSettings: { suppressError: true } });
+      if ( parentFileRes.state === 'loaded') {
+        this.hasParentFile = true;
+        this.parentFile = new FsDisplayUtils(parentFileRes.payload);
+      }
     }
 
     await this.ctl.directoryList.getContents( {asDisplayItems: true, parent: this.hasParentFile} );
@@ -97,18 +109,26 @@ export default class CaskfsDirectorySimpleList extends Mixin(LitElement)
     this.dragging = false;
   }
 
+  /**
+   * @description Handle page change event from pagination component
+   * @param {CustomEvent} e - Page change event
+   */
   _onPageChange(e){
     this.ctl.qs.setParam('page', e.detail.page);
     this.ctl.qs.setLocation();
   }
 
+  /**
+   * @description Handle drop event on component. Used to upload files
+   * @param {Event} e - Drop event
+   */
   async _onDrop(e) {
     e.preventDefault();
     this.dragging = false;
     const files = await uploadUtils.getFilesFromDragEvent(e);
     const results = await this.FsModel.upload(files, this.hasParentFile ? this.ctl.directoryPath.parentPath : this.ctl.directoryPath.pathname);
     if ( results.some( r => r.state === 'loaded' )) {
-      this.AppStateModel.refresh();
+      this._onAppStateUpdate(this.AppStateModel.store.data);
     }
   }
 
