@@ -67,7 +67,7 @@ function renderHeader(){
             site-url=${appUrlUtils.fullLocation()}
             slogan="Cask File System">
         </ucdlib-branding-bar>
-        <caskfs-partition-status-button></caskfs-partition-status-button>
+        <!--<caskfs-partition-status-button></caskfs-partition-status-button> -->
       </div>
 
       <ucd-theme-primary-nav>

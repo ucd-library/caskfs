@@ -116,7 +116,7 @@ export default class CaskfsUploadTracker extends Mixin(LitElement)
    * @returns 
    */
   refreshIfCurrentDirectory(upload){
-    if ( upload.record.state !== 'loaded' ) return;
+    if ( upload.record.state !== 'loaded' || this.AppStateModel.store.data.page !== 'directory' ) return;
     if ( upload.record.destDir === this.ctl.directoryPath.pathname ){
       this.AppStateModel.refresh({ scrollToLastPosition: true });
     }
