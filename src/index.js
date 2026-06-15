@@ -781,6 +781,18 @@ class CaskFs {
     return res.rows[0];
   }
 
+  /**
+   * @method deleteDirectory
+   * @description Recursively delete a directory and all its files and subdirectories.
+   *
+   * @param {Object|CaskFSContext} context context or options object
+   * @param {String} context.directory directory path to delete
+   * @param {String} [context.requestor] user name of the requestor
+   * @param {Boolean} [context.softDelete] if true, skip CAS file removal
+   * @param {DatabaseClient} [context.dbClient] optional database client to use
+   * @param {Function} [context.onDeleteFile] optional callback invoked after each file deletion; receives (filePath)
+   * @returns {Promise<void>}
+   */
   async deleteDirectory(context={}) {
     context = createContext(context);
     let dirPath = context.data.directory;
@@ -805,12 +817,15 @@ class CaskFs {
     let ls = await this.ls(context);
     for( let file of ls.files ) {
       await this.deleteFile({
-        filePath: file.filepath, 
+        filePath: file.filepath,
         dbClient: context.data.dbClient,
         softDelete: context.data.softDelete,
         ignoreAcl: true
       });
       this.logger.info(`Deleted file: ${file.filepath}`, context.logSignal);
+      if( context.data.onDeleteFile ) {
+        context.data.onDeleteFile(file.filepath);
+      }
     }
 
     // remove all sub-directories recursively
@@ -821,7 +836,8 @@ class CaskFs {
           requestor: context.data.requestor,
           rootDir: context.data.rootDir,
           dbClient: context.data.dbClient,
-          softDelete: context.data.softDelete
+          softDelete: context.data.softDelete,
+          onDeleteFile: context.data.onDeleteFile
         })
       );
     }

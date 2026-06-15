@@ -664,7 +664,15 @@ program
 
     if( options.directory ) {
       options.directory = filePath;
+      let deleteCount = 0;
+      options.onDeleteFile = () => {
+        deleteCount++;
+        if( deleteCount % 10000 === 0 ) {
+          console.log(`Deleted ${deleteCount} files from ${filePath}...`);
+        }
+      };
       await cask.deleteDirectory(options);
+      console.log(`Delete complete: ${deleteCount} total files removed from ${filePath}`);
     } else {
       const resp = await cask.deleteFile(options);
       console.log(resp);
