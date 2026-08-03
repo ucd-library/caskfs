@@ -40,6 +40,7 @@ const literalValues = (result) => result.results.map(r => r.object).sort();
 
 describe('Linked Data Operations', () => {
   let caskFs;
+  let beforePartitionedWrite;
 
   before(async () => {
     caskFs = await setup();
@@ -57,6 +58,12 @@ describe('Linked Data Operations', () => {
       assert.ok(!ctx.data.error, `Failed to write ${f.filePath}: ${ctx.data.error?.message}`);
       assert.ok(ctx.data.actions.detectedLd, `${f.filePath} should be detected as RDF`);
     }
+
+    // Pause and capture a timestamp boundary between the two fixture groups so
+    // updatedAfter/updatedBefore filters have a clear dividing line to test against.
+    await new Promise(r => setTimeout(r, 1500));
+    beforePartitionedWrite = new Date().toISOString();
+    await new Promise(r => setTimeout(r, 1500));
 
     // Partitioned LD files — used by the literal partition-key tests
     const partFixtures = [
@@ -164,6 +171,29 @@ describe('Linked Data Operations', () => {
       const result = await caskFs.rdf.find({ object: ALICE_URI, type: SCHEMA_ARTICLE });
       assert.strictEqual(result.totalCount, 2);
       assert.deepStrictEqual(filepaths(result), [PUB1_PATH, PUB2_PATH]);
+    });
+  });
+
+  describe('rdf.find() — by last-updated range', () => {
+    it('should find only files written after the boundary timestamp', async () => {
+      const result = await caskFs.rdf.find({ updatedAfter: beforePartitionedWrite });
+      assert.deepStrictEqual(filepaths(result), [PARTA_PATH, PARTB_PATH]);
+    });
+
+    it('should find only files written before the boundary timestamp', async () => {
+      const result = await caskFs.rdf.find({ updatedBefore: beforePartitionedWrite });
+      assert.deepStrictEqual(filepaths(result), [ALICE_PATH, BOB_PATH, PUB1_PATH, PUB2_PATH]);
+    });
+
+    it('should intersect updatedAfter with a predicate filter', async () => {
+      const result = await caskFs.rdf.find({ updatedAfter: beforePartitionedWrite, predicate: SCHEMA_NAME });
+      assert.deepStrictEqual(filepaths(result), [PARTA_PATH, PARTB_PATH]);
+    });
+
+    it('should return no results when the range excludes all files', async () => {
+      const future = new Date(Date.now() + 60_000).toISOString();
+      const result = await caskFs.rdf.find({ updatedAfter: future });
+      assert.strictEqual(result.totalCount, 0);
     });
   });
 

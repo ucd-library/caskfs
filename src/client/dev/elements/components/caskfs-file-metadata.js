@@ -1,4 +1,4 @@
-import { LitElement } from 'lit';
+import { LitElement, html } from 'lit';
 import {render, styles} from "./caskfs-file-metadata.tpl.js";
 import { LitCorkUtils, Mixin } from '@ucd-lib/cork-app-utils';
 
@@ -8,6 +8,8 @@ import 'prismjs/components/prism-json.js';
 import DirectoryPathController from '../../controllers/DirectoryPathController.js';
 import AppComponentController from '../../controllers/AppComponentController.js';
 import FsDisplayUtils from '../../utils/FsDisplayUtils.js';
+
+import './caskfs-partition-edit-form.js';
 
 export default class CaskfsFileMetadata extends Mixin(LitElement)
   .with(LitCorkUtils) {
@@ -67,6 +69,12 @@ export default class CaskfsFileMetadata extends Mixin(LitElement)
     if ( res.state === 'loaded' ) {
       this.data = res.payload;
     }
+  }
+
+  _onEditPartitionsClick(){
+    this.AppStateModel.showDialogModal({
+      content: () => html`<caskfs-partition-edit-form .filePath=${this.ctl.directoryPath.pathname}></caskfs-partition-edit-form>`
+    });
   }
 
 }

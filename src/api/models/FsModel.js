@@ -158,6 +158,25 @@ class FsModel extends BaseModel {
     return this.service.getMetadata(path, appStateOptions);
   }
 
+  getPartitionKeyDetail(path, appStateOptions={}) {
+    return this.service.getPartitionKeyDetail(path, appStateOptions);
+  }
+
+  /**
+   * @description Replace a file's manually-assigned partition keys.
+   * @param {string} path - file path
+   * @param {string[]} partitionKeys - full replacement list of manual partition keys
+   * @param {object} appStateOptions
+   * @returns {Promise<object>}
+   */
+  async patchPartitionKeys(path, partitionKeys, appStateOptions={}) {
+    const res = await this.service.patchPartitionKeys(path, partitionKeys, appStateOptions);
+    if ( res.state === 'loaded' ) {
+      clearCache();
+    }
+    return res;
+  }
+
   getFileContents(path, opts={}) {
     return this.service.getFileContents(path, opts);
   }

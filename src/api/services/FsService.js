@@ -74,6 +74,81 @@ class FsService extends BaseService {
     return store.get(id);
   }
 
+  /**
+   * @description Get the partition key detail for a file, split into manually-assigned
+   * keys (editable) and auto-path-derived keys (read-only). Kept as a separate call from
+   * getMetadata() so that call can stay lean; only fetch this when it's actually needed
+   * (e.g. when a partition-editing UI is opened).
+   * @param {string} path - file path
+   * @param {object} modelAppStateOptions
+   * @returns {Promise<object>}
+   */
+  async getPartitionKeyDetail(path, modelAppStateOptions={}) {
+    let ido = { path };
+    let id = payload.getKey(ido);
+    const store = this.store.data.partitionKeyDetail;
+
+    const appStateOptions = serviceUtils.mergeAppStateOptions(
+      { errorSettings: {message: 'Unable to get partition key detail'} },
+      modelAppStateOptions
+    );
+
+    await this.checkRequesting(
+      id, store,
+      () => this.request({
+        url : `${this.baseUrl}${path}`,
+        qs: { partitions: true },
+        parseResponseJson: true,
+        checkCached : () => store.get(id),
+        onUpdate : resp => this.store.set(
+          payload.generate(ido, resp),
+          store,
+          null,
+          appStateOptions
+        )
+      })
+    );
+
+    return store.get(id);
+  }
+
+  /**
+   * @description Replace a file's manually-assigned partition keys. Auto-path keys are
+   * recomputed server-side and are not affected.
+   * @param {string} path - file path
+   * @param {string[]} partitionKeys - full replacement list of manual partition keys
+   * @param {object} modelAppStateOptions
+   * @returns {Promise<object>}
+   */
+  async patchPartitionKeys(path, partitionKeys, modelAppStateOptions={}) {
+    let ido = { path };
+    let id = payload.getKey(ido);
+    const store = this.store.data.patchPartitionKeys;
+
+    const appStateOptions = serviceUtils.mergeAppStateOptions(
+      { errorSettings: {message: 'Unable to update partition keys'} },
+      modelAppStateOptions
+    );
+
+    await this.checkRequesting(
+      id, store,
+      () => this.request({
+        url : `${this.baseUrl}${path}`,
+        json: true,
+        fetchOptions: { method: 'PATCH', body: { partitionKeys } },
+        parseResponseJson: true,
+        onUpdate : resp => this.store.set(
+          payload.generate(ido, resp),
+          store,
+          null,
+          appStateOptions
+        )
+      })
+    );
+
+    return store.get(id);
+  }
+
   async uploadFile(destDir, file, opts = {}) {
     const store = this.store.data.uploadFile;
     const filename = file.filename;

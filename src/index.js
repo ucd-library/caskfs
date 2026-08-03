@@ -546,6 +546,40 @@ class CaskFs {
   }
 
   /**
+   * @method partitionKeyDetail
+   * @description Get the partition keys applied to a file, split into manually-assigned
+   * keys and auto-path-derived keys. Intended for editing UIs that need to distinguish
+   * editable (manual) partition keys from read-only auto-path keys; kept separate from
+   * metadata() so that call can stay lean.
+   *
+   * @param {Object|CaskFSContext} context context or object with filePath property
+   * @param {String} context.filePath file path to look up
+   * @param {Object} context.requestor user name of the requestor
+   *
+   * @returns {Promise<Object>} object with `manual` (array of key strings) and `auto`
+   * (array of {name, value} objects) properties
+   */
+  async partitionKeyDetail(context) {
+    context = createContext(context, this.dbClient);
+    let dbClient = context.data.dbClient || this.dbClient;
+
+    let metadata = await this.metadata(context);
+    let rows = await dbClient.getFilePartitionKeyDetail(metadata.file_id);
+
+    let manual = [];
+    let auto = [];
+    for( let row of rows ) {
+      if( row.auto_path_name ) {
+        auto.push({name: row.auto_path_name, value: row.value});
+      } else {
+        manual.push(row.value);
+      }
+    }
+
+    return {manual, auto};
+  }
+
+  /**
    * @method _setPartitionKeys
    * @description Internal method to set partition keys for a file. Will clear existing keys first.
    * This assumes you have the complete list of new keys, both from the auto-path parser and any

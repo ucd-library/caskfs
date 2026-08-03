@@ -228,6 +228,29 @@ class Database {
   }
 
   /**
+   * @method getFilePartitionKeyDetail
+   * @description Get the partition keys applied to a file, along with the name of the
+   * auto-path rule that applied each key, if any. Used to distinguish auto-path-derived
+   * partition keys (not editable) from manually-assigned ones (editable).
+   *
+   * @param {String} fileId file UUID
+   *
+   * @returns {Promise<Array>} array of {value, auto_path_name} rows. auto_path_name is
+   * null for manually-assigned keys.
+   */
+  async getFilePartitionKeyDetail(fileId) {
+    const resp = await this.client.query(`
+      SELECT pk.value, app.name AS auto_path_name
+      FROM ${this.schema}.file_partition_key fpk
+      JOIN ${this.schema}.partition_key pk ON fpk.partition_key_id = pk.partition_key_id
+      LEFT JOIN ${this.schema}.auto_path_partition app ON pk.auto_path_partition_id = app.auto_path_partition_id
+      WHERE fpk.file_id = $1
+      ORDER BY pk.value
+    `, [fileId]);
+    return resp.rows;
+  }
+
+  /**
    * @method updateFileMetadata
    * @description Update the metadata and/or partition keys for a file.
    *
@@ -401,6 +424,8 @@ async getChildDirectories(directory, opts = {}) {
    * @param {String} opts.predicate predicate URI to match
    * @param {String} opts.subject subject URI to match
    * @param {String} opts.object object URI to match
+   * @param {String|Date} opts.updatedAfter only include files modified at or after this timestamp
+   * @param {String|Date} opts.updatedBefore only include files modified at or before this timestamp
    * @param {Number} opts.limit limit number of results. Default 100
    * @param {Number} opts.offset offset for results. Default 0
    *
@@ -511,6 +536,8 @@ async getChildDirectories(directory, opts = {}) {
    * @param {String} opts.graph graph URI to filter by
    * @param {String} opts.type type URI to filter by
    * @param {Array} opts.partitionKeys array of partition keys to filter by
+   * @param {String|Date} opts.updatedAfter only include files modified at or after this timestamp
+   * @param {String|Date} opts.updatedBefore only include files modified at or before this timestamp
    * @returns {String} SQL WITH clauses for filtering files
    */
   generateFileWithFilter(opts={}, args) {
@@ -532,6 +559,24 @@ async getChildDirectories(directory, opts = {}) {
       `);
       intersectClauses.push(`SELECT file_id FROM ${type}_file_match`);
       args.push(opts[type]);
+    }
+
+    if( opts.updatedAfter || opts.updatedBefore ) {
+      let updatedWhere = [];
+      if( opts.updatedAfter ) {
+        updatedWhere.push(`modified >= $${args.length + 1}`);
+        args.push(opts.updatedAfter);
+      }
+      if( opts.updatedBefore ) {
+        updatedWhere.push(`modified <= $${args.length + 1}`);
+        args.push(opts.updatedBefore);
+      }
+
+      withClauses.push(`updated_file_match AS (
+        SELECT file_id FROM ${config.database.schema}.file
+        WHERE ${updatedWhere.join(' AND ')}
+      )`);
+      intersectClauses.push(`SELECT file_id FROM updated_file_match`);
     }
 
     // we want all the ld_link that have an object equal to the subject 
