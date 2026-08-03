@@ -389,13 +389,15 @@ class HttpCaskFsClient {
        * @returns {Promise<Object>}
        */
       async find(opts={}) {
-        const { predicate, partitionKeys, graph, subject, object, type, limit, offset } = opts;
+        const { predicate, partitionKeys, graph, subject, object, type, updatedAfter, updatedBefore, limit, offset } = opts;
         const url = new URL(`${self.baseUrl}/find`);
         if (predicate)          url.searchParams.set('predicate',     predicate);
         if (subject)            url.searchParams.set('subject',       subject);
         if (object)             url.searchParams.set('object',        object);
         if (graph)              url.searchParams.set('graph',         graph);
         if (type)               url.searchParams.set('type',          type);
+        if (updatedAfter)       url.searchParams.set('updatedAfter',  updatedAfter);
+        if (updatedBefore)      url.searchParams.set('updatedBefore', updatedBefore);
         if (partitionKeys?.length) url.searchParams.set('partitionKeys', partitionKeys.join(','));
         if (limit  !== undefined) url.searchParams.set('limit',  limit);
         if (offset !== undefined) url.searchParams.set('offset', offset);

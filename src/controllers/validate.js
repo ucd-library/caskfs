@@ -6,7 +6,7 @@ export class Validator {
   /**
    * @description Create a new Validator
    * @param {Object} schema - validation schema
-   * @param {string} schema.[field].type - type of field: string, integer, positiveInteger, positiveIntegerOrZero, boolean
+   * @param {string} schema.[field].type - type of field: string, integer, positiveInteger, positiveIntegerOrZero, boolean, date
    * @param {boolean} schema.[field].multiple - whether multiple values are allowed (comma-separated strings or arrays)
    * @param {boolean} schema.[field].required - whether field is required
    * @param {Array} schema.[field].inSet - array of allowed values
@@ -20,7 +20,8 @@ export class Validator {
       POSITIVE_INTEGER: { code: 'POSITIVE_INTEGER', message: 'Expected positive integer value' },
       POSITIVE_INTEGER_OR_ZERO: { code: 'POSITIVE_INTEGER_OR_ZERO', message: 'Expected positive integer or zero value' },
       BOOLEAN: { code: 'BOOLEAN', message: 'Expected boolean value' },
-      IN_SET: { code: 'IN_SET', message: 'Value not in allowed set' }
+      IN_SET: { code: 'IN_SET', message: 'Value not in allowed set' },
+      DATE: { code: 'DATE', message: 'Expected a valid date/timestamp value' }
     };
 
     this.results = {};
@@ -71,6 +72,15 @@ export class Validator {
             value = value.map( v => this.validateBoolean( v ));
           } else {
             value = this.validateBoolean( value );
+          }
+        }
+
+        // test & coerce date types
+        if ( rules.type === 'date' ){
+          if ( rules.multiple ){
+            value = value.map( v => this.validateDate( v ) );
+          } else {
+            value = this.validateDate( value );
           }
         }
 
@@ -135,6 +145,14 @@ export class Validator {
     } else {
       throw new SingleValidationError( this.errorCodes.BOOLEAN );
     }
+  }
+
+  validateDate( value ){
+    const date = new Date( value );
+    if ( isNaN( date.getTime() ) ) {
+      throw new SingleValidationError( this.errorCodes.DATE );
+    }
+    return date.toISOString();
   }
 
   validateInSet( value, allowedValues=[] ){

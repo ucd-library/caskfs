@@ -625,6 +625,8 @@ program
   .option('-s, --subject <subject-uri>', 'Only include files with the specified subject URI')
   .option('-o, --object <object-uri>', 'Only include files with the specified object URI')
   .option('-t, --type <type-uri>', 'Only include files with the specified RDF type URI')
+  .option('--updated-after <date>', 'Only include files last modified at or after this timestamp (ISO8601)')
+  .option('--updated-before <date>', 'Only include files last modified at or before this timestamp (ISO8601)')
   .option('-l, --limit <number>', 'Limit the number of results returned', parseInt)
   .option('-f, --offset <number>', 'Offset the results returned by the specified number', parseInt)
   .option('-d, --debug-query', 'Output the SQL query used to find the files', false)

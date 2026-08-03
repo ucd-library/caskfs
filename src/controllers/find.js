@@ -12,6 +12,8 @@ const parseArgs = ( query ) => {
     object: { type: 'string' },
     graph: { type: 'string' },
     type: { type: 'string' },
+    updatedAfter: { type: 'date' },
+    updatedBefore: { type: 'date' },
     limit: { type: 'positiveInteger' },
     offset: { type: 'positiveIntegerOrZero' },
     partitionKeys: { type: 'string', multiple: true }
