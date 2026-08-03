@@ -61,6 +61,11 @@ router.get('/', (req, res) => {
 router.get(/(.*)/, async (req, res) => {
   const filePath = req.params[0] || '/';
   try {
+    if ( (req.query?.partitions || '').trim().toLowerCase() === 'true' ) {
+      const detail = await caskFs.partitionKeyDetail({filePath, corkTraceId: req.corkTraceId});
+      return res.json(detail);
+    }
+
     const metadata = await caskFs.metadata({filePath, corkTraceId: req.corkTraceId});
 
     if (
@@ -291,9 +296,28 @@ router.put(/(.*)/, async (req, res) => {
   await handleWrite(filePath, req, res, true);
 });
 
-// metadata updates — not yet implemented
-router.patch(/(.*)/, (req, res) => {
-  res.status(501).json({ error: 'Not Implemented' });
+// update a file's manually-assigned partition keys — auto-path keys are recomputed
+// server-side and cannot be set through this endpoint
+router.patch(/(.*)/, silentJson, async (req, res) => {
+  try {
+    const filePath = req.params[0] || '/';
+    const partitionKeys = req.body?.partitionKeys;
+
+    if ( !Array.isArray(partitionKeys) ) {
+      return res.status(400).json({ error: 'partitionKeys array is required' });
+    }
+
+    const result = await caskFs.patchMetadata({
+      filePath,
+      partitionKeys,
+      requestor: req.user || config.acl.defaultRequestor || 'http',
+      corkTraceId: req.corkTraceId,
+    });
+
+    res.status(200).json(result.metadata);
+  } catch (e) {
+    return handleError(res, req, e);
+  }
 });
 
 router.delete(/(.*)/, json(), async (req, res) => {

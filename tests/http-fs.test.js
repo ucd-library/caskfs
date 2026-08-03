@@ -269,6 +269,132 @@ describe('POST /fs/copy', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Partition key editing endpoints: GET ?partitions=true and PATCH /fs/*
+// ---------------------------------------------------------------------------
+
+describe('Partition Key Editing Endpoints', () => {
+  let caskFs, baseUrl;
+
+  const PLAIN_FILE  = '/plain-partition-test.txt';
+  const TAGGED_FILE = '/staging/partition-api-test/tagged.txt';
+
+  before(async () => {
+    ({ caskFs, baseUrl } = await setup());
+    await caskFs.autoPath.partition.set({ name: 'api-env', index: 1 });
+
+    // The HTTP server serves requests through a separate, long-lived CaskFs singleton
+    // (src/controllers/caskFs.js) that caches its own AutoPath config in memory. It only
+    // refreshes that cache when set()/remove() is called on itself, so force-refresh it
+    // here — otherwise PATCH requests below would recompute auto-path keys against a
+    // stale (rule-less) config and wipe the auto key from files that already have it.
+    const { default: httpCaskFs } = await import('../src/controllers/caskFs.js');
+    await httpCaskFs.autoPath.partition.getConfig(true);
+
+    await caskFs.write({
+      filePath: PLAIN_FILE,
+      data: Buffer.from('plain'),
+      requestor: 'test-user',
+      ignoreAcl: true,
+    });
+
+    await caskFs.write({
+      filePath: TAGGED_FILE,
+      data: Buffer.from('tagged'),
+      requestor: 'test-user',
+      ignoreAcl: true,
+      partitionKeys: ['manual-tag'],
+    });
+  });
+
+  after(async () => {
+    const { default: httpCaskFs } = await import('../src/controllers/caskFs.js');
+    await caskFs.autoPath.partition.remove('api-env');
+    await httpCaskFs.autoPath.partition.getConfig(true);
+    await teardown();
+  });
+
+  describe('GET /fs/* - ?partitions=true', () => {
+    it('should return manual and auto arrays for a file with both', async () => {
+      const res = await fetch(`${baseUrl}/fs${TAGGED_FILE}?partitions=true`);
+      assert.strictEqual(res.status, 200);
+      const body = await res.json();
+      assert.deepStrictEqual(body.manual, ['manual-tag']);
+      assert.strictEqual(body.auto.length, 1);
+      assert.strictEqual(body.auto[0].name, 'api-env');
+      assert.strictEqual(body.auto[0].value, 'api-env-staging');
+    });
+
+    it('should return empty arrays for a file with no partition keys', async () => {
+      const res = await fetch(`${baseUrl}/fs${PLAIN_FILE}?partitions=true`);
+      assert.strictEqual(res.status, 200);
+      const body = await res.json();
+      assert.deepStrictEqual(body.manual, []);
+      assert.deepStrictEqual(body.auto, []);
+    });
+
+    it('should not include partition detail fields in the plain metadata response', async () => {
+      const res = await fetch(`${baseUrl}/fs${TAGGED_FILE}?metadata=true`);
+      assert.strictEqual(res.status, 200);
+      const body = await res.json();
+      assert.strictEqual(body.manual, undefined);
+      assert.strictEqual(body.auto, undefined);
+    });
+
+    it('should return 404 for a non-existent file', async () => {
+      const res = await fetch(`${baseUrl}/fs/does/not/exist.txt?partitions=true`);
+      assert.strictEqual(res.status, 404);
+    });
+  });
+
+  describe('PATCH /fs/*', () => {
+    async function patch(filePath, body) {
+      return fetch(`${baseUrl}/fs${filePath}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    }
+
+    it('should return 400 when partitionKeys is missing', async () => {
+      const res = await patch(TAGGED_FILE, {});
+      assert.strictEqual(res.status, 400);
+    });
+
+    it('should return 400 when partitionKeys is not an array', async () => {
+      const res = await patch(TAGGED_FILE, { partitionKeys: 'not-an-array' });
+      assert.strictEqual(res.status, 400);
+    });
+
+    it('should replace manual partition keys and leave auto-path keys untouched', async () => {
+      const res = await patch(TAGGED_FILE, { partitionKeys: ['new-manual-tag'] });
+      assert.strictEqual(res.status, 200);
+
+      const detailRes = await fetch(`${baseUrl}/fs${TAGGED_FILE}?partitions=true`);
+      const detail = await detailRes.json();
+      assert.deepStrictEqual(detail.manual, ['new-manual-tag']);
+      assert.ok(!detail.manual.includes('manual-tag'), 'old manual key should be replaced');
+      assert.strictEqual(detail.auto.length, 1, 'auto-path key should still be present');
+      assert.strictEqual(detail.auto[0].value, 'api-env-staging');
+    });
+
+    it('should clear manual partition keys when given an empty array', async () => {
+      const res = await patch(TAGGED_FILE, { partitionKeys: [] });
+      assert.strictEqual(res.status, 200);
+
+      const detailRes = await fetch(`${baseUrl}/fs${TAGGED_FILE}?partitions=true`);
+      const detail = await detailRes.json();
+      assert.deepStrictEqual(detail.manual, []);
+      assert.strictEqual(detail.auto.length, 1, 'auto-path key should still be present');
+    });
+
+    it('should return 404 for a non-existent file', async () => {
+      const res = await patch('/does/not/exist.txt', { partitionKeys: ['x'] });
+      assert.strictEqual(res.status, 404);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Transfer (import / export) endpoint tests
 // ---------------------------------------------------------------------------
 

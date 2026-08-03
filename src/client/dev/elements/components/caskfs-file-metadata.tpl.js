@@ -2,8 +2,6 @@ import { html, css, unsafeCSS } from 'lit';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import prismStyles from 'prismjs/themes/prism.css';
 
-import './caskfs-partition-toggle.js';
-
 export function styles() {
   const elementStyles = css`
     :host {
@@ -20,6 +18,25 @@ export function styles() {
     .prop-label {
       font-weight: 700;
       color: var(--ucd-blue, #022851);
+    }
+    .prop-label-row {
+      display: flex;
+      align-items: center;
+      gap: .25rem;
+      --cork-icon-button-size: 1.25rem;
+    }
+    .partition-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .25rem;
+    }
+    .partition-badge {
+      background: var(--ucd-blue-40, #DBEAF7);
+      color: var(--ucd-blue, #022851);
+      border-radius: 1rem;
+      padding: .125rem .625rem;
+      font-size: .875rem;
+      white-space: nowrap;
     }
     .date-container {
       display: flex;
@@ -94,9 +111,20 @@ return html`
           <div>${this.fsUtils.modifiedBy}</div>
         </div>
         <div>
-          <div class='prop-label'>Partitions</div>
+          <div class='prop-label-row'>
+            <div class='prop-label'>Partitions</div>
+            <cork-icon-button
+              icon='fas.pen'
+              basic
+              title='Edit Partitions'
+              link-aria-label='Edit Partitions'
+              @click=${this._onEditPartitionsClick}>
+            </cork-icon-button>
+          </div>
           <div>
-            <caskfs-partition-toggle .partitions=${this.data?.partition_keys || []}></caskfs-partition-toggle>
+            <div class='partition-badges' ?hidden=${!(this.data?.partition_keys || []).length}>
+              ${(this.data?.partition_keys || []).map(p => html`<span class='partition-badge'>${p}</span>`)}
+            </div>
             <div ?hidden=${(this.data?.partition_keys || []).length}>--</div>
           </div>
         </div>

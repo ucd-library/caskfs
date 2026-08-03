@@ -351,4 +351,88 @@ describe('Partition Keys', () => {
       assert.ok(byManual.results.some(r => r.filepath === '/east/mixed/other.txt'));
     });
   });
+
+  // ── partitionKeyDetail() — manual vs auto-path split ───────────────────────
+
+  describe('partitionKeyDetail()', () => {
+    before(async () => {
+      await caskFs.autoPath.partition.set({ name: 'detail-env', index: 1 });
+    });
+
+    after(async () => {
+      await caskFs.autoPath.partition.remove('detail-env');
+      await caskFs.autoPath.partition.getConfig(true);
+    });
+
+    it('should split manual and auto-path keys for a file with both', async () => {
+      await writeAndGetKeys(caskFs, '/staging/nested/file.txt', {
+        partitionKeys: ['manual-only'],
+      });
+
+      const detail = await caskFs.partitionKeyDetail({
+        filePath: '/staging/nested/file.txt',
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+
+      assert.deepStrictEqual(detail.manual, ['manual-only']);
+      assert.strictEqual(detail.auto.length, 1, 'should have exactly one auto-path key');
+      assert.strictEqual(detail.auto[0].name, 'detail-env');
+      assert.strictEqual(detail.auto[0].value, 'detail-env-staging');
+    });
+
+    it('should report only manual keys when no auto-path rule matches', async () => {
+      // root-level file — no directory segments, so the index:1 rule cannot match
+      await writeAndGetKeys(caskFs, '/solo-manual.txt', {
+        partitionKeys: ['solo-manual'],
+      });
+
+      const detail = await caskFs.partitionKeyDetail({
+        filePath: '/solo-manual.txt',
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+
+      assert.deepStrictEqual(detail.manual, ['solo-manual']);
+      assert.deepStrictEqual(detail.auto, []);
+    });
+
+    it('should report empty manual and auto arrays for a file with no partition keys', async () => {
+      await writeAndGetKeys(caskFs, '/no-partitions.txt');
+
+      const detail = await caskFs.partitionKeyDetail({
+        filePath: '/no-partitions.txt',
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+
+      assert.deepStrictEqual(detail.manual, []);
+      assert.deepStrictEqual(detail.auto, []);
+    });
+
+    it('should not allow patchMetadata to change the auto-path key through partitionKeys', async () => {
+      await writeAndGetKeys(caskFs, '/staging/patchable/file.txt', {
+        partitionKeys: ['original-manual'],
+      });
+
+      await caskFs.patchMetadata({
+        filePath: '/staging/patchable/file.txt',
+        partitionKeys: ['replacement-manual'],
+        metadata: {},
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+
+      const detail = await caskFs.partitionKeyDetail({
+        filePath: '/staging/patchable/file.txt',
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+
+      assert.deepStrictEqual(detail.manual, ['replacement-manual']);
+      assert.ok(!detail.manual.includes('original-manual'), 'old manual key should be gone');
+      assert.strictEqual(detail.auto.length, 1, 'auto-path key should still be present');
+      assert.strictEqual(detail.auto[0].value, 'detail-env-staging');
+    });
+  });
 });

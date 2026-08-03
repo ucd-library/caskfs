@@ -228,6 +228,29 @@ class Database {
   }
 
   /**
+   * @method getFilePartitionKeyDetail
+   * @description Get the partition keys applied to a file, along with the name of the
+   * auto-path rule that applied each key, if any. Used to distinguish auto-path-derived
+   * partition keys (not editable) from manually-assigned ones (editable).
+   *
+   * @param {String} fileId file UUID
+   *
+   * @returns {Promise<Array>} array of {value, auto_path_name} rows. auto_path_name is
+   * null for manually-assigned keys.
+   */
+  async getFilePartitionKeyDetail(fileId) {
+    const resp = await this.client.query(`
+      SELECT pk.value, app.name AS auto_path_name
+      FROM ${this.schema}.file_partition_key fpk
+      JOIN ${this.schema}.partition_key pk ON fpk.partition_key_id = pk.partition_key_id
+      LEFT JOIN ${this.schema}.auto_path_partition app ON pk.auto_path_partition_id = app.auto_path_partition_id
+      WHERE fpk.file_id = $1
+      ORDER BY pk.value
+    `, [fileId]);
+    return resp.rows;
+  }
+
+  /**
    * @method updateFileMetadata
    * @description Update the metadata and/or partition keys for a file.
    *

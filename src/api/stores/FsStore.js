@@ -9,6 +9,8 @@ class FsStore extends BaseStore {
     this.data = {
       delete: new LruStore({name: 'fs.delete'}),
       metadata: new LruStore({name: 'fs.metadata'}),
+      partitionKeyDetail: new LruStore({name: 'fs.partitionKeyDetail'}),
+      patchPartitionKeys: new LruStore({name: 'fs.patchPartitionKeys'}),
       fileContents: new LruStore({name: 'fs.fileContents', maxSize: 10}),
       uploadFile: new LruStore({name: 'fs.upload.file'}, {maxSize: 500}),
       uploadFileEntry: new LruStore({name: 'fs.upload.file.entry'}, {maxSize: 100})
