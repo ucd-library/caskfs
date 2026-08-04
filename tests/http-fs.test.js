@@ -280,7 +280,7 @@ describe('Partition Key Editing Endpoints', () => {
 
   before(async () => {
     ({ caskFs, baseUrl } = await setup());
-    await caskFs.autoPath.partition.set({ name: 'api-env', index: 1 });
+    await caskFs.autoPath.partition.set({ name: 'api-env', index: 0 });
 
     // The HTTP server serves requests through a separate, long-lived CaskFs singleton
     // (src/controllers/caskFs.js) that caches its own AutoPath config in memory. It only

@@ -26,6 +26,7 @@ router.get('/:type', async (req, res) => {
     const resp = await caskFs.autoPath[options.type].getConfig(true);
     res.status(200).json(resp.map( r => {
       r.filter_regex = r.filter_regex ? r.filter_regex.toString() : null;
+      r.full_regex = r.full_regex ? r.full_regex.toString() : null;
       return r;
     }));
   } catch (e) {

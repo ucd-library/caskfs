@@ -2,8 +2,17 @@ import AutoPath from "./base.js";
 import Database from "../database/index.js";
 import config from "../config.js";
 
+/**
+ * @class AutoPathPartition
+ * @description Auto-path rule engine that derives partition key values from a file's path. Unlike
+ * the base class, setting a rule here retroactively re-applies it to every existing file (see
+ * {@link AutoPathPartition#set}).
+ */
 class AutoPathPartition extends AutoPath {
 
+  /**
+   * @param {Object} opts see {@link AutoPath} constructor
+   */
   constructor(opts={}) {
     super({
       table : 'auto_path_partition',
@@ -11,10 +20,30 @@ class AutoPathPartition extends AutoPath {
     });
   }
 
+  /**
+   * @method getValue
+   * @description Default value extractor for partition rules: `<name>-<pathValue>`.
+   *
+   * @param {String} name name of the rule
+   * @param {String} pathValue the matched path segment
+   * @returns {String} the partition key value
+   */
   getValue(name, pathValue) {
     return name+'-'+pathValue;
   }
 
+  /**
+   * @method set
+   * @description Set a partition auto-path rule. If the rule definition actually changed, every
+   * existing file is re-scanned in batches and the rule is (re-)applied via the
+   * `add_partition_key` database function, since files written before the rule existed still need
+   * their partition keys backfilled.
+   *
+   * @param {Object} opts see {@link AutoPath#set}
+   * @param {Function} [opts.cb] optional progress callback invoked with {total, completed} as the
+   *                              backfill proceeds
+   * @returns {Promise<void>}
+   */
   async set(opts) {
     let updated = await super.set(opts);
     if( !updated ) return;

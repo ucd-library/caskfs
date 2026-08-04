@@ -41,8 +41,9 @@ program
   .command('set')
   .argument('<type>', `Type of auto-path rule to set. Must be one of: ${types.join(', ')}`)
   .argument('<name>', 'Name of the auto-path rule')
-  .option('-p, --position <position>', 'Position in the path to extract the partition key from (1-based index)')
+  .option('-p, --position <position>', 'Position in the path to extract the partition key from (0-based index; 0 is the first directory segment)')
   .option('-f, --filter-regex <regex>', 'Regular expression to filter the partition key')
+  .option('-r, --full-regex <regex>', 'Regular expression that must match the entire file path for this rule to be considered at all. If the full path does not match, the rule is skipped; if it does (or this is omitted), --position/--filter-regex are applied as usual against the individual path parts')
   .option('-v, --get-value <js>', 'JavaScript function to transform the extracted value. Function signature: (name, pathValue, regexMatch) => string')
   .description('Set an auto-partition rule for extracting partition keys from file paths')
   .action(async (type, name, options) => {
@@ -59,6 +60,7 @@ program
       name: name,
       index: options.position,
       filterRegex: options.filterRegex,
+      fullRegex: options.fullRegex,
       getValue: options.getValue
     };
 

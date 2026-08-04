@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS caskfs.auto_path_partition (
   name                     VARCHAR(256) NOT NULL UNIQUE,
   index                    INTEGER,
   filter_regex             TEXT,
+  full_regex               TEXT,
   get_value                TEXT
 );
 
@@ -19,5 +20,6 @@ CREATE TABLE IF NOT EXISTS caskfs.auto_path_bucket (
   name                 VARCHAR(256) NOT NULL UNIQUE,
   index                INTEGER,
   filter_regex         TEXT,
+  full_regex           TEXT,
   get_value            TEXT
 );
