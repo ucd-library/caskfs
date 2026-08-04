@@ -176,7 +176,9 @@ router.get(/(.*)/, async (req, res) => {
  */
 async function handleWrite(filePath, req, res, replace) {
   try {
-    const mimeType = req.headers['content-type']?.split(';')[0]?.trim() || 'application/octet-stream';
+    const contentType = req.headers['content-type']?.split(';')[0]?.trim();
+    // ignore the generic default content-type so CaskFS can auto-detect from the file extension instead
+    const mimeType = req.query.mimeType || (contentType && contentType !== 'application/octet-stream' ? contentType : undefined);
 
     const partitionKeys = req.query['partition-keys']
       ? req.query['partition-keys'].split(',').map(k => k.trim()).filter(Boolean)

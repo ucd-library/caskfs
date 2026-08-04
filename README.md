@@ -7,6 +7,7 @@ Contents:
 - [Key Capabilities](#key-capabilities)
 - [Architecture](#architecture)
 - [Quick Start](#quick-start)
+- [Testing](#testing)
 - [Usage Examples](#usage-examples)
   - [CLI](#cli)
   - [Node.js Library](#nodejs-library)
@@ -93,6 +94,27 @@ cask serve
 To rebuild the frontend during development (from the cloned repo):
 ```bash
 npm run client-watch
+```
+
+
+# Testing
+
+```bash
+# 1. Start the dev Postgres instance (skip the frontend build if you only need the DB for tests)
+SKIP_CLIENT_BUILD=1 ./devops/start-dev.sh
+
+# 2. Run the test suite
+npx mocha --exit
+```
+
+Tests self-provision their own database (`testing_caskfs_db`) and schema against the running Postgres instance — no manual setup beyond starting Postgres.
+
+**Always pass `--exit`.** `.mocharc.yml` doesn't set it, and without it the process can hang indefinitely after the test run finishes — even when every test passes. A lingering Postgres connection (e.g. from a suite whose `before()` hook throws before its `after()` teardown runs) keeps Node's event loop alive after mocha has already printed its full pass/fail summary. If a run seems stuck, check whether a "passing/failing" summary already printed above — if so, it's this issue, not a hung test.
+
+To run a single test file in isolation: `.mocharc.yml`'s `spec` list is not replaced by a positional file argument, so `npx mocha tests/foo.test.js` still runs the entire suite. Override the config to isolate one file:
+```bash
+echo '{}' > /tmp/empty-mocharc.json
+npx mocha --config /tmp/empty-mocharc.json --require tests/helpers/env.js --timeout 30000 --exit tests/foo.test.js
 ```
 
 

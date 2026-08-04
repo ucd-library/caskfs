@@ -105,16 +105,16 @@ describe('Partition Keys', () => {
 
   // ── Flavor 1: position-based ───────────────────────────────────────────────
   //
-  //  Rule: { name: 'env', index: 1 }
+  //  Rule: { name: 'env', index: 0 }
   //
   //  Path: /production/service/file.txt
-  //        ^^^^^^^^^^^ position 1
+  //        ^^^^^^^^^^^ position 0 (0-based; 0 is the first directory segment)
   //
   //  Resulting key: "env-production"
 
   describe('auto-path rule — flavor 1: position-based (index)', () => {
     before(async () => {
-      await caskFs.autoPath.partition.set({ name: 'env', index: 1 });
+      await caskFs.autoPath.partition.set({ name: 'env', index: 0 });
     });
 
     after(async () => {
@@ -143,16 +143,12 @@ describe('Partition Keys', () => {
 
     it('write() should auto-apply the partition key based on path position', async () => {
       const keys = await writeAndGetKeys(caskFs, '/staging/api/deploy.txt');
-      assert.ok(keys.includes('env-staging'), 'should have env-staging from path position 1');
+      assert.ok(keys.includes('env-staging'), 'should have env-staging from path position 0');
     });
 
-    it('should not apply the key to files whose path has no matching position', async () => {
-      // path starts with "/" so position 1 would be the first non-root segment
-      // writing to root-level directory means index 1 = that dir — it should still match.
-      // Test instead that a path SHORTER than the index produces no key.
-      // We need index: 3 for this; re-use flavor by checking a shallower path.
+    it('should still apply the key when the path has exactly one segment at the index', async () => {
+      // dirParts = ['only-one']; index 0 → 'only-one' → should match
       const results = await caskFs.autoPath.partition.getFromPath('/only-one/file.txt');
-      // index=1 → 'only-one' → should match
       const env = results.find(r => r.name === 'env');
       assert.strictEqual(env.value, 'env-only-one');
     });
@@ -165,7 +161,7 @@ describe('Partition Keys', () => {
       await writeAndGetKeys(caskFs, '/retro/service/old.txt'); // no 'env' rule yet
 
       // now create the rule — AutoPathPartition.set() retroactively applies it
-      await caskFs.autoPath.partition.set({ name: 'env', index: 1 });
+      await caskFs.autoPath.partition.set({ name: 'env', index: 0 });
 
       const keys = await getKeys(caskFs, '/retro/service/old.txt');
       assert.ok(keys.includes('env-retro'), 'retroactively applied key should be present');
@@ -319,11 +315,62 @@ describe('Partition Keys', () => {
     });
   });
 
+  // ── Flavor 4: fullRegex gate ────────────────────────────────────────────────
+  //
+  //  Rule: {
+  //    name: 'restricted',
+  //    fullRegex: '^/restricted/.+$',
+  //    index: 1,
+  //  }
+  //
+  //  Path: /restricted/team-a/file.txt  → fullRegex matches → index 1 applies → "restricted-team-a"
+  //  Path: /open/team-a/file.txt        → fullRegex does not match → rule skipped entirely
+
+  describe('auto-path rule — flavor 4: fullRegex gate', () => {
+    before(async () => {
+      await caskFs.autoPath.partition.set({
+        name: 'restricted',
+        fullRegex: '^/restricted/.+$',
+        index: 1,
+      });
+    });
+
+    after(async () => {
+      await caskFs.autoPath.partition.remove('restricted');
+      await caskFs.autoPath.partition.getConfig(true);
+    });
+
+    it('should store the rule and report it exists', async () => {
+      assert.ok(await caskFs.autoPath.partition.exists('restricted'));
+    });
+
+    it('getFromPath() should apply index/filterRegex when the full path matches fullRegex', async () => {
+      const results = await caskFs.autoPath.partition.getFromPath('/restricted/team-a/file.txt');
+      const rule = results.find(r => r.name === 'restricted');
+      assert.ok(rule, 'should have a restricted entry');
+      assert.strictEqual(rule.value, 'restricted-team-a');
+    });
+
+    it('getFromPath() should skip the rule entirely when the full path does not match fullRegex', async () => {
+      const results = await caskFs.autoPath.partition.getFromPath('/open/team-a/file.txt');
+      const rule = results.find(r => r.name === 'restricted');
+      assert.ok(!rule, 'non-matching full path should skip the rule, even though index 1 would otherwise match');
+    });
+
+    it('write() should auto-apply the key only for paths matching fullRegex', async () => {
+      const gated = await writeAndGetKeys(caskFs, '/restricted/team-b/report.txt');
+      assert.ok(gated.includes('restricted-team-b'));
+
+      const ungated = await writeAndGetKeys(caskFs, '/open/team-b/report.txt');
+      assert.ok(!ungated.some(k => k.startsWith('restricted-')));
+    });
+  });
+
   // ── Mixed: manual + auto-path keys coexist ────────────────────────────────
 
   describe('mixed: manual keys and auto-path keys coexist', () => {
     before(async () => {
-      await caskFs.autoPath.partition.set({ name: 'region', index: 1 });
+      await caskFs.autoPath.partition.set({ name: 'region', index: 0 });
     });
 
     after(async () => {
@@ -356,7 +403,7 @@ describe('Partition Keys', () => {
 
   describe('partitionKeyDetail()', () => {
     before(async () => {
-      await caskFs.autoPath.partition.set({ name: 'detail-env', index: 1 });
+      await caskFs.autoPath.partition.set({ name: 'detail-env', index: 0 });
     });
 
     after(async () => {
@@ -382,7 +429,7 @@ describe('Partition Keys', () => {
     });
 
     it('should report only manual keys when no auto-path rule matches', async () => {
-      // root-level file — no directory segments, so the index:1 rule cannot match
+      // root-level file — no directory segments, so the index:0 rule cannot match
       await writeAndGetKeys(caskFs, '/solo-manual.txt', {
         partitionKeys: ['solo-manual'],
       });
