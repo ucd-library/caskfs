@@ -1137,7 +1137,7 @@ class CaskFs {
       });
     });
 
-    return this.metadata({ filePath: destPath, requestor: context.data.requestor });
+    return this.metadata({ filePath: destPath, requestor: context.data.requestor, ignoreAcl: context.data.ignoreAcl, dbClient: context.data.dbClient });
   }
 
   /**
