@@ -27,14 +27,17 @@ program
 
 program
   .command('load <file-path>')
-  .description('Load auto-path rules from a JSON file')
+  .description('Load auto-path rules from a JSON file. Works in both direct-pg and http mode (http requires admin access).')
   .action(async (filePath, options={}) => {
     handleGlobalOpts(options);
     const cask = getClient(options);
-    assertDirectPg(cask, 'auto-path load');
 
-    await cask.loadAutoPathRulesFromFile(filePath);
+    const results = await cask.loadAutoPathRulesFromFile(filePath);
     await endClient(cask);
+
+    for( const r of (results || []) ) {
+      console.log(`${r.type}/${r.name}: ${r.updated ? 'applied' : 'unchanged, skipped'}`);
+    }
   });
 
 program

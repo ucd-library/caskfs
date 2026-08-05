@@ -127,6 +127,38 @@ class Directory {
       [opts.directory]
     );
   }
+
+  /**
+   * @method move
+   * @description Rename or move a directory, and everything under it, in place. Rewrites the
+   * fullname prefix for the directory and every descendant in a single statement — directory_id
+   * and file_id values are untouched, only paths change. The `name` column recomputes automatically
+   * since it is generated from fullname. Caller is responsible for confirming the source exists,
+   * the destination does not already exist, and the destination is not a descendant of the source.
+   *
+   * @param {Object} opts
+   * @param {String} opts.directory source directory full path
+   * @param {String} opts.destPath destination full path
+   * @param {String} opts.parentId directory_id of destPath's parent directory
+   * @param {Object} opts.dbClient Required. database client instance
+   *
+   * @returns {Promise<void>}
+   */
+  async move(opts={}) {
+    const { directory, destPath, parentId, dbClient } = opts;
+
+    await dbClient.query(`
+      UPDATE ${config.database.schema}.directory
+      SET fullname = $2 || substring(fullname from length($1)+1)
+      WHERE fullname = $1 OR fullname LIKE $1 || '/%'
+    `, [directory, destPath]);
+
+    await dbClient.query(`
+      UPDATE ${config.database.schema}.directory
+      SET parent_id = $1
+      WHERE fullname = $2
+    `, [parentId, destPath]);
+  }
 }
 
 export default Directory;

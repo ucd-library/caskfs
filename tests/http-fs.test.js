@@ -245,26 +245,145 @@ describe('POST /fs/copy', () => {
     }
   });
 
-  it('should move a file (source deleted) when move is true', async () => {
+});
+
+// ---------------------------------------------------------------------------
+// POST /fs/mv endpoint tests
+// ---------------------------------------------------------------------------
+
+describe('POST /fs/mv', () => {
+  let caskFs, baseUrl;
+
+  before(async () => {
+    ({ caskFs, baseUrl } = await setup());
     await caskFs.write({
-      filePath: '/cp-api-test/move-src.txt',
-      data: Buffer.from('move content'),
+      filePath: '/mv-api-test/src.txt',
+      data: Buffer.from('mv source content'),
       requestor: 'test-user',
       ignoreAcl: true,
     });
+  });
 
-    const res = await post({
-      srcPath:  '/cp-api-test/move-src.txt',
-      destPath: '/cp-api-test/move-dest.txt',
-      move: true,
+  after(async () => {
+    await teardown();
+  });
+
+  /**
+   * @function post
+   * @description POST to the /fs/mv endpoint with a JSON body.
+   * @param {Object} body
+   * @returns {Promise<Response>}
+   */
+  async function post(body) {
+    return fetch(`${baseUrl}/fs/mv`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it('should return 400 when srcPath is missing', async () => {
+    const res = await post({ destPath: '/mv-api-test/dest.txt' });
+    assert.strictEqual(res.status, 400);
+  });
+
+  it('should return 400 when destPath is missing', async () => {
+    const res = await post({ srcPath: '/mv-api-test/src.txt' });
+    assert.strictEqual(res.status, 400);
+  });
+
+  it('should move a file and return 200', async () => {
+    const res = await post({ srcPath: '/mv-api-test/src.txt', destPath: '/mv-api-test/dest.txt' });
+    assert.strictEqual(res.status, 200);
+
+    const destRes = await fetch(`${baseUrl}/fs/mv-api-test/dest.txt`);
+    assert.strictEqual(destRes.status, 200, 'destination should be readable after move');
+
+    const srcRes = await fetch(`${baseUrl}/fs/mv-api-test/src.txt?metadata=true`);
+    assert.strictEqual(srcRes.status, 404, 'source should be gone after move');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// /lineage endpoint tests
+// ---------------------------------------------------------------------------
+
+describe('/lineage', () => {
+  let caskFs, baseUrl;
+
+  before(async () => {
+    ({ caskFs, baseUrl } = await setup());
+    await caskFs.write({
+      filePath: '/lineage-api-test/bronze/raw.csv',
+      data: Buffer.from('raw'),
+      requestor: 'test-user',
+      ignoreAcl: true,
+    });
+    await caskFs.write({
+      filePath: '/lineage-api-test/silver/report.parquet',
+      data: Buffer.from('report'),
+      requestor: 'test-user',
+      ignoreAcl: true,
+    });
+  });
+
+  after(async () => {
+    await teardown();
+  });
+
+  it('should return 400 when fromPath is missing on add', async () => {
+    const res = await fetch(`${baseUrl}/lineage/add`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourcePath: '/lineage-api-test/bronze/raw.csv' }),
+    });
+    assert.strictEqual(res.status, 400);
+  });
+
+  it('should add a derivative link and return 200', async () => {
+    const res = await fetch(`${baseUrl}/lineage/add`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fromPath:   '/lineage-api-test/silver/report.parquet',
+        sourcePath: '/lineage-api-test/bronze/raw.csv',
+      }),
+    });
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.strictEqual(body.relation, 'http://schema.org/source');
+  });
+
+  it('should list sources for the derivative file', async () => {
+    const res = await fetch(`${baseUrl}/lineage/sources/lineage-api-test/silver/report.parquet`);
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.strictEqual(body.length, 1);
+    assert.strictEqual(body[0].to_filepath, '/lineage-api-test/bronze/raw.csv');
+  });
+
+  it('should list derivatives for the source file', async () => {
+    const res = await fetch(`${baseUrl}/lineage/derivatives/lineage-api-test/bronze/raw.csv`);
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.strictEqual(body.length, 1);
+    assert.strictEqual(body[0].from_filepath, '/lineage-api-test/silver/report.parquet');
+  });
+
+  it('should remove the derivative link', async () => {
+    const res = await fetch(`${baseUrl}/lineage/remove`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fromPath:   '/lineage-api-test/silver/report.parquet',
+        sourcePath: '/lineage-api-test/bronze/raw.csv',
+      }),
     });
     assert.strictEqual(res.status, 200);
 
-    const destRes = await fetch(`${baseUrl}/fs/cp-api-test/move-dest.txt`);
-    assert.strictEqual(destRes.status, 200, 'destination should be readable after move');
-
-    const srcRes = await fetch(`${baseUrl}/fs/cp-api-test/move-src.txt?metadata=true`);
-    assert.strictEqual(srcRes.status, 404, 'source should be gone after move');
+    const check = await fetch(`${baseUrl}/lineage/sources/lineage-api-test/silver/report.parquet`);
+    const body = await check.json();
+    assert.strictEqual(body.length, 0);
   });
 });
 

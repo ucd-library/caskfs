@@ -71,6 +71,9 @@ program
   .option('-k, --partition-keys <keys>', 'comma-separated list of partition keys')
   .option('-l, --jsonld', 'treat input as JSON-LD')
   .option('-m, --mime-type <mime-type>', 'MIME type of the file being written, default is auto-detected from file extension')
+  .option('--derived-from <source-path>', 'Record a lineage link: this file was derived from source-path. Repeatable for multiple sources.', (value, previous) => previous.concat([value]), [])
+  .option('--lineage-relation <uri>', 'Relation URI applied to all --derived-from links added by this write. Default: http://schema.org/source')
+  .option('--lineage-metadata <text>', 'Free-form text applied to all --derived-from links added by this write')
   .description('Write a file')
   .action(async (filePath, options) => {
     let opts = {};
@@ -105,6 +108,14 @@ program
 
     await cask.write(opts);
 
+    for (const sourcePath of options.derivedFrom) {
+      const link = await cask.addDerivativeLink(
+        { filePath, requestor: options.requestor },
+        { sourcePath, relation: options.lineageRelation, metadata: options.lineageMetadata }
+      );
+      console.log(`Lineage: ${filePath} -[${link.relation}]-> ${sourcePath}`);
+    }
+
     await endClient(cask);
   });
 
@@ -117,7 +128,6 @@ program
   .option('-y, --yes', 'Skip the confirmation prompt', false)
   .option('-m, --copy-metadata', 'Copy metadata from source to destination (cask: → cask: only)', false)
   .option('-p, --copy-partitions', 'Copy partition keys from source to destination (cask: → cask: only)', false)
-  .option('--move', 'Delete the source after a successful copy — mv semantics (cask: → cask: only)', false)
   .action(async (sourcePath, destPath, options) => {
     silenceLoggers();
     handleGlobalOpts(options);
@@ -141,7 +151,6 @@ program
           replace:        options.replace,
           copyMetadata:   options.copyMetadata || false,
           copyPartitions: options.copyPartitions || false,
-          move:           options.move || false,
         }
       );
 
@@ -500,6 +509,31 @@ program
   });
 
 program
+  .command('mv <source-path> <dest-path>')
+  .description('Rename or move a file or directory within CaskFS (cask: → cask: only). Preserves file_id/directory_id — only the path changes.')
+  .action(async (sourcePath, destPath, options) => {
+    handleGlobalOpts(options);
+
+    if (!sourcePath.startsWith('cask:') || !destPath.startsWith('cask:')) {
+      console.error('mv only supports cask: → cask: paths. Use cp for transfers to/from local disk.');
+      process.exit(1);
+    }
+
+    const caskSrc  = sourcePath.slice('cask:'.length);
+    const caskDest = destPath.slice('cask:'.length);
+
+    const cask = getClient(options);
+
+    await cask.move(
+      { filePath: caskSrc, requestor: options.requestor },
+      { destPath: caskDest }
+    );
+
+    console.log(`Moved cask:${caskSrc} → cask:${caskDest}`);
+    await endClient(cask);
+  });
+
+program
   .command('metadata <file-path>')
   .description('Get metadata for a file')
   .action(async (filePath, options={}) => {
@@ -749,6 +783,7 @@ program
 
 program.command('acl', 'Manage ACL rules');
 program.command('auto-path', 'Manage auto-path rules');
+program.command('lineage', 'Manage file derivative/lineage links');
 program.command('env', 'Manage cask cli environment');
 program.command('admin', 'CaskFS administrative commands');
 program.command('archive', 'Import and export CaskFS archives');

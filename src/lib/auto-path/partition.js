@@ -42,11 +42,12 @@ class AutoPathPartition extends AutoPath {
    * @param {Object} opts see {@link AutoPath#set}
    * @param {Function} [opts.cb] optional progress callback invoked with {total, completed} as the
    *                              backfill proceeds
-   * @returns {Promise<void>}
+   * @returns {Promise<Boolean>} true if the rule was set (and existing files rescanned), false if
+   *                              no changes were made
    */
   async set(opts) {
     let updated = await super.set(opts);
-    if( !updated ) return;
+    if( !updated ) return false;
 
     let name = opts.name;
     let dbClient = opts.dbClient || this.dbClient;
@@ -82,6 +83,8 @@ class AutoPathPartition extends AutoPath {
     }
 
     await batchDbClient.end();
+
+    return true;
   }
 
   // async remove(name) {

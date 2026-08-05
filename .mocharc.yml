@@ -8,9 +8,12 @@ spec:
   - tests/sync.test.js
   - tests/transfer.test.js
   - tests/http-fs.test.js
+  - tests/auto-path-http.test.js
   - tests/cli.test.js
   - tests/cp.test.js
   - tests/copy.test.js
+  - tests/move.test.js
+  - tests/lineage.test.js
 
 timeout: 30000
 require: tests/helpers/env.js

@@ -99,4 +99,18 @@ Rather than setting rules one at a time, `cask auto-path load <file-path>` reads
 cask auto-path load ./auto-path-rules.json
 ```
 
-Each rule in the file is applied via the same `set()` logic as `cask auto-path set` — for `partition` rules, this means any rule that is new or has actually changed will trigger a retroactive re-scan of existing files so their partition keys stay in sync.
+Each rule in the file is applied via the same `set()` logic as `cask auto-path set` — for `partition` rules, this means any rule that is new or has actually changed will trigger a retroactive re-scan of existing files so their partition keys stay in sync. A rule that is byte-for-byte identical to what's already stored is left alone and does **not** trigger a rescan — re-running `load` with an unchanged rules file is cheap and safe to repeat.
+
+`cask auto-path load` works in both direct-pg and http-mode environments (see [Loading rules over HTTP](#loading-rules-over-http) below for the http-mode requirements). Other subcommands (`set`, `remove`, `test`, `list`) are direct-pg only.
+
+## Loading rules over HTTP
+
+`POST /api/auto-path/load` bulk-applies rules from a JSON request body shaped exactly like the CLI's rules file (`{ "bucket": [...], "partition": [...] }`). This endpoint is **admin-only** — the requestor must hold the configured admin role (or be the configured super-admin user); a non-admin caller gets a 403. If ACL enforcement is disabled server-wide, the endpoint is open to anyone, matching the rest of the API's behavior in that mode.
+
+```bash
+curl -X POST http://localhost:3000/api/auto-path/load \
+  -H "Content-Type: application/json" \
+  -d @./auto-path-rules.json
+```
+
+The response is `{ "results": [{ "name", "type", "updated" }, ...] }` — one entry per rule in the request body, with `updated: false` for any rule that was already up to date and therefore skipped.

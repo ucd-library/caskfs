@@ -168,22 +168,6 @@ describe('copyFile()', () => {
     assert.ok(await fileExists(caskFs, '/cf/dest.pdf'), 'dest should still exist after replace');
   });
 
-  it('move=true should delete the source file after copy', async () => {
-    await write(caskFs, '/cf/move-src.pdf');
-    await caskFs.copyFile(
-      { filePath: '/cf/move-src.pdf', requestor: TEST_USER, ignoreAcl: true },
-      { destPath: '/cf/move-dest.pdf', move: true }
-    );
-    assert.ok(await fileExists(caskFs, '/cf/move-dest.pdf'), 'destination should exist');
-    assert.ok(!await fileExists(caskFs, '/cf/move-src.pdf'), 'source should be deleted');
-  });
-
-  it('move=true should leave the hash file intact (dest still references it)', async () => {
-    // hash_value on dest should be valid — CAS file was not removed
-    const dest = await meta(caskFs, '/cf/move-dest.pdf');
-    assert.ok(dest.hash_value, 'dest should have a hash_value after move');
-    assert.ok(caskFs.cas.exists(dest.hash_value), 'CAS file should still exist on disk');
-  });
 });
 
 // ── copy() — auto-detect ──────────────────────────────────────────────────────
@@ -263,20 +247,4 @@ describe('copy() — directory (recursive)', () => {
     assert.strictEqual(result.copied, 5);
   });
 
-  it('move=true should delete all source files', async () => {
-    // set up a separate source tree for the move test
-    await write(caskFs, '/dc-move/x.txt');
-    await write(caskFs, '/dc-move/y.txt');
-
-    const result = await caskFs.copy(
-      { filePath: '/dc-move', requestor: TEST_USER, ignoreAcl: true },
-      { destPath: '/dc-move-dest', move: true }
-    );
-
-    assert.strictEqual(result.errors.length, 0);
-    assert.ok(await fileExists(caskFs, '/dc-move-dest/x.txt'), 'dest x.txt should exist');
-    assert.ok(await fileExists(caskFs, '/dc-move-dest/y.txt'), 'dest y.txt should exist');
-    assert.ok(!await fileExists(caskFs, '/dc-move/x.txt'), 'src x.txt should be deleted');
-    assert.ok(!await fileExists(caskFs, '/dc-move/y.txt'), 'src y.txt should be deleted');
-  });
 });

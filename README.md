@@ -26,6 +26,8 @@ Contents:
 - **Built-in RDF knowledge graph** — JSON-LD files are automatically indexed; binary files get RDF nodes too, enabling cross-file relationship queries
 - **Role-based access control** — directory-level ACLs with inherited permissions and a public-read flag
 - **Partition keys** — tag files for scoped querying; auto-assign keys based on path patterns
+- **Rename/move** — rename or move a file or directory in place; the id (and everything keyed by it) is unchanged, only the path is rewritten
+- **Lineage tracking** — record that one file was derived from another (e.g. bronze → silver); links are keyed by id, so they survive renames — see [Structural Metadata](docs/structural-metadata.md)
 - **Multiple interfaces** — CLI, Node.js library, and HTTP REST API
 - **Cloud-ready** — pluggable storage backend supports local disk or Google Cloud Storage; multiple buckets with path-based routing rules
 
@@ -142,6 +144,12 @@ cask copy ./local-papers /research/papers
 
 # Delete a file
 cask rm /research/papers/intro.pdf
+
+# Rename or move a file within CaskFS (cask: → cask: only)
+cask mv cask:/research/papers/intro.pdf cask:/research/papers/2024/intro.pdf
+
+# Record that a file was derived from another (e.g. bronze -> silver)
+cask lineage add /silver/2024/report.parquet /bronze/2024/raw.csv
 
 # Search the RDF graph for files of a given type
 cask find --type http://schema.org/Person
@@ -395,5 +403,6 @@ The [RBAC system](docs/rbac.md) integrates with an external OIDC provider (e.g. 
 | Filesystem REST API | [docs/fs-rest-api.md](docs/fs-rest-api.md) |
 | Linked Data / RDF (Layer 3) | [docs/ld.md](docs/ld.md) |
 | Linked Data REST API | [docs/ld-rest-api.md](docs/ld-rest-api.md) |
+| Structural Metadata (hierarchy, partitions, lineage) | [docs/structural-metadata.md](docs/structural-metadata.md) |
 | Role-Based Access Control | [docs/rbac.md](docs/rbac.md) |
 | Auto Path / Partition Rules | [docs/auto-path.md](docs/auto-path.md) |

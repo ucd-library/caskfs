@@ -318,21 +318,31 @@ describe('CLI – cp (direct-pg)', () => {
     }
   });
 
-  it('should move a file with --move (cask: → cask:)', async () => {
-    await runCask(['write', '/cp-move/src.txt', '-d', singleFile], { env: env() });
+  it('should rename a file with mv (cask: → cask:)', async () => {
+    await runCask(['write', '/mv-cli/src.txt', '-d', singleFile], { env: env() });
 
-    const { code, stderr } = await runCask(
-      ['cp', 'cask:/cp-move/src.txt', 'cask:/cp-move/dest.txt', '--move'],
+    const { code, stdout, stderr } = await runCask(
+      ['mv', 'cask:/mv-cli/src.txt', 'cask:/mv-cli/dest.txt'],
       { env: env() }
     );
-    assert.strictEqual(code, 0, `--move cp exited non-zero: ${stderr}`);
+    assert.strictEqual(code, 0, `mv exited non-zero: ${stderr}`);
+    assert.ok(stdout.includes('Moved'), `expected "Moved" in output:\n${stdout}`);
 
-    const { code: dc, stdout: ds } = await runCask(['read', '/cp-move/dest.txt'], { env: env() });
-    assert.strictEqual(dc, 0, 'destination should be readable after move');
+    const { code: dc, stdout: ds } = await runCask(['read', '/mv-cli/dest.txt'], { env: env() });
+    assert.strictEqual(dc, 0, 'destination should be readable after mv');
     assert.ok(ds.includes('Single file content'), `unexpected dest content: ${ds}`);
 
-    const { code: sc } = await runCask(['read', '/cp-move/src.txt'], { env: env() });
-    assert.notStrictEqual(sc, 0, 'source should be gone after --move');
+    const { code: sc } = await runCask(['read', '/mv-cli/src.txt'], { env: env() });
+    assert.notStrictEqual(sc, 0, 'source should be gone after mv');
+  });
+
+  it('should reject mv when either path is not a cask: path', async () => {
+    const { code, stderr } = await runCask(
+      ['mv', '/local/path.txt', 'cask:/mv-cli/dest2.txt'],
+      { env: env() }
+    );
+    assert.notStrictEqual(code, 0, 'mv should fail for a non-cask: source');
+    assert.ok(stderr.includes('cask:'), `expected cask: guidance in stderr:\n${stderr}`);
   });
 
   it('should print a dry-run message and not write (cask: → cask:)', async () => {
@@ -602,21 +612,22 @@ describe('CLI – cp (http)', () => {
     }
   });
 
-  it('should move a file with --move (cask: → cask:, http)', async () => {
-    await runCask(['write', '/cp-move/src.txt', '-d', singleFile], { env: env() });
+  it('should rename a file with mv (cask: → cask:, http)', async () => {
+    await runCask(['write', '/mv-cli-http/src.txt', '-d', singleFile], { env: env() });
 
-    const { code, stderr } = await runCask(
-      ['cp', 'cask:/cp-move/src.txt', 'cask:/cp-move/dest.txt', '--move'],
+    const { code, stdout, stderr } = await runCask(
+      ['mv', 'cask:/mv-cli-http/src.txt', 'cask:/mv-cli-http/dest.txt'],
       { env: env() }
     );
-    assert.strictEqual(code, 0, `--move cp exited non-zero: ${stderr}`);
+    assert.strictEqual(code, 0, `mv exited non-zero: ${stderr}`);
+    assert.ok(stdout.includes('Moved'), `expected "Moved" in output:\n${stdout}`);
 
-    const { code: dc, stdout: ds } = await runCask(['read', '/cp-move/dest.txt'], { env: env() });
-    assert.strictEqual(dc, 0, 'destination should be readable after move');
+    const { code: dc, stdout: ds } = await runCask(['read', '/mv-cli-http/dest.txt'], { env: env() });
+    assert.strictEqual(dc, 0, 'destination should be readable after mv');
     assert.ok(ds.includes('Single file content'), `unexpected dest content: ${ds}`);
 
-    const { code: sc } = await runCask(['read', '/cp-move/src.txt'], { env: env() });
-    assert.notStrictEqual(sc, 0, 'source should be gone after --move');
+    const { code: sc } = await runCask(['read', '/mv-cli-http/src.txt'], { env: env() });
+    assert.notStrictEqual(sc, 0, 'source should be gone after mv');
   });
 
   it('should print a dry-run message and not write (cask: → cask:, http)', async () => {

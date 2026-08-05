@@ -560,7 +560,44 @@ END;
 $$ LANGUAGE plpgsql;
 
 ----------------
--- unused_hashes 
+-- derivative_link
+----------------
+-- Structural metadata: file-to-file lineage/derivative edges (e.g. bronze -> silver).
+-- Kept separate from the Layer 3 RDF graph and keyed by file_id so links survive
+-- renames/moves. See docs/structural-metadata.md.
+CREATE TABLE IF NOT EXISTS caskfs.derivative_link (
+    derivative_link_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    from_file_id         UUID NOT NULL REFERENCES caskfs.file(file_id) ON DELETE CASCADE,
+    to_file_id           UUID NOT NULL REFERENCES caskfs.file(file_id) ON DELETE CASCADE,
+    relation             VARCHAR(1028) NOT NULL DEFAULT 'http://schema.org/source',
+    metadata             TEXT NOT NULL DEFAULT '',
+    created              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    modified             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (from_file_id != to_file_id),
+    UNIQUE(from_file_id, to_file_id, relation)
+);
+-- This index is redundant because the UNIQUE constraint on (from_file_id, to_file_id, relation)
+-- already covers from_file_id as the leftmost key.
+-- CREATE INDEX IF NOT EXISTS idx_derivative_link_from_file_id ON caskfs.derivative_link(from_file_id);
+CREATE INDEX IF NOT EXISTS idx_derivative_link_to_file_id ON caskfs.derivative_link(to_file_id);
+
+CREATE OR REPLACE VIEW caskfs.derivative_link_view AS
+SELECT
+    dl.derivative_link_id,
+    dl.from_file_id,
+    fv1.filepath AS from_filepath,
+    dl.to_file_id,
+    fv2.filepath AS to_filepath,
+    dl.relation,
+    dl.metadata,
+    dl.created,
+    dl.modified
+FROM caskfs.derivative_link dl
+LEFT JOIN caskfs.file_view fv1 ON dl.from_file_id = fv1.file_id
+LEFT JOIN caskfs.file_view fv2 ON dl.to_file_id = fv2.file_id;
+
+----------------
+-- unused_hashes
 ----------------
 -- View to show all hashes not in use by any file
 CREATE OR REPLACE VIEW caskfs.unused_hashes AS
@@ -593,5 +630,11 @@ CREATE OR REPLACE TRIGGER trigger_directory_update_modified
 -- Trigger for file table
 CREATE OR REPLACE TRIGGER trigger_file_update_modified
     BEFORE UPDATE ON caskfs.file
+    FOR EACH ROW
+    EXECUTE FUNCTION caskfs.update_modified_timestamp();
+
+-- Trigger for derivative_link table
+CREATE OR REPLACE TRIGGER trigger_derivative_link_update_modified
+    BEFORE UPDATE ON caskfs.derivative_link
     FOR EACH ROW
     EXECUTE FUNCTION caskfs.update_modified_timestamp();

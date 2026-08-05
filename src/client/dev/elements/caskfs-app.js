@@ -39,6 +39,7 @@ import '../../../api/models/AutoPathModel.js';
 import '../../../api/models/DirectoryModel.js';
 import '../../../api/models/FsModel.js';
 import '../../../api/models/LdModel.js';
+import '../../../api/models/LineageModel.js';
 import '../../../api/models/SystemModel.js';
 Registry.ready();
 

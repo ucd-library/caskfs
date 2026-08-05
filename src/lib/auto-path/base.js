@@ -273,36 +273,33 @@ class AutoPath {
 
   /**
    * @method _cleanForCompare
-   * @description Normalize a rule row/opts object for equality comparison: strip the primary key,
-   * remove null/undefined fields, stringify numbers, and map snake_case DB column names to their
-   * camelCase opts equivalents.
+   * @description Normalize a rule row/opts object for equality comparison by plucking only the
+   * fields that actually define a rule (`name`, `index`, `filterRegex`, `fullRegex`, `getValue`) —
+   * accepting either a DB row (snake_case) or an opts object (camelCase) — and stringifying
+   * numbers so `0` compares equal on both sides. Every other property (a DB primary key, a CLI
+   * progress callback on opts, a `dbClient` override, etc.) is deliberately ignored so it can
+   * never cause a false "changed" result and trigger an unnecessary rescan.
    *
-   * @param {Object} obj rule row or opts object to normalize (mutated in place)
-   * @returns {Object} the normalized object
+   * @param {Object} obj rule row or opts object to normalize
+   * @returns {Object} a new object containing only the comparable rule fields that were present
    */
   _cleanForCompare(obj) {
-    for( let key of Object.keys(obj) ) {
-      if( key === 'auto_path_partition_id' ) {
-        delete obj[key];
-        continue;
-      }
-      if( obj[key] === undefined || obj[key] === null ) {
-        delete obj[key];
-        continue;
-      }
-      if( typeof obj[key] === 'number' ) {
-        obj[key] = obj[key] + '';
-      }
-      if( key === 'filter_regex' ) {
-        obj.filterRegex = obj.filter_regex;
-        delete obj.filter_regex;
-      }
-      if( key === 'full_regex' ) {
-        obj.fullRegex = obj.full_regex;
-        delete obj.full_regex;
-      }
+    const fields = {
+      name       : obj.name,
+      index      : obj.index,
+      filterRegex: obj.filterRegex !== undefined ? obj.filterRegex : obj.filter_regex,
+      fullRegex  : obj.fullRegex !== undefined ? obj.fullRegex : obj.full_regex,
+      getValue   : obj.getValue !== undefined ? obj.getValue : obj.get_value,
+    };
+
+    const cleaned = {};
+    for( let key of Object.keys(fields) ) {
+      let value = fields[key];
+      if( value === undefined || value === null ) continue;
+      if( typeof value === 'number' ) value = value + '';
+      cleaned[key] = value;
     }
-    return obj;
+    return cleaned;
   }
 
   /**
@@ -317,8 +314,8 @@ class AutoPath {
    * @returns {Boolean} true if the normalized objects have identical keys/values
    */
   _isEqual(obj1, obj2) {
-    obj1 = this._cleanForCompare(Object.assign({}, obj1));
-    obj2 = this._cleanForCompare(Object.assign({}, obj2));
+    obj1 = this._cleanForCompare(obj1);
+    obj2 = this._cleanForCompare(obj2);
 
     if( Object.keys(obj1).length !== Object.keys(obj2).length ) {
       return false;

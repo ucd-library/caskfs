@@ -12,8 +12,10 @@ const pipelineAsync = promisify(pipeline);
  * directly to PostgreSQL and the filesystem.
  *
  * This client covers methods that have corresponding HTTP endpoints.
- * Operations without endpoints (ACL management, admin, auto-path writes,
- * archive) throw a descriptive error directing the user to use direct-pg mode.
+ * Operations without endpoints (ACL management, admin, individual auto-path rule
+ * set/remove/test/list, archive) throw a descriptive error directing the user to use
+ * direct-pg mode. Bulk auto-path rule loading (loadAutoPathRules/loadAutoPathRulesFromFile)
+ * is supported over HTTP via an admin-only endpoint.
  */
 class HttpCaskFsClient {
 
@@ -310,8 +312,6 @@ class HttpCaskFsClient {
    * @param {Boolean} [opts.copyMetadata=false]
    * @param {Boolean} [opts.copyPartitions=false]
    * @param {Boolean} [opts.replace=false]
-   * @param {Boolean} [opts.move=false]
-   * @param {Boolean} [opts.softDelete=false]
    * @returns {Promise<Object>}
    */
   async copy(context, opts={}) {
@@ -325,10 +325,116 @@ class HttpCaskFsClient {
         copyMetadata:   opts.copyMetadata   || false,
         copyPartitions: opts.copyPartitions || false,
         replace:        opts.replace        || false,
-        move:           opts.move           || false,
-        softDelete:     opts.softDelete     || false,
       }),
     });
+    return res.json();
+  }
+
+  /**
+   * @method move
+   * @description Rename or move a file or directory within CaskFS via the HTTP server
+   * (cask: → cask: only). Preserves file_id/directory_id — only the path changes.
+   *
+   * @param {Object} context - CaskFSContext or plain opts object
+   * @param {String} context.filePath - source path
+   * @param {Object} opts
+   * @param {String} opts.destPath - destination path
+   * @returns {Promise<Object>}
+   */
+  async move(context, opts={}) {
+    const { filePath } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/fs/mv`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        srcPath:  filePath,
+        destPath: opts.destPath,
+      }),
+    });
+    return res.json();
+  }
+
+  /**
+   * @method addDerivativeLink
+   * @description Record that one file was derived from another via the HTTP server.
+   * @param {Object} context - CaskFSContext or plain opts object
+   * @param {String} context.filePath - path of the derivative file
+   * @param {Object} opts
+   * @param {String} opts.sourcePath - path of the source file
+   * @param {String} [opts.relation]
+   * @param {String} [opts.metadata]
+   * @returns {Promise<Object>}
+   */
+  async addDerivativeLink(context, opts={}) {
+    const { filePath } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/lineage/add`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fromPath:   filePath,
+        sourcePath: opts.sourcePath,
+        relation:   opts.relation,
+        metadata:   opts.metadata,
+      }),
+    });
+    return res.json();
+  }
+
+  /**
+   * @method removeDerivativeLink
+   * @description Remove a derivative link between two files via the HTTP server.
+   * @param {Object} context - CaskFSContext or plain opts object
+   * @param {String} context.filePath - path of the derivative file
+   * @param {Object} opts
+   * @param {String} opts.sourcePath - path of the source file
+   * @param {String} [opts.relation]
+   * @returns {Promise<Object>}
+   */
+  async removeDerivativeLink(context, opts={}) {
+    const { filePath } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/lineage/remove`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fromPath:   filePath,
+        sourcePath: opts.sourcePath,
+        relation:   opts.relation,
+      }),
+    });
+    return res.json();
+  }
+
+  /**
+   * @method getDerivatives
+   * @description Get files that were derived from this file via the HTTP server.
+   * @param {Object} context - CaskFSContext or plain opts object
+   * @param {String} context.filePath
+   * @param {Object} [opts={}]
+   * @param {String} [opts.relation]
+   * @returns {Promise<Array>}
+   */
+  async getDerivatives(context, opts={}) {
+    const { filePath } = this._extract(context);
+    const url = new URL(`${this.baseUrl}/lineage/derivatives${filePath}`);
+    if (opts.relation) url.searchParams.set('relation', opts.relation);
+    const res = await this._fetch(url.toString());
+    return res.json();
+  }
+
+  /**
+   * @method getSources
+   * @description Get the files this file was derived from via the HTTP server.
+   * @param {Object} context - CaskFSContext or plain opts object
+   * @param {String} context.filePath
+   * @param {Object} [opts={}]
+   * @param {String} [opts.relation]
+   * @returns {Promise<Array>}
+   */
+  async getSources(context, opts={}) {
+    const { filePath } = this._extract(context);
+    const url = new URL(`${this.baseUrl}/lineage/sources${filePath}`);
+    if (opts.relation) url.searchParams.set('relation', opts.relation);
+    const res = await this._fetch(url.toString());
     return res.json();
   }
 
@@ -373,6 +479,38 @@ class HttpCaskFsClient {
    */
   async getCasLocation() {
     return 'remote';
+  }
+
+  /**
+   * @method loadAutoPathRulesFromFile
+   * @description Read a local JSON file of auto-path rules and apply it via the HTTP server's
+   * admin-only bulk-load endpoint. Mirrors CaskFs#loadAutoPathRulesFromFile for CLI drop-in use.
+   *
+   * @param {String} filePath path to a local JSON file (see docs/auto-path.md for the shape)
+   * @returns {Promise<Array<{name: String, type: String, updated: Boolean}>>}
+   */
+  async loadAutoPathRulesFromFile(filePath) {
+    const resolved = path.isAbsolute(filePath) ? filePath : path.resolve(process.cwd(), filePath);
+    const data = JSON.parse(await fs.promises.readFile(resolved, 'utf-8'));
+    return this.loadAutoPathRules(data);
+  }
+
+  /**
+   * @method loadAutoPathRules
+   * @description Apply a batch of auto-path rules via the HTTP server's admin-only bulk-load
+   * endpoint. See CaskFs#loadAutoPathRules for the data shape and semantics.
+   *
+   * @param {Object} data object with optional `bucket`/`partition` arrays of rule objects
+   * @returns {Promise<Array<{name: String, type: String, updated: Boolean}>>}
+   */
+  async loadAutoPathRules(data) {
+    const res = await this._fetch(`${this.baseUrl}/auto-path/load`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    const body = await res.json();
+    return body.results;
   }
 
   // ---------------------------------------------------------------------------
