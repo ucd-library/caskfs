@@ -249,12 +249,14 @@ class HttpCaskFsClient {
    * @param {Object} opts
    * @param {String} opts.filePath
    * @param {Boolean} [opts.softDelete]
+   * @param {Boolean} [opts.deleteLineage] also delete all downstream lineage-derivative files, recursively
    * @returns {Promise<Object>}
    */
   async deleteFile(opts={}) {
-    const { filePath, softDelete } = opts;
+    const { filePath, softDelete, deleteLineage } = opts;
     const url = new URL(`${this.baseUrl}/fs${filePath}`);
     if (softDelete) url.searchParams.set('softDelete', 'true');
+    if (deleteLineage) url.searchParams.set('deleteLineage', 'true');
     const res = await this._fetch(url.toString(), { method: 'DELETE' });
     return res.json();
   }
@@ -265,13 +267,15 @@ class HttpCaskFsClient {
    * @param {Object} opts
    * @param {String} opts.directory
    * @param {Boolean} [opts.softDelete]
+   * @param {Boolean} [opts.deleteLineage] also delete all downstream lineage-derivative files of every file removed, recursively
    * @returns {Promise<Object>}
    */
   async deleteDirectory(opts={}) {
-    const { directory, softDelete } = opts;
+    const { directory, softDelete, deleteLineage } = opts;
     const url = new URL(`${this.baseUrl}/fs${directory}`);
     url.searchParams.set('directory', 'true');
     if (softDelete) url.searchParams.set('softDelete', 'true');
+    if (deleteLineage) url.searchParams.set('deleteLineage', 'true');
     const res = await this._fetch(url.toString(), { method: 'DELETE' });
     return res.json();
   }

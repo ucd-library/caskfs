@@ -824,6 +824,8 @@ class CaskFs {
    * @param {String} context.directory directory path to delete
    * @param {String} [context.requestor] user name of the requestor
    * @param {Boolean} [context.softDelete] if true, skip CAS file removal
+   * @param {Boolean} [context.deleteLineage] if true, also recursively delete every downstream
+   *                                  lineage derivative of each file removed (see deleteFile)
    * @param {DatabaseClient} [context.dbClient] optional database client to use
    * @param {Function} [context.onDeleteFile] optional callback invoked after each file deletion; receives (filePath)
    * @returns {Promise<void>}
@@ -851,12 +853,23 @@ class CaskFs {
     context.data.limit = 100000;
     let ls = await this.ls(context);
     for( let file of ls.files ) {
-      await this.deleteFile({
-        filePath: file.filepath,
-        dbClient: context.data.dbClient,
-        softDelete: context.data.softDelete,
-        ignoreAcl: true
-      });
+      try {
+        await this.deleteFile({
+          filePath: file.filepath,
+          dbClient: context.data.dbClient,
+          softDelete: context.data.softDelete,
+          deleteLineage: context.data.deleteLineage,
+          onDeleteFile: context.data.onDeleteFile,
+          ignoreAcl: true
+        });
+      } catch( err ) {
+        // a lineage cascade triggered by an earlier file in this listing may have already
+        // removed this file (e.g. it was a downstream derivative of that file)
+        if( context.data.deleteLineage && err instanceof MissingResourceError ) {
+          continue;
+        }
+        throw err;
+      }
       this.logger.info(`Deleted file: ${file.filepath}`, context.logSignal);
       if( context.data.onDeleteFile ) {
         context.data.onDeleteFile(file.filepath);
@@ -872,6 +885,7 @@ class CaskFs {
           rootDir: context.data.rootDir,
           dbClient: context.data.dbClient,
           softDelete: context.data.softDelete,
+          deleteLineage: context.data.deleteLineage,
           onDeleteFile: context.data.onDeleteFile
         })
       );
@@ -889,6 +903,78 @@ class CaskFs {
   }
 
   /**
+   * @method _deleteFileRecord
+   * @description Internal helper: delete a single file's RDF triples, file row, and CAS entry
+   * within the caller's already-open transaction. Assumes an advisory lock has already been
+   * acquired for the file's path.
+   *
+   * @param {Object} metadata metadata for the file being deleted (from this.metadata())
+   * @param {CaskFSContext} context active context; context.data.dbClient must be an open transaction
+   * @returns {Promise<Object>} cas.delete() response ({fileDeleted, referencesRemaining})
+   */
+  async _deleteFileRecord(metadata, context) {
+    // remove RDF triples first
+    await this.rdf.delete(metadata, {dbClient: context.data.dbClient});
+
+    // remove the file record
+    await context.data.dbClient.query(`
+      DELETE FROM ${this.schema}.file WHERE file_id = $1
+    `, [metadata.file_id]);
+
+    return this.cas.delete(metadata.hash_value, {
+      softDelete: context.data.softDelete || false,
+      dbClient: context.data.dbClient
+    });
+  }
+
+  /**
+   * @method _deleteLineageDerivatives
+   * @description Internal helper: recursively delete every downstream lineage derivative of the
+   * given file (files derived FROM it, and files derived from those, transitively), depth-first
+   * so the deepest derivatives are removed before their parents. Runs inside the caller's open
+   * transaction. A visited set guards against revisiting a file already processed.
+   *
+   * @param {String} fileId file_id whose derivatives should be deleted
+   * @param {CaskFSContext} context active context; context.data.dbClient must be an open transaction
+   * @param {Set<String>} visited file_ids already processed; mutated in place
+   * @returns {Promise<Array<String>>} filepaths of the derivative files that were deleted
+   */
+  async _deleteLineageDerivatives(fileId, context, visited) {
+    let deletedPaths = [];
+
+    let derivatives = await lineage.getDerivatives({fileId, dbClient: context.data.dbClient});
+    for( let derivative of derivatives ) {
+      if( visited.has(derivative.from_file_id) ) continue;
+      visited.add(derivative.from_file_id);
+
+      let derivativeContext = createContext({
+        filePath: derivative.from_filepath,
+        requestor: context.data.requestor,
+        dbClient: context.data.dbClient,
+        softDelete: context.data.softDelete,
+        ignoreAcl: context.data.ignoreAcl
+      });
+      await this.canWriteFile(derivativeContext);
+      let derivativeMetadata = await this.metadata(derivativeContext);
+
+      // recurse first so the deepest derivatives are deleted before their immediate parent
+      let nested = await this._deleteLineageDerivatives(derivative.from_file_id, context, visited);
+      deletedPaths.push(...nested);
+
+      let lockKey = this._lockKeyFromString(derivative.from_filepath);
+      await context.data.dbClient.query(`SELECT pg_advisory_xact_lock($1)`, [lockKey]);
+      await this._deleteFileRecord(derivativeMetadata, derivativeContext);
+
+      deletedPaths.push(derivative.from_filepath);
+      if( context.data.onDeleteFile ) {
+        context.data.onDeleteFile(derivative.from_filepath);
+      }
+    }
+
+    return deletedPaths;
+  }
+
+  /**
    * @method deleteFile
    * @description Delete a file from the CASKFS. Removes the file record, partition keys, RDF triples, and
    * then calls the CAS delete method to remove the file from storage if no other references exist.
@@ -898,14 +984,21 @@ class CaskFs {
    * @param {DatabaseClient} context.dbClient optional database client to use
    * @param {Boolean} context.softDelete if true, perform a soft delete removing the file from db but leaving hash
    *                                  file on disk even if no other references exist. Default: false
-   * @returns {Promise<Object>} result object with metadata, fileDeleted (boolean), referencesRemaining (int)
+   * @param {Boolean} context.deleteLineage if true, also recursively delete every downstream lineage
+   *                                  derivative of this file (files derived from it, and files derived from
+   *                                  those, transitively). Lineage references (derivative_link rows) for any
+   *                                  deleted file are removed automatically via ON DELETE CASCADE. Default: false
+   * @param {Function} [context.onDeleteFile] optional callback invoked after each lineage-cascaded derivative
+   *                                  file deletion; receives (filePath). Not invoked for the primary file.
+   * @returns {Promise<Object>} result object with metadata, fileDeleted (boolean), referencesRemaining (int),
+   *                                  deletedLineageFiles (array of filepaths removed via lineage cascade)
    */
   async deleteFile(context={}) {
     context = createContext(context, this.dbClient);
 
     await this.canWriteFile(context);
 
-    let casResp, metadata;
+    let casResp, metadata, deletedLineageFiles = [];
 
     try {
       await context.data.dbClient.query('BEGIN');
@@ -916,18 +1009,13 @@ class CaskFs {
       let lockKey = this._lockKeyFromString(context.data.filePath);
       await context.data.dbClient.query(`SELECT pg_advisory_xact_lock($1)`, [lockKey]);
 
-      // remove RDF triples first
-      await this.rdf.delete(metadata, {dbClient: context.data.dbClient});
+      if( context.data.deleteLineage ) {
+        deletedLineageFiles = await this._deleteLineageDerivatives(
+          metadata.file_id, context, new Set([metadata.file_id])
+        );
+      }
 
-      // remove the file record
-      await context.data.dbClient.query(`
-        DELETE FROM ${this.schema}.file WHERE file_id = $1
-      `, [metadata.file_id]);
-
-      casResp = await this.cas.delete(metadata.hash_value, {
-        softDelete: context.data.softDelete || false,
-        dbClient: context.data.dbClient
-      });
+      casResp = await this._deleteFileRecord(metadata, context);
 
       await context.data.dbClient.query('COMMIT');
 
@@ -940,7 +1028,8 @@ class CaskFs {
     return {
       metadata,
       fileDeleted : casResp.fileDeleted,
-      referencesRemaining: casResp.referencesRemaining
+      referencesRemaining: casResp.referencesRemaining,
+      deletedLineageFiles
     };
   }
 

@@ -37,6 +37,9 @@ return html`
     <div class='field-container checkbox'>
       <input id=${idGen.get('soft-delete')} name=${idGen.get('soft-delete')} type="checkbox" .checked=${this.reqOptions.softDelete ? true : false} @input=${() => this._onInput('softDelete', !this.reqOptions.softDelete)}><label for=${idGen.get('soft-delete')}>Soft Delete</label>
     </div>
-    
+    <div class='field-container checkbox'>
+      <input id=${idGen.get('delete-lineage')} name=${idGen.get('delete-lineage')} type="checkbox" .checked=${this.reqOptions.deleteLineage ? true : false} @input=${() => this._onInput('deleteLineage', !this.reqOptions.deleteLineage)}><label for=${idGen.get('delete-lineage')}>Also delete lineage derivatives</label>
+    </div>
+
 </form>
 `;}

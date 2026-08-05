@@ -47,7 +47,9 @@ because none of them reference a path.
    another (e.g. a medallion-architecture silver file produced from a bronze file). File-to-file only,
    keyed by `file_id` on both ends, so the link survives either file being renamed or moved. Managed
    with `cask lineage add/remove/derivatives/sources` — see [Linked Data](ld.md) for how this differs
-   from a Layer 3 relationship.
+   from a Layer 3 relationship. A link's row is removed automatically when either endpoint file is
+   deleted; `cask rm -l/--delete-lineage` additionally deletes the downstream derivative files
+   themselves, recursively — see [Delete](fs.md#delete).
 
 ```bash
 # record that a silver file was derived from a bronze file

@@ -350,7 +350,8 @@ router.delete(/(.*)/, json(), async (req, res) => {
     const filePath = req.params[0] || '/';
     const validator = new Validator({
       softDelete: { type: 'boolean' },
-      directory: { type: 'boolean' }
+      directory: { type: 'boolean' },
+      deleteLineage: { type: 'boolean' }
     });
     const options = validator.validate({...req.query, ...(req.body || {}) });
     let result;
