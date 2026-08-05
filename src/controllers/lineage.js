@@ -25,7 +25,7 @@ router.post('/add', silentJson, async (req, res) => {
     if (!sourcePath) return res.status(400).json({ error: 'sourcePath is required' });
 
     const result = await caskFs.addDerivativeLink(
-      { filePath: fromPath, requestor: req.user || config.acl.defaultRequestor },
+      { filePath: fromPath, requestor: req.user?.username || req.user || config.acl.defaultRequestor },
       { sourcePath, relation, metadata }
     );
 
