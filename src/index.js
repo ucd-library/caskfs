@@ -1113,7 +1113,7 @@ class CaskFs {
     // itself does not exist yet, which is exactly what we need for a not-yet-created
     // destination directory.
     await this.canWriteFile(context);
-    await this.canWriteFile({ filePath: destPath, requestor: context.data.requestor, dbClient: context.data.dbClient });
+    await this.canWriteFile({ filePath: destPath, requestor: context.data.requestor, ignoreAcl: context.data.ignoreAcl, dbClient: context.data.dbClient });
 
     const srcMeta = await this.metadata(context);
 
