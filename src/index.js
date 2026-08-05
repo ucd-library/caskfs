@@ -1171,7 +1171,7 @@ class CaskFs {
     await this.directory.get(context);
 
     await this.checkPermissions(context, { permission: 'write' });
-    await this.canWriteFile({ filePath: destPath, requestor: context.data.requestor, dbClient: context.data.dbClient });
+    await this.canWriteFile({ filePath: destPath, requestor: context.data.requestor, ignoreAcl: context.data.ignoreAcl, dbClient: context.data.dbClient });
 
     if (await context.data.dbClient.pathExists(destPath)) {
       throw new Error(`Destination already exists: ${destPath}`);
