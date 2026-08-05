@@ -299,7 +299,7 @@ router.post('/mv', silentJson, async (req, res) => {
     if (!destPath) return res.status(400).json({ error: 'destPath is required' });
 
     const result = await caskFs.move(
-      { filePath: srcPath, requestor: req.user || config.acl.defaultRequestor },
+      { filePath: srcPath, requestor: req.user?.username || req.user || config.acl.defaultRequestor },
       { destPath }
     );
 
