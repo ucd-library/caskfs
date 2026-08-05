@@ -347,3 +347,4 @@ router.delete(/(.*)/, json(), async (req, res) => {
 });
 
 export default router;
+export { silentJson };

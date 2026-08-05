@@ -8,6 +8,7 @@ spec:
   - tests/sync.test.js
   - tests/transfer.test.js
   - tests/http-fs.test.js
+  - tests/auto-path-http.test.js
   - tests/cli.test.js
   - tests/cp.test.js
   - tests/copy.test.js

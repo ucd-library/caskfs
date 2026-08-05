@@ -1387,10 +1387,11 @@ class CaskFs {
 
   /**
    * @method loadAutoPathRulesFromFile
-   * @description Load auto-path rules from a JSON file.
+   * @description Load auto-path rules from a JSON file and apply them. See {@link
+   * CaskFs#loadAutoPathRules} for the shape of the file and what gets applied.
    *
    * @param {String} filePath path to JSON file with auto-path rules
-   * @returns {Promise<void>}
+   * @returns {Promise<Array<Object>>} see {@link CaskFs#loadAutoPathRules}
    */
   async loadAutoPathRulesFromFile(filePath) {
     if( path.isAbsolute(filePath) === false ) {
@@ -1401,14 +1402,35 @@ class CaskFs {
     }
 
     let data = JSON.parse(await fs.readFile(filePath, 'utf-8'));
+    return this.loadAutoPathRules(data);
+  }
+
+  /**
+   * @method loadAutoPathRules
+   * @description Apply a batch of auto-path rules. Rules that are new or have actually changed
+   * are written and (for `partition` rules) trigger a retroactive rescan of existing files;
+   * rules that are byte-for-byte identical to what's already stored are skipped entirely — this
+   * matters because a full rescan over every file is expensive, so re-running the same rule set
+   * repeatedly should be cheap once nothing has changed.
+   *
+   * @param {Object} data object with optional `bucket`/`partition` keys, each an array of rule
+   *                       objects (see {@link AutoPath#set} for the rule shape)
+   * @returns {Promise<Array<{name: String, type: String, updated: Boolean}>>} one entry per rule
+   *          processed; `updated` is false when the rule was unchanged and therefore skipped
+   */
+  async loadAutoPathRules(data={}) {
+    let results = [];
 
     for( let type in this.autoPath ) {
       if( !data[type] ) continue;
       for( let rule of data[type] ) {
-        this.logger.info(`Setting auto-path rule for type ${type}`);
-        await this.autoPath[type].set(rule);
+        let updated = await this.autoPath[type].set(rule);
+        this.logger.info(`Auto-path rule '${rule.name}' (${type}) ${updated ? 'applied' : 'unchanged, skipped'}`);
+        results.push({name: rule.name, type, updated: !!updated});
       }
     }
+
+    return results;
   }
 
 

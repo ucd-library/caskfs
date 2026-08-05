@@ -482,4 +482,88 @@ describe('Partition Keys', () => {
       assert.strictEqual(detail.auto[0].value, 'detail-env-staging');
     });
   });
+
+  // ── Idempotent set(): unchanged rules must not trigger a rescan ───────────
+
+  describe('auto-path rule — idempotent set()', () => {
+    afterEach(async () => {
+      await caskFs.autoPath.partition.remove('idempotent-test');
+      await caskFs.autoPath.bucket.remove('idempotent-bucket-test');
+      await caskFs.autoPath.partition.getConfig(true);
+      await caskFs.autoPath.bucket.getConfig(true);
+    });
+
+    it('set() returns true the first time a rule is created', async () => {
+      const updated = await caskFs.autoPath.partition.set({ name: 'idempotent-test', index: 0 });
+      assert.strictEqual(updated, true);
+    });
+
+    it('set() returns false when called again with an identical index-only rule', async () => {
+      await caskFs.autoPath.partition.set({ name: 'idempotent-test', index: 0 });
+      const updated = await caskFs.autoPath.partition.set({ name: 'idempotent-test', index: 0 });
+      assert.strictEqual(updated, false, 'unchanged rule should be a no-op, not trigger a rescan');
+    });
+
+    it('set() returns false when called again with an identical getValue rule', async () => {
+      const opts = {
+        name: 'idempotent-test',
+        filterRegex: '^data-(\\d{4})-',
+        getValue: "return 'year-' + regexMatch[1];",
+      };
+      await caskFs.autoPath.partition.set(opts);
+      const updated = await caskFs.autoPath.partition.set({ ...opts });
+      assert.strictEqual(updated, false, 'a getValue rule that is unchanged must still be detected as a no-op');
+    });
+
+    it('set() still returns true when a getValue rule actually changes', async () => {
+      await caskFs.autoPath.partition.set({
+        name: 'idempotent-test',
+        filterRegex: '^data-(\\d{4})-',
+        getValue: "return 'year-' + regexMatch[1];",
+      });
+      const updated = await caskFs.autoPath.partition.set({
+        name: 'idempotent-test',
+        filterRegex: '^data-(\\d{4})-',
+        getValue: "return 'YR-' + regexMatch[1];",
+      });
+      assert.strictEqual(updated, true);
+    });
+
+    it('a CLI-style progress callback on opts must not cause a false "changed" result', async () => {
+      const cb = () => {};
+      await caskFs.autoPath.partition.set({ name: 'idempotent-test', index: 0, cb });
+      const updated = await caskFs.autoPath.partition.set({ name: 'idempotent-test', index: 0, cb });
+      assert.strictEqual(updated, false, 'the cb property must be ignored by the equality check');
+    });
+
+    it('bucket rules (different primary key column) also correctly no-op when unchanged', async () => {
+      await caskFs.autoPath.bucket.set({ name: 'idempotent-bucket-test', filterRegex: '^archive$' });
+      const updated = await caskFs.autoPath.bucket.set({ name: 'idempotent-bucket-test', filterRegex: '^archive$' });
+      assert.strictEqual(updated, false);
+    });
+  });
+
+  // ── loadAutoPathRules(): batch apply reports per-rule updated status ──────
+
+  describe('loadAutoPathRules() batch apply', () => {
+    afterEach(async () => {
+      await caskFs.autoPath.partition.remove('batch-env');
+      await caskFs.autoPath.bucket.remove('batch-bucket');
+      await caskFs.autoPath.partition.getConfig(true);
+      await caskFs.autoPath.bucket.getConfig(true);
+    });
+
+    it('reports updated:true for new rules and updated:false when reloading unchanged rules', async () => {
+      const rules = {
+        partition: [{ name: 'batch-env', index: 0 }],
+        bucket: [{ name: 'batch-bucket', filterRegex: '^archive$' }],
+      };
+
+      const firstPass = await caskFs.loadAutoPathRules(rules);
+      assert.ok(firstPass.every(r => r.updated === true), 'first load of new rules should report updated:true');
+
+      const secondPass = await caskFs.loadAutoPathRules(rules);
+      assert.ok(secondPass.every(r => r.updated === false), 'reloading unchanged rules should report updated:false, not reprocess');
+    });
+  });
 });

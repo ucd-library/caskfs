@@ -12,8 +12,10 @@ const pipelineAsync = promisify(pipeline);
  * directly to PostgreSQL and the filesystem.
  *
  * This client covers methods that have corresponding HTTP endpoints.
- * Operations without endpoints (ACL management, admin, auto-path writes,
- * archive) throw a descriptive error directing the user to use direct-pg mode.
+ * Operations without endpoints (ACL management, admin, individual auto-path rule
+ * set/remove/test/list, archive) throw a descriptive error directing the user to use
+ * direct-pg mode. Bulk auto-path rule loading (loadAutoPathRules/loadAutoPathRulesFromFile)
+ * is supported over HTTP via an admin-only endpoint.
  */
 class HttpCaskFsClient {
 
@@ -373,6 +375,38 @@ class HttpCaskFsClient {
    */
   async getCasLocation() {
     return 'remote';
+  }
+
+  /**
+   * @method loadAutoPathRulesFromFile
+   * @description Read a local JSON file of auto-path rules and apply it via the HTTP server's
+   * admin-only bulk-load endpoint. Mirrors CaskFs#loadAutoPathRulesFromFile for CLI drop-in use.
+   *
+   * @param {String} filePath path to a local JSON file (see docs/auto-path.md for the shape)
+   * @returns {Promise<Array<{name: String, type: String, updated: Boolean}>>}
+   */
+  async loadAutoPathRulesFromFile(filePath) {
+    const resolved = path.isAbsolute(filePath) ? filePath : path.resolve(process.cwd(), filePath);
+    const data = JSON.parse(await fs.promises.readFile(resolved, 'utf-8'));
+    return this.loadAutoPathRules(data);
+  }
+
+  /**
+   * @method loadAutoPathRules
+   * @description Apply a batch of auto-path rules via the HTTP server's admin-only bulk-load
+   * endpoint. See CaskFs#loadAutoPathRules for the data shape and semantics.
+   *
+   * @param {Object} data object with optional `bucket`/`partition` arrays of rule objects
+   * @returns {Promise<Array<{name: String, type: String, updated: Boolean}>>}
+   */
+  async loadAutoPathRules(data) {
+    const res = await this._fetch(`${this.baseUrl}/auto-path/load`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    const body = await res.json();
+    return body.results;
   }
 
   // ---------------------------------------------------------------------------
