@@ -66,7 +66,7 @@ const config = {
   },
 
   webapp : {
-    port : env.CASKFS_WEBAPP_PORT || 3000,
+    port : env.CASKFS_WEBAPP_PORT || env.PORT || 3000,
     isDevEnv : env.CASKFS_WEBAPP_ENV === 'dev',
     basepath : env.CASKFS_WEBAPP_PATH_PREFIX || '',
     bundleName: 'caskfs-webapp.js',

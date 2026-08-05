@@ -133,6 +133,28 @@ describe('CLI – direct-pg mode', () => {
     assert.ok(stdout.includes('hello.txt'), `expected filename in metadata output:\n${stdout}`);
   });
 
+  it('should record a lineage link via --derived-from on write', async () => {
+    const { code: bronzeCode, stderr: bronzeErr } = await runCask(
+      ['write', '/cli-test/bronze.txt', '-d', dataFile],
+      { env: env() }
+    );
+    assert.strictEqual(bronzeCode, 0, `bronze write exited non-zero. stderr: ${bronzeErr}`);
+
+    const { code, stdout, stderr } = await runCask(
+      ['write', '/cli-test/silver.txt', '-d', dataFile, '--derived-from', '/cli-test/bronze.txt'],
+      { env: env() }
+    );
+    assert.strictEqual(code, 0, `write --derived-from exited non-zero. stderr: ${stderr}`);
+    assert.ok(stdout.includes('Lineage:'), `expected lineage confirmation in output:\n${stdout}`);
+
+    const { code: srcCode, stdout: srcOut } = await runCask(
+      ['lineage', 'sources', '/cli-test/silver.txt'],
+      { env: env() }
+    );
+    assert.strictEqual(srcCode, 0);
+    assert.ok(srcOut.includes('/cli-test/bronze.txt'), `expected source path in lineage output:\n${srcOut}`);
+  });
+
   it('should delete the file via cask rm', async () => {
     const { code, stderr } = await runCask(
       ['rm', TEST_FILE_PATH],

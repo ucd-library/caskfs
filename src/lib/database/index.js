@@ -207,6 +207,28 @@ class Database {
   }
 
   /**
+   * @method renameFile
+   * @description Move/rename a file in place by updating its directory and name.
+   * The file_id and CAS hash are unchanged.
+   *
+   * @param {Object} opts
+   * @param {String} opts.fileId file_id of the file to rename
+   * @param {String} opts.directoryId directory_id of the destination directory
+   * @param {String} opts.name destination filename
+   * @param {String} opts.user user name to record as last_modified_by
+   *
+   * @returns {Promise<void>}
+   */
+  async renameFile(opts) {
+    const { fileId, directoryId, name, user } = opts;
+    await this.client.query(`
+      UPDATE ${this.schema}.file
+      SET directory_id = $1, name = $2, last_modified_by = $3
+      WHERE file_id = $4
+    `, [directoryId, name, user, fileId]);
+  }
+
+  /**
    * @method addPartitionKeyToFile
    * @description Add a partition key to a file.  This will create the partition key
    * if it does not already exist.

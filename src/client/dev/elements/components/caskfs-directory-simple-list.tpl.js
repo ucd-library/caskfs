@@ -37,10 +37,6 @@ export function styles() {
       font-weight: 700;
       color: var(--ucd-blue, #022851);
     }
-    caskfs-directory-simple-list .widget-header {
-      border-bottom: 3px dotted var(--ucd-gold, #ffbf00);
-      padding-bottom: .5rem;
-    }
     caskfs-directory-simple-list .drag-overlay {
       display: none;
       position: absolute;
@@ -98,7 +94,11 @@ export function render() {
   };
   return html`
   <div class="container ${classMap(classes)}">
-    <h2 class='heading--highlight widget-header'>${this.hasParentFile ? 'Parent File' : 'File'} Subdirectory</h2>
+    <caskfs-section-header
+      text='${this.hasParentFile ? 'Parent File' : 'File'} Subdirectory'
+      icon='fas.layer-group'
+      brand-color='sage'>
+    </caskfs-section-header>
     <div class='contents' @dragover=${this._onDragOver} @dragleave=${this._onDragLeave} @drop=${this._onDrop}>
       <div class='empty-state'>
         <div>This file does not have an associated subdirectory.</div>

@@ -7,6 +7,7 @@ import ld from './ld.js';
 import find from './find.js';
 import system from './system.js';
 import transfer from './transfer.js';
+import lineage from './lineage.js';
 
 const router = Router();
 
@@ -18,5 +19,6 @@ router.use('/find', find);
 router.use('/ld', ld);
 router.use('/system', system);
 router.use('/transfer', transfer);
+router.use('/lineage', lineage);
 
 export default router;

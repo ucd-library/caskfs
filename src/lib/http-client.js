@@ -312,8 +312,6 @@ class HttpCaskFsClient {
    * @param {Boolean} [opts.copyMetadata=false]
    * @param {Boolean} [opts.copyPartitions=false]
    * @param {Boolean} [opts.replace=false]
-   * @param {Boolean} [opts.move=false]
-   * @param {Boolean} [opts.softDelete=false]
    * @returns {Promise<Object>}
    */
   async copy(context, opts={}) {
@@ -327,10 +325,116 @@ class HttpCaskFsClient {
         copyMetadata:   opts.copyMetadata   || false,
         copyPartitions: opts.copyPartitions || false,
         replace:        opts.replace        || false,
-        move:           opts.move           || false,
-        softDelete:     opts.softDelete     || false,
       }),
     });
+    return res.json();
+  }
+
+  /**
+   * @method move
+   * @description Rename or move a file or directory within CaskFS via the HTTP server
+   * (cask: → cask: only). Preserves file_id/directory_id — only the path changes.
+   *
+   * @param {Object} context - CaskFSContext or plain opts object
+   * @param {String} context.filePath - source path
+   * @param {Object} opts
+   * @param {String} opts.destPath - destination path
+   * @returns {Promise<Object>}
+   */
+  async move(context, opts={}) {
+    const { filePath } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/fs/mv`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        srcPath:  filePath,
+        destPath: opts.destPath,
+      }),
+    });
+    return res.json();
+  }
+
+  /**
+   * @method addDerivativeLink
+   * @description Record that one file was derived from another via the HTTP server.
+   * @param {Object} context - CaskFSContext or plain opts object
+   * @param {String} context.filePath - path of the derivative file
+   * @param {Object} opts
+   * @param {String} opts.sourcePath - path of the source file
+   * @param {String} [opts.relation]
+   * @param {String} [opts.metadata]
+   * @returns {Promise<Object>}
+   */
+  async addDerivativeLink(context, opts={}) {
+    const { filePath } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/lineage/add`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fromPath:   filePath,
+        sourcePath: opts.sourcePath,
+        relation:   opts.relation,
+        metadata:   opts.metadata,
+      }),
+    });
+    return res.json();
+  }
+
+  /**
+   * @method removeDerivativeLink
+   * @description Remove a derivative link between two files via the HTTP server.
+   * @param {Object} context - CaskFSContext or plain opts object
+   * @param {String} context.filePath - path of the derivative file
+   * @param {Object} opts
+   * @param {String} opts.sourcePath - path of the source file
+   * @param {String} [opts.relation]
+   * @returns {Promise<Object>}
+   */
+  async removeDerivativeLink(context, opts={}) {
+    const { filePath } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/lineage/remove`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fromPath:   filePath,
+        sourcePath: opts.sourcePath,
+        relation:   opts.relation,
+      }),
+    });
+    return res.json();
+  }
+
+  /**
+   * @method getDerivatives
+   * @description Get files that were derived from this file via the HTTP server.
+   * @param {Object} context - CaskFSContext or plain opts object
+   * @param {String} context.filePath
+   * @param {Object} [opts={}]
+   * @param {String} [opts.relation]
+   * @returns {Promise<Array>}
+   */
+  async getDerivatives(context, opts={}) {
+    const { filePath } = this._extract(context);
+    const url = new URL(`${this.baseUrl}/lineage/derivatives${filePath}`);
+    if (opts.relation) url.searchParams.set('relation', opts.relation);
+    const res = await this._fetch(url.toString());
+    return res.json();
+  }
+
+  /**
+   * @method getSources
+   * @description Get the files this file was derived from via the HTTP server.
+   * @param {Object} context - CaskFSContext or plain opts object
+   * @param {String} context.filePath
+   * @param {Object} [opts={}]
+   * @param {String} [opts.relation]
+   * @returns {Promise<Array>}
+   */
+  async getSources(context, opts={}) {
+    const { filePath } = this._extract(context);
+    const url = new URL(`${this.baseUrl}/lineage/sources${filePath}`);
+    if (opts.relation) url.searchParams.set('relation', opts.relation);
+    const res = await this._fetch(url.toString());
     return res.json();
   }
 

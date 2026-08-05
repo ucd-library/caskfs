@@ -266,13 +266,13 @@ router.post('/sync', silentJson, async (req, res) => {
  */
 router.post('/copy', silentJson, async (req, res) => {
   try {
-    const { srcPath, destPath, copyMetadata, copyPartitions, replace, move, softDelete } = req.body || {};
+    const { srcPath, destPath, copyMetadata, copyPartitions, replace } = req.body || {};
     if (!srcPath)  return res.status(400).json({ error: 'srcPath is required' });
     if (!destPath) return res.status(400).json({ error: 'destPath is required' });
 
     const result = await caskFs.copy(
       { filePath: srcPath, requestor: req.user || config.acl.defaultRequestor },
-      { destPath, copyMetadata, copyPartitions, replace, move, softDelete }
+      { destPath, copyMetadata, copyPartitions, replace }
     );
 
     if (result && typeof result.copied === 'number') {
@@ -281,6 +281,29 @@ router.post('/copy', silentJson, async (req, res) => {
 
     const { readStream, dbClient, ...safeData } = result.data || {};
     res.status(200).json(safeData.file);
+  } catch (e) {
+    return handleError(res, req, e);
+  }
+});
+
+/**
+ * POST /fs/mv
+ * @description Rename or move a file or directory within CaskFs (cask: → cask: only).
+ * Preserves file_id/directory_id — only the path changes. Destination parent
+ * directories are created automatically if they do not exist.
+ */
+router.post('/mv', silentJson, async (req, res) => {
+  try {
+    const { srcPath, destPath } = req.body || {};
+    if (!srcPath)  return res.status(400).json({ error: 'srcPath is required' });
+    if (!destPath) return res.status(400).json({ error: 'destPath is required' });
+
+    const result = await caskFs.move(
+      { filePath: srcPath, requestor: req.user || config.acl.defaultRequestor },
+      { destPath }
+    );
+
+    res.status(200).json(result);
   } catch (e) {
     return handleError(res, req, e);
   }

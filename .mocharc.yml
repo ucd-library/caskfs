@@ -12,6 +12,8 @@ spec:
   - tests/cli.test.js
   - tests/cp.test.js
   - tests/copy.test.js
+  - tests/move.test.js
+  - tests/lineage.test.js
 
 timeout: 30000
 require: tests/helpers/env.js

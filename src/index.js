@@ -13,6 +13,7 @@ import { createContext, CaskFSContext } from "./lib/context.js";
 import AutoPathBucket from "./lib/auto-path/bucket.js";
 import AutoPathPartition from "./lib/auto-path/partition.js";
 import Transfer from "./lib/transfer.js";
+import lineage from "./lib/lineage.js";
 import { MissingResourceError, AclAccessError, DuplicateFileError, HashNotFoundError } from "./lib/errors.js";
 
 class CaskFs {
@@ -960,8 +961,6 @@ class CaskFs {
    * @param {Object} [opts.metadata] metadata to apply to destination; merged over source metadata when copyMetadata is true
    * @param {Array} [opts.partitionKeys] partition keys for destination; overrides source keys when copyPartitions is true
    * @param {Boolean} [opts.replace=false] if true, replace an existing file at destPath
-   * @param {Boolean} [opts.move=false] if true, delete the source file after a successful copy
-   * @param {Boolean} [opts.softDelete=false] if true and move is true, perform a soft delete of the source file, leaving the hash file on disk even if no other references exist. Default: false
    *
    * @returns {Promise<CaskFSContext>} result context from the write call
    */
@@ -1003,14 +1002,6 @@ class CaskFs {
       });
 
       if (writeResult.hasError()) throw writeResult.getError();
-
-      if (opts.move) {
-        await this.deleteFile({
-          filePath: srcPath,
-          requestor: context.data.requestor,
-          softDelete: opts.softDelete || false
-        });
-      }
     });
 
     return writeResult;
@@ -1033,7 +1024,6 @@ class CaskFs {
    * @param {Object} [opts.metadata] metadata to apply to destination
    * @param {Array} [opts.partitionKeys] partition keys for destination
    * @param {Boolean} [opts.replace=false] replace existing files at destination
-   * @param {Boolean} [opts.move=false] delete each source file after a successful copy
    *
    * @returns {Promise<CaskFSContext|Object>} copyFile result for a single file;
    *   { copied, errors } object for a directory
@@ -1093,6 +1083,276 @@ class CaskFs {
 
     await walk(srcPath);
     return results;
+  }
+
+  /**
+   * @method moveFile
+   * @description Rename or move a single file within CaskFS in place. The file_id and CAS hash
+   * are unchanged — only the directory_id/name pointing at them are updated, so any structural
+   * metadata keyed by file_id (partition keys, derivative links) is unaffected. Destination
+   * parent directories are created automatically if they do not exist.
+   *
+   * @param {Object|CaskFSContext} context context or object with filePath property (source path)
+   * @param {String} context.filePath source file path to move from
+   * @param {String} context.requestor user name of the requestor
+   * @param {Object} opts options object
+   * @param {String} opts.destPath Required. destination file path
+   *
+   * @returns {Promise<Object>} metadata for the file at its new path
+   */
+  async moveFile(context, opts={}) {
+    context = createContext(context, this.dbClient);
+
+    const srcPath = context.data.filePath;
+    const destPath = opts.destPath;
+    if (!destPath) throw new Error('opts.destPath is required for move');
+    if (destPath === srcPath) throw new Error('destPath is the same as the source path');
+
+    // write permission is required on both the file being moved and the destination.
+    // canWriteFile walks up to the nearest existing ancestor directory when the target
+    // itself does not exist yet, which is exactly what we need for a not-yet-created
+    // destination directory.
+    await this.canWriteFile(context);
+    await this.canWriteFile({ filePath: destPath, requestor: context.data.requestor, dbClient: context.data.dbClient });
+
+    const srcMeta = await this.metadata(context);
+
+    if (await context.data.dbClient.pathExists(destPath)) {
+      throw new DuplicateFileError(destPath);
+    }
+
+    const destParts = path.parse(destPath);
+
+    await this.runInTransaction(async (dbClient) => {
+      let lockKey = this._lockKeyFromString(srcPath);
+      await dbClient.query(`SELECT pg_advisory_xact_lock($1)`, [lockKey]);
+
+      const directoryId = await this.directory.mkdir(destParts.dir, { dbClient });
+
+      await dbClient.renameFile({
+        fileId: srcMeta.file_id,
+        directoryId,
+        name: destParts.base,
+        user: context.data.requestor
+      });
+    });
+
+    return this.metadata({ filePath: destPath, requestor: context.data.requestor });
+  }
+
+  /**
+   * @method moveDirectory
+   * @description Rename or move a directory, and everything under it, within CaskFS in place.
+   * Every directory_id and file_id in the subtree is preserved — only paths are rewritten.
+   * Destination parent directories are created automatically if they do not exist. The
+   * destination path itself must not already exist; moving into an existing directory
+   * (nesting, unix-mv style) is not supported — destPath becomes the new full path.
+   *
+   * @param {Object|CaskFSContext} context context or object with directory property (source path)
+   * @param {String} context.directory source directory path to move from
+   * @param {String} context.requestor user name of the requestor
+   * @param {Object} opts options object
+   * @param {String} opts.destPath Required. destination directory path
+   *
+   * @returns {Promise<Object>} object with the new directory path
+   */
+  async moveDirectory(context, opts={}) {
+    context = createContext(context, this.dbClient);
+
+    const srcDir = context.data.directory;
+    const destPath = opts.destPath;
+    if (!destPath) throw new Error('opts.destPath is required for move');
+    if (srcDir === '/') throw new Error('Cannot move the root directory');
+    if (destPath === srcDir || destPath.startsWith(srcDir + '/')) {
+      throw new Error('Cannot move a directory into itself or one of its own descendants');
+    }
+
+    // confirms the source directory exists
+    await this.directory.get(context);
+
+    await this.checkPermissions(context, { permission: 'write' });
+    await this.canWriteFile({ filePath: destPath, requestor: context.data.requestor, dbClient: context.data.dbClient });
+
+    if (await context.data.dbClient.pathExists(destPath)) {
+      throw new Error(`Destination already exists: ${destPath}`);
+    }
+
+    const destParts = path.parse(destPath);
+
+    await this.runInTransaction(async (dbClient) => {
+      const parentId = await this.directory.mkdir(destParts.dir, { dbClient });
+      await this.directory.move({ directory: srcDir, destPath, parentId, dbClient });
+    });
+
+    return { directory: destPath };
+  }
+
+  /**
+   * @method move
+   * @description Rename or move a file or directory within CaskFS. Auto-detects whether the
+   * source is a file or a directory and delegates to moveFile or moveDirectory.
+   *
+   * @param {Object|CaskFSContext} context context or object with filePath property (source path,
+   *   file or directory)
+   * @param {String} context.filePath source path
+   * @param {String} context.requestor user name of the requestor
+   * @param {Object} opts options object
+   * @param {String} opts.destPath Required. destination path
+   *
+   * @returns {Promise<Object>} moveFile result for a file; { directory } for a directory
+   */
+  async move(context, opts={}) {
+    context = createContext(context, this.dbClient);
+
+    const srcPath = context.data.filePath;
+    if (!srcPath) throw new Error('filePath is required for move');
+    if (!opts.destPath) throw new Error('opts.destPath is required for move');
+
+    let srcIsFile = false;
+    try {
+      await this.metadata(context);
+      srcIsFile = true;
+    } catch(e) {
+      if (e instanceof AclAccessError) throw e;
+    }
+
+    if (srcIsFile) {
+      return this.moveFile(context, opts);
+    }
+
+    return this.moveDirectory(
+      { directory: srcPath, requestor: context.data.requestor, dbClient: context.data.dbClient },
+      opts
+    );
+  }
+
+  /**
+   * @method addDerivativeLink
+   * @description Record that one file was derived from another (e.g. a silver file produced
+   * from a bronze file). Structural metadata, kept separate from the Layer 3 RDF graph — see
+   * docs/structural-metadata.md. Upserts on repeat calls for the same (from, to, relation)
+   * triple, replacing metadata. Requires write access to the derivative file and read access
+   * to the source file.
+   *
+   * @param {Object|CaskFSContext} context context or object with filePath property (the
+   *   derivative file, e.g. the silver file)
+   * @param {String} context.filePath path of the derivative file
+   * @param {String} context.requestor user name of the requestor
+   * @param {Object} opts options object
+   * @param {String} opts.sourcePath Required. path of the source file (e.g. the bronze file)
+   * @param {String} [opts.relation] relation URI. Default: http://schema.org/source
+   * @param {String} [opts.metadata] free-form text carried alongside the link
+   *
+   * @returns {Promise<Object>} the created/updated derivative_link row
+   */
+  async addDerivativeLink(context, opts={}) {
+    context = createContext(context, this.dbClient);
+    await this.canWriteFile(context);
+
+    const sourcePath = opts.sourcePath;
+    if (!sourcePath) throw new Error('opts.sourcePath is required');
+
+    const sourceContext = createContext(
+      { filePath: sourcePath, requestor: context.data.requestor, dbClient: context.data.dbClient },
+      this.dbClient
+    );
+    await this.canReadFile(sourceContext);
+
+    const fromMeta = await this.metadata(context);
+    const toMeta = await this.metadata(sourceContext);
+
+    return lineage.addLink({
+      fromFileId: fromMeta.file_id,
+      toFileId: toMeta.file_id,
+      relation: opts.relation,
+      metadata: opts.metadata,
+      dbClient: context.data.dbClient
+    });
+  }
+
+  /**
+   * @method removeDerivativeLink
+   * @description Remove a derivative link between two files. Requires write access to the
+   * derivative file.
+   *
+   * @param {Object|CaskFSContext} context context or object with filePath property (the
+   *   derivative file)
+   * @param {String} context.filePath path of the derivative file
+   * @param {String} context.requestor user name of the requestor
+   * @param {Object} opts options object
+   * @param {String} opts.sourcePath Required. path of the source file
+   * @param {String} [opts.relation] relation URI. Default: http://schema.org/source
+   *
+   * @returns {Promise<Object>} result of the delete query
+   */
+  async removeDerivativeLink(context, opts={}) {
+    context = createContext(context, this.dbClient);
+    await this.canWriteFile(context);
+
+    const sourcePath = opts.sourcePath;
+    if (!sourcePath) throw new Error('opts.sourcePath is required');
+
+    const fromMeta = await this.metadata(context);
+    const toMeta = await this.metadata({
+      filePath: sourcePath,
+      requestor: context.data.requestor,
+      dbClient: context.data.dbClient
+    });
+
+    return lineage.removeLink({
+      fromFileId: fromMeta.file_id,
+      toFileId: toMeta.file_id,
+      relation: opts.relation,
+      dbClient: context.data.dbClient
+    });
+  }
+
+  /**
+   * @method getDerivatives
+   * @description Get files that were derived from this file (this file is the source).
+   *
+   * @param {Object|CaskFSContext} context context or object with filePath property
+   * @param {String} context.filePath file path to look up
+   * @param {String} context.requestor user name of the requestor
+   * @param {Object} opts options object
+   * @param {String} [opts.relation] filter by relation URI
+   *
+   * @returns {Promise<Array>} array of derivative_link_view rows
+   */
+  async getDerivatives(context, opts={}) {
+    context = createContext(context, this.dbClient);
+    await this.canReadFile(context);
+
+    const meta = await this.metadata(context);
+    return lineage.getDerivatives({
+      fileId: meta.file_id,
+      relation: opts.relation,
+      dbClient: context.data.dbClient
+    });
+  }
+
+  /**
+   * @method getSources
+   * @description Get the files this file was derived from (its lineage ancestors, one hop).
+   *
+   * @param {Object|CaskFSContext} context context or object with filePath property
+   * @param {String} context.filePath file path to look up
+   * @param {String} context.requestor user name of the requestor
+   * @param {Object} opts options object
+   * @param {String} [opts.relation] filter by relation URI
+   *
+   * @returns {Promise<Array>} array of derivative_link_view rows
+   */
+  async getSources(context, opts={}) {
+    context = createContext(context, this.dbClient);
+    await this.canReadFile(context);
+
+    const meta = await this.metadata(context);
+    return lineage.getSources({
+      fileId: meta.file_id,
+      relation: opts.relation,
+      dbClient: context.data.dbClient
+    });
   }
 
   /**

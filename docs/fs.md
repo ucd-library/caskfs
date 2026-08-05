@@ -30,11 +30,19 @@ Write is the basic method for adding or updating a file in CaskFS.
 
 CLI: `cask write <file-path> [options]`
 
+Pass `--derived-from <source-path>` (repeatable) to record a [lineage link](structural-metadata.md#three-structural-facets) from the file being written to one or more existing source files in the same call — e.g. `cask write /silver/report.parquet -d report.parquet --derived-from /bronze/raw.csv`. Equivalent to a separate `cask lineage add` call after the write.
+
 ### Copy
 
 Copy entire directories from a the local filesystem into CaskFS, or from one path in CaskFS to another.  This is a recursive operation and will always overwrite files in the destination path.
 
 CLI: `cask copy <source-path> <destination-path> [options]`
+
+### Move
+
+Rename or move a file or directory within CaskFS (`cask:` → `cask:` only — use Copy for transfers to/from local disk). The `file_id`/`directory_id` and everything keyed by them (partition keys, [lineage links](structural-metadata.md#three-structural-facets)) are unchanged; only the path is rewritten. Destination parent directories are created automatically. Fails if the destination path already exists — there is no unix-`mv`-style nesting into an existing directory.
+
+CLI: `cask mv <source-path> <destination-path>`
 
 ### Read
 Read is the basic method for reading a file from CaskFS.
