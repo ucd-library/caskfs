@@ -10,6 +10,9 @@ const router = Router();
 
 const METADATA_ACCEPT = 'application/vnd.caskfs.file-metadata+json';
 
+// minimum time between progress lines written to a streaming delete response
+const STREAM_PROGRESS_INTERVAL_MS = 250;
+
 /**
  * @function parseRangeHeader
  * @description Parse an HTTP Range header for a single byte-range spec.
@@ -345,15 +348,73 @@ router.patch(/(.*)/, silentJson, async (req, res) => {
   }
 });
 
-router.delete(/(.*)/, json(), async (req, res) => {
+/**
+ * @function streamDelete
+ * @description Handle a delete request in streaming mode. Writes newline-delimited JSON
+ * progress events to the response as files are deleted, keeping the connection alive for
+ * long-running directory deletes instead of leaving the client waiting on a single response.
+ * Emits at most one progress line per STREAM_PROGRESS_INTERVAL_MS, followed by a single
+ * terminal line ({type: 'complete'} or {type: 'error'}). Since headers are already sent by
+ * the time an error can occur mid-delete, errors are reported in-band rather than via HTTP status.
+ *
+ * @param {String} filePath - file or directory path to delete
+ * @param {Object} options - validated delete options (directory, softDelete, deleteLineage)
+ * @param {import('express').Response} res - Express response
+ * @returns {Promise<void>}
+ */
+async function streamDelete(filePath, options, res) {
+  res.status(200);
+  res.setHeader('Content-Type', 'application/x-ndjson');
+  res.flushHeaders();
+
+  let deletedCount = 0;
+  let lastEmit = 0;
+
+  const onDeleteFile = (deletedFilePath) => {
+    deletedCount++;
+    const now = Date.now();
+    if( now - lastEmit < STREAM_PROGRESS_INTERVAL_MS ) return;
+    lastEmit = now;
+    res.write(JSON.stringify({ type: 'progress', deletedCount, filePath: deletedFilePath }) + '\n');
+  };
+
   try {
-    const filePath = req.params[0] || '/';
-    const validator = new Validator({
-      softDelete: { type: 'boolean' },
-      directory: { type: 'boolean' },
-      deleteLineage: { type: 'boolean' }
-    });
+    let result;
+    options.onDeleteFile = onDeleteFile;
+    if( options.directory ) {
+      options.directory = filePath;
+      await caskFs.deleteDirectory(options);
+      result = { success: true };
+    } else {
+      options.filePath = filePath;
+      result = await caskFs.deleteFile(options);
+      deletedCount += result.deletedLineageFiles?.length || 0;
+    }
+    res.write(JSON.stringify({ type: 'complete', deletedCount, result }) + '\n');
+  } catch (e) {
+    res.write(JSON.stringify({ type: 'error', deletedCount, message: e.message }) + '\n');
+  } finally {
+    res.end();
+  }
+}
+
+router.delete(/(.*)/, json(), async (req, res) => {
+  const filePath = req.params[0] || '/';
+  const validator = new Validator({
+    softDelete: { type: 'boolean' },
+    directory: { type: 'boolean' },
+    deleteLineage: { type: 'boolean' },
+    stream: { type: 'boolean' }
+  });
+
+  try {
     const options = validator.validate({...req.query, ...(req.body || {}) });
+
+    if( options.stream ) {
+      delete options.stream;
+      return await streamDelete(filePath, options, res);
+    }
+
     let result;
     if( options.directory ) {
       options.directory = filePath;

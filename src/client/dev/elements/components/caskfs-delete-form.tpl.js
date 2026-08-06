@@ -33,6 +33,10 @@ return html`
         <div class='double-decker bold u-space-mb'>Are you sure you want to delete ${this.items.length} items?</div>
         TODO: make bulk delete endpoint
       </div>
+      <div ?hidden=${!this.deleteProgress} class='u-space-mb'>
+        <div>Deleted ${this.deleteProgress?.deletedCount || 0} file${this.deleteProgress?.deletedCount === 1 ? '' : 's'}...</div>
+        <div class='u-space-mt--small' style='word-break: break-all;'>${this.deleteProgress?.lastDeletedFile || ''}</div>
+      </div>
     </div>
     <div class='field-container checkbox'>
       <input id=${idGen.get('soft-delete')} name=${idGen.get('soft-delete')} type="checkbox" .checked=${this.reqOptions.softDelete ? true : false} @input=${() => this._onInput('softDelete', !this.reqOptions.softDelete)}><label for=${idGen.get('soft-delete')}>Soft Delete</label>

@@ -17,7 +17,8 @@ class FsStore extends BaseStore {
     };
     this.events = {
       FS_UPLOAD_PROGRESS_UPDATE: 'fs-upload-progress-update',
-      FS_UPLOAD_TRACKER_VISIBILITY_UPDATE: 'fs-upload-tracker-visibility-update'
+      FS_UPLOAD_TRACKER_VISIBILITY_UPDATE: 'fs-upload-tracker-visibility-update',
+      FS_DELETE_PROGRESS_UPDATE: 'fs-delete-progress-update'
     };
     this.uploadProgressThreshold = 5; // only emit progress update for every 5% change to avoid excessive updates
   }

@@ -15,7 +15,8 @@ export default class CaskfsDeleteForm extends Mixin(LitElement)
       reqOptions: { type: Object },
       successLocation: { type: String, attribute: 'success-location' },
       isSingleFile: { state: true },
-      isSingleDirectory: { state: true }
+      isSingleDirectory: { state: true },
+      deleteProgress: { state: true }
     }
   }
 
@@ -31,6 +32,7 @@ export default class CaskfsDeleteForm extends Mixin(LitElement)
 
     this.items = [];
     this.reqOptions = {};
+    this.deleteProgress = null;
 
     this._injectModel('AppStateModel', 'DirectoryModel', 'FsModel');
   }
@@ -58,6 +60,7 @@ export default class CaskfsDeleteForm extends Mixin(LitElement)
       this.isSingleDirectory = false;
     }
     this.reqOptions = {};
+    this.deleteProgress = null;
   }
 
   _onSubmit(e){
@@ -75,10 +78,22 @@ export default class CaskfsDeleteForm extends Mixin(LitElement)
       r = await this.FsModel.delete(this.items[0].filepath, this.reqOptions);
     } else if ( this.isSingleDirectory ){
       this.reqOptions.directory = true;
+      this.deleteProgress = { deletedCount: 0 };
       r = await this.FsModel.delete(this.items[0].fullname, this.reqOptions);
     }
     console.log('delete result', r);
     return r;
+  }
+
+  /**
+   * @description Bound to FsStore fs-delete-progress-update event. Updates the running
+   * count/last-deleted-path shown while a directory delete is in progress. Total scope isn't
+   * known ahead of time, so this can only show progress made so far, not a percentage.
+   * @param {Object} e - store entry from FsService.deleteStream ({deletedCount, lastDeletedFile, ...})
+   */
+  _onFsDeleteProgressUpdate(e){
+    if ( !this.deleteProgress ) return;
+    this.deleteProgress = { deletedCount: e.deletedCount, lastDeletedFile: e.lastDeletedFile };
   }
 
   async _onSubmitClick(){
