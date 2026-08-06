@@ -691,6 +691,7 @@ program
   .description('Remove a file from the filesystem layer and the underlying storage')
   .option('-d, --directory', 'Indicates that the file-path is a directory and all files in the directory should be deleted recursively', false)
   .option('-s, --soft-delete', 'Never delete the file from the underlying storage, even if all references are removed', false)
+  .option('-l, --delete-lineage', 'Also recursively delete every downstream lineage derivative of each file removed (files derived from it, and files derived from those, transitively)', false)
   .action(async (filePath, options) => {
     handleGlobalOpts(options);
 

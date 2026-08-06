@@ -114,3 +114,13 @@ curl -X POST http://localhost:3000/api/auto-path/load \
 ```
 
 The response is `{ "results": [{ "name", "type", "updated" }, ...] }` — one entry per rule in the request body, with `updated: false` for any rule that was already up to date and therefore skipped.
+
+## Testing rules over HTTP
+
+`GET /api/auto-path/:type/test?filePath=...` evaluates every configured rule of `:type` (`bucket` or `partition`) against `filePath`, without writing anything — the http-mode counterpart of `cask auto-path test`. Also **admin-only**, same access rules as `/auto-path/load` above.
+
+```bash
+curl 'http://localhost:3000/api/auto-path/partition/test?filePath=/bronze/dc/cruess/collection/dams-river-1.json'
+```
+
+The response is an array of `{ "name", "value" }` objects, one per matching rule — the same shape returned by `cask.autoPath[type].getFromPath()` in direct-pg mode.

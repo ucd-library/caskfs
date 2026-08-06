@@ -149,6 +149,112 @@ describe('Lineage', () => {
   });
 });
 
+// ── cascading delete ─────────────────────────────────────────────────────────
+
+describe('Lineage — cascading delete', () => {
+  let caskFs;
+
+  before(async () => {
+    caskFs = await setup();
+  });
+
+  after(async () => {
+    await teardown();
+  });
+
+  it('deleteFile without deleteLineage leaves derivative files untouched', async () => {
+    await write(caskFs, '/bronze/a.csv');
+    await write(caskFs, '/silver/a.parquet');
+    await caskFs.addDerivativeLink(
+      { filePath: '/silver/a.parquet', requestor: TEST_USER, ignoreAcl: true },
+      { sourcePath: '/bronze/a.csv' }
+    );
+
+    await caskFs.deleteFile({ filePath: '/bronze/a.csv', requestor: TEST_USER, ignoreAcl: true });
+
+    const meta = await caskFs.metadata({ filePath: '/silver/a.parquet', requestor: TEST_USER, ignoreAcl: true });
+    assert.ok(meta, 'derivative file should still exist');
+  });
+
+  it('deleteFile with deleteLineage recursively deletes downstream derivatives', async () => {
+    await write(caskFs, '/bronze/b.csv');
+    await write(caskFs, '/silver/b.parquet');
+    await write(caskFs, '/gold/b-summary.parquet');
+    await caskFs.addDerivativeLink(
+      { filePath: '/silver/b.parquet', requestor: TEST_USER, ignoreAcl: true },
+      { sourcePath: '/bronze/b.csv' }
+    );
+    await caskFs.addDerivativeLink(
+      { filePath: '/gold/b-summary.parquet', requestor: TEST_USER, ignoreAcl: true },
+      { sourcePath: '/silver/b.parquet' }
+    );
+
+    const result = await caskFs.deleteFile({
+      filePath: '/bronze/b.csv', requestor: TEST_USER, ignoreAcl: true, deleteLineage: true
+    });
+
+    assert.deepStrictEqual(
+      result.deletedLineageFiles.sort(),
+      ['/silver/b.parquet', '/gold/b-summary.parquet'].sort()
+    );
+
+    await assert.rejects(
+      () => caskFs.metadata({ filePath: '/silver/b.parquet', requestor: TEST_USER, ignoreAcl: true }),
+      { name: 'MissingResource' }
+    );
+    await assert.rejects(
+      () => caskFs.metadata({ filePath: '/gold/b-summary.parquet', requestor: TEST_USER, ignoreAcl: true }),
+      { name: 'MissingResource' }
+    );
+  });
+
+  it('deleteFile with deleteLineage only deletes each shared derivative once (diamond dependency)', async () => {
+    await write(caskFs, '/bronze/c.csv');
+    await write(caskFs, '/silver/c1.parquet');
+    await write(caskFs, '/silver/c2.parquet');
+    await write(caskFs, '/gold/c-joined.parquet');
+    await caskFs.addDerivativeLink(
+      { filePath: '/silver/c1.parquet', requestor: TEST_USER, ignoreAcl: true },
+      { sourcePath: '/bronze/c.csv' }
+    );
+    await caskFs.addDerivativeLink(
+      { filePath: '/silver/c2.parquet', requestor: TEST_USER, ignoreAcl: true },
+      { sourcePath: '/bronze/c.csv' }
+    );
+    // gold file derived from both silver files
+    await caskFs.addDerivativeLink(
+      { filePath: '/gold/c-joined.parquet', requestor: TEST_USER, ignoreAcl: true },
+      { sourcePath: '/silver/c1.parquet' }
+    );
+    await caskFs.addDerivativeLink(
+      { filePath: '/gold/c-joined.parquet', requestor: TEST_USER, ignoreAcl: true },
+      { sourcePath: '/silver/c2.parquet' }
+    );
+
+    const result = await caskFs.deleteFile({
+      filePath: '/bronze/c.csv', requestor: TEST_USER, ignoreAcl: true, deleteLineage: true
+    });
+
+    assert.strictEqual(result.deletedLineageFiles.length, 3, 'gold file should only be deleted once despite two paths to it');
+  });
+
+  it('deleteDirectory with deleteLineage cascades derivatives that live outside the deleted directory', async () => {
+    await write(caskFs, '/bronze/dir-src.csv');
+    await write(caskFs, '/silver/dir-derived.parquet');
+    await caskFs.addDerivativeLink(
+      { filePath: '/silver/dir-derived.parquet', requestor: TEST_USER, ignoreAcl: true },
+      { sourcePath: '/bronze/dir-src.csv' }
+    );
+
+    await caskFs.deleteDirectory({ directory: '/bronze', requestor: TEST_USER, ignoreAcl: true, deleteLineage: true });
+
+    await assert.rejects(
+      () => caskFs.metadata({ filePath: '/silver/dir-derived.parquet', requestor: TEST_USER, ignoreAcl: true }),
+      { name: 'MissingResource' }
+    );
+  });
+});
+
 // ── permissions ─────────────────────────────────────────────────────────────
 
 describe('Lineage — permissions', () => {

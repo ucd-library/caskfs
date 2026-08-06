@@ -57,6 +57,31 @@ router.get('/:type', async (req, res) => {
 });
 
 /**
+ * GET /auto-path/:type/test
+ * @description Evaluate every configured rule of the given type against a file path, without
+ * writing anything. Mirrors the CLI's `cask auto-path test <type> <file-path>` for http-mode use.
+ * Admin-only, since auto-path rule definitions are a system-wide configuration.
+ */
+router.get('/:type/test', async (req, res) => {
+  try {
+    const options = parseArgs({
+      type: req.params.type
+    });
+    await assertAdmin(req);
+
+    const filePath = req.query.filePath;
+    if( typeof filePath !== 'string' || !filePath ) {
+      return res.status(400).json({ error: '"filePath" query parameter is required' });
+    }
+
+    const resp = await caskFs.autoPath[options.type].getFromPath(filePath);
+    res.status(200).json(resp);
+  } catch (e) {
+    return handleError(res, req, e);
+  }
+});
+
+/**
  * POST /auto-path/load
  * @description Bulk-apply auto-path rules from a JSON body shaped like the CLI's rules file:
  * `{ bucket: [...rules], partition: [...rules] }` (see docs/auto-path.md for the rule shape).

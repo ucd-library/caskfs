@@ -123,3 +123,86 @@ describe('POST /auto-path/load', () => {
     });
   });
 });
+
+describe('GET /auto-path/:type/test', () => {
+  let caskFs, baseUrl;
+
+  before(async () => {
+    config.headerAuth.enabled = true;
+    ({ caskFs, baseUrl } = await setup());
+
+    // Set the rule via the /load endpoint (ACL disabled at this point) so it's applied
+    // through the same controller singleton that serves the /test endpoint under test,
+    // rather than the per-test caskFs instance whose in-memory config cache the singleton
+    // doesn't share (see the cleanupRules() comment above).
+    await fetch(`${baseUrl}/auto-path/load`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ partition: [{ name: 'http-test-env', index: 0 }] }),
+    });
+  });
+
+  after(async () => {
+    config.headerAuth.enabled = false;
+    aclImpl.enabled = false;
+    await cleanupTestRule();
+    await teardown();
+  });
+
+  async function cleanupTestRule() {
+    const { default: httpCaskFs } = await import('../src/controllers/caskFs.js');
+    await httpCaskFs.autoPath.partition.remove('http-test-env');
+    await httpCaskFs.autoPath.partition.getConfig(true);
+  }
+
+  describe('when ACL is disabled (default)', () => {
+    it('rejects an invalid type with 400', async () => {
+      const res = await fetch(`${baseUrl}/auto-path/nope/test?filePath=/foo/bar.json`);
+      assert.strictEqual(res.status, 400);
+    });
+
+    it('rejects a missing filePath with 400', async () => {
+      const res = await fetch(`${baseUrl}/auto-path/partition/test`);
+      assert.strictEqual(res.status, 400);
+    });
+
+    it('evaluates configured rules against the given path', async () => {
+      const res = await fetch(`${baseUrl}/auto-path/partition/test?filePath=${encodeURIComponent('/bronze/dc/foo.json')}`);
+      assert.strictEqual(res.status, 200);
+      const body = await res.json();
+      assert.deepStrictEqual(body, [{ name: 'http-test-env', value: 'http-test-env-bronze' }]);
+    });
+  });
+
+  describe('when ACL is enabled', () => {
+    before(async () => {
+      aclImpl.enabled = true;
+      await aclImpl.ensureUserRole({ user: 'auto-path-test-admin', role: 'admin', dbClient: caskFs.dbClient });
+    });
+
+    after(async () => {
+      aclImpl.enabled = false;
+    });
+
+    it('rejects an unauthenticated caller with 403', async () => {
+      const res = await fetch(`${baseUrl}/auto-path/partition/test?filePath=/bronze/dc/foo.json`);
+      assert.strictEqual(res.status, 403);
+    });
+
+    it('rejects a non-admin caller with 403', async () => {
+      const res = await fetch(`${baseUrl}/auto-path/partition/test?filePath=/bronze/dc/foo.json`, {
+        headers: userHeader('regular-joe'),
+      });
+      assert.strictEqual(res.status, 403);
+    });
+
+    it('allows an admin caller', async () => {
+      const res = await fetch(`${baseUrl}/auto-path/partition/test?filePath=${encodeURIComponent('/bronze/dc/foo.json')}`, {
+        headers: userHeader('auto-path-test-admin'),
+      });
+      assert.strictEqual(res.status, 200);
+      const body = await res.json();
+      assert.deepStrictEqual(body, [{ name: 'http-test-env', value: 'http-test-env-bronze' }]);
+    });
+  });
+});

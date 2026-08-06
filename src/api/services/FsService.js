@@ -45,6 +45,91 @@ class FsService extends BaseService {
     return store.get(id);
   }
 
+  /**
+   * @description Delete a directory via the streaming (chunked NDJSON) delete endpoint, so
+   * progress can be reported for long-running deletes instead of leaving the client waiting
+   * on a single response. Bypasses this.request()/BaseService plumbing, which has no
+   * intermediate progress hook for fetch-based requests (see uploadFile() for the same
+   * constraint on the upload side, solved there with XHR instead of a streamed response body).
+   * @param {string} path - directory path to delete
+   * @param {object} options - delete options (softDelete, deleteLineage)
+   * @returns {Promise<object>} the fs.delete store record
+   */
+  async deleteStream(path, options={}) {
+    let ido = { path, ...options, directory: true };
+    let id = payload.getKey(ido);
+    const store = this.store.data.delete;
+
+    const appStateOptions = {
+      errorSettings: {message: 'Unable to delete directory'},
+      loaderSettings: {suppressLoader: true}
+    };
+
+    const entry = { id, state: 'loading', path, options, deletedCount: 0 };
+    this.store.set(entry, store, null, appStateOptions);
+
+    const qs = new URLSearchParams({...options, directory: true, stream: true});
+    let response;
+    try {
+      response = await fetch(`${this.baseUrl}${path}?${qs.toString()}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+    } catch (e) {
+      entry.state = 'error';
+      entry.error = { error: true, message: 'Network error', details: e };
+      this.store.set(entry, store, null, appStateOptions);
+      return store.get(id);
+    }
+
+    if (!response.ok) {
+      let body;
+      try { body = await response.json(); } catch (e) { /* body wasn't json */ }
+      entry.state = 'error';
+      entry.error = { error: true, response, payload: body, message: body?.message || 'Invalid status code' };
+      this.store.set(entry, store, null, appStateOptions);
+      return store.get(id);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalLine = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const evt = JSON.parse(line);
+        if (evt.type === 'progress') {
+          entry.deletedCount = evt.deletedCount;
+          entry.lastDeletedFile = evt.filePath;
+          this.store.emit(this.store.events.FS_DELETE_PROGRESS_UPDATE, entry);
+        } else {
+          finalLine = evt;
+        }
+      }
+    }
+
+    if (finalLine?.type === 'complete') {
+      entry.state = 'loaded';
+      entry.deletedCount = finalLine.deletedCount;
+      entry.payload = finalLine.result;
+    } else {
+      entry.state = 'error';
+      entry.deletedCount = finalLine?.deletedCount ?? entry.deletedCount;
+      entry.error = { error: true, message: finalLine?.message || 'Delete failed' };
+    }
+    this.store.set(entry, store, null, appStateOptions);
+    this.store.emit(this.store.events.FS_DELETE_PROGRESS_UPDATE, entry);
+
+    return store.get(id);
+  }
+
   async getMetadata(path, modelAppStateOptions={}) {
     let ido = { path };
     let id = payload.getKey(ido);

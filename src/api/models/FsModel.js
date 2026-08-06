@@ -147,7 +147,9 @@ class FsModel extends BaseModel {
   }
 
   async delete(path, options={}) {
-    const res = await this.service.delete(path, options);
+    const res = options.directory
+      ? await this.service.deleteStream(path, options)
+      : await this.service.delete(path, options);
     if ( res.state === 'loaded' ) {
       clearCache();
     }

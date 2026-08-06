@@ -57,4 +57,11 @@ CLI: `cask ls <directory-path> [options]`
 ### Delete
 Delete is the basic method for deleting a file from CaskFS.
 
+Pass `-l`/`--delete-lineage` (`deleteLineage` over the API/library) to also recursively delete every
+downstream [lineage](structural-metadata.md#three-structural-facets) derivative of the file(s) being
+removed — i.e. files derived from it, and files derived from those, transitively. Without the flag,
+only the file(s) targeted by the delete are removed; lineage edges (`derivative_link` rows) pointing at
+a deleted file are cleaned up automatically regardless of the flag, since they're keyed by `file_id`
+and cascade-delete with either endpoint.
+
 CLI: `cask rm <file-path> [options]`

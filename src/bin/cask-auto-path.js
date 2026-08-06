@@ -10,11 +10,10 @@ const types = ['bucket', 'partition'];
 
 program
   .command('test <type> <file-path>')
-  .description(`Test auto-path extraction for a given file path. Type is either; ${types.join(', ')}`)
+  .description(`Test auto-path extraction for a given file path. Type is either; ${types.join(', ')}. Works in both direct-pg and http mode (http requires admin access).`)
   .action(async (type, filePath, options={}) => {
     handleGlobalOpts(options);
     const cask = getClient(options);
-    assertDirectPg(cask, 'auto-path test');
 
     if (!types.includes(type)) {
       console.error(`Invalid type "${type}". Must be one of: ${types.join(', ')}`);
