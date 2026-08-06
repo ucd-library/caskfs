@@ -168,6 +168,46 @@ describe('Partition Keys', () => {
     });
   });
 
+  // ── Flavor 1b: position-based (index) beyond a too-short path ──────────────
+  //
+  //  Rule: { name: 'detail', index: 2 }
+  //
+  //  Path: /only/one/file.txt   → dirParts = ['only', 'one']; index 2 has no segment
+  //
+  //  A rule whose index points past the end of the path's directory segments must not
+  //  match at all — regression test for a bug where it fell back to matching dirParts[0]
+  //  (the first segment) instead of returning no match.
+
+  describe('auto-path rule — position-based (index) past the end of a short path', () => {
+    before(async () => {
+      await caskFs.autoPath.partition.set({ name: 'detail', index: 2 });
+    });
+
+    after(async () => {
+      await caskFs.autoPath.partition.remove('detail');
+      await caskFs.autoPath.partition.getConfig(true);
+    });
+
+    it('getFromPath() should not match when the path has one fewer segment than the index requires', async () => {
+      const results = await caskFs.autoPath.partition.getFromPath('/only/one/file.txt');
+      const detail = results.find(r => r.name === 'detail');
+      assert.ok(!detail, 'index 2 should not match a path with only 2 directory segments (0, 1)');
+    });
+
+    it('getFromPath() should not match when the path has just a single segment', async () => {
+      const results = await caskFs.autoPath.partition.getFromPath('/only/file.txt');
+      const detail = results.find(r => r.name === 'detail');
+      assert.ok(!detail, 'index 2 should not match a path with only 1 directory segment (0)');
+    });
+
+    it('getFromPath() should still match once the path has enough segments', async () => {
+      const results = await caskFs.autoPath.partition.getFromPath('/a/b/c/file.txt');
+      const detail = results.find(r => r.name === 'detail');
+      assert.ok(detail, 'index 2 should match a path with 3 directory segments (0, 1, 2)');
+      assert.strictEqual(detail.value, 'detail-c');
+    });
+  });
+
   // ── Flavor 2: regex filter, default getValue ───────────────────────────────
   //
   //  Rule: { name: 'collection', filterRegex: '^dams-.+' }

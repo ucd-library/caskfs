@@ -101,7 +101,7 @@ cask auto-path load ./auto-path-rules.json
 
 Each rule in the file is applied via the same `set()` logic as `cask auto-path set` — for `partition` rules, this means any rule that is new or has actually changed will trigger a retroactive re-scan of existing files so their partition keys stay in sync. A rule that is byte-for-byte identical to what's already stored is left alone and does **not** trigger a rescan — re-running `load` with an unchanged rules file is cheap and safe to repeat.
 
-`cask auto-path load` works in both direct-pg and http-mode environments (see [Loading rules over HTTP](#loading-rules-over-http) below for the http-mode requirements). Other subcommands (`set`, `remove`, `test`, `list`) are direct-pg only.
+`cask auto-path load` and `cask auto-path test` work in both direct-pg and http-mode environments (see [Loading rules over HTTP](#loading-rules-over-http) and [Testing rules over HTTP](#testing-rules-over-http) below for the http-mode requirements). Other subcommands (`set`, `remove`, `list`) are direct-pg only.
 
 ## Loading rules over HTTP
 
@@ -114,3 +114,13 @@ curl -X POST http://localhost:3000/api/auto-path/load \
 ```
 
 The response is `{ "results": [{ "name", "type", "updated" }, ...] }` — one entry per rule in the request body, with `updated: false` for any rule that was already up to date and therefore skipped.
+
+## Testing rules over HTTP
+
+`GET /api/auto-path/:type/test?filePath=...` evaluates every configured rule of `:type` (`bucket` or `partition`) against `filePath`, without writing anything — the http-mode counterpart of `cask auto-path test`. Also **admin-only**, same access rules as `/auto-path/load` above.
+
+```bash
+curl 'http://localhost:3000/api/auto-path/partition/test?filePath=/bronze/dc/cruess/collection/dams-river-1.json'
+```
+
+The response is an array of `{ "name", "value" }` objects, one per matching rule — the same shape returned by `cask.autoPath[type].getFromPath()` in direct-pg mode.

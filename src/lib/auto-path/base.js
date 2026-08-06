@@ -225,7 +225,7 @@ class AutoPath {
 
     let dirParts = fileParts.dir.split('/').filter(p => p !== '');
 
-    if( rule.index === 'string' ) {
+    if( typeof rule.index === 'string' ) {
       rule.index = parseInt(rule.index);
     }
 
@@ -233,7 +233,12 @@ class AutoPath {
       rule.getValue = new Function('name', 'pathValue', 'regexMatch', rule.get_value);
     }
 
-    if( rule.index !== undefined && rule.index !== null && dirParts.length > rule.index ) {
+    if( rule.index !== undefined && rule.index !== null ) {
+      // the path doesn't have a segment at this position at all — the rule cannot match,
+      // rather than falling through to match against the (wrong) unfiltered dirParts below
+      if( dirParts.length <= rule.index ) {
+        return null;
+      }
       dirParts = [dirParts[rule.index]];
     }
 

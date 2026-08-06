@@ -13,9 +13,10 @@ const pipelineAsync = promisify(pipeline);
  *
  * This client covers methods that have corresponding HTTP endpoints.
  * Operations without endpoints (ACL management, admin, individual auto-path rule
- * set/remove/test/list, archive) throw a descriptive error directing the user to use
+ * set/remove/list, archive) throw a descriptive error directing the user to use
  * direct-pg mode. Bulk auto-path rule loading (loadAutoPathRules/loadAutoPathRulesFromFile)
- * is supported over HTTP via an admin-only endpoint.
+ * and auto-path testing (autoPath[type].getFromPath) are supported over HTTP via
+ * admin-only endpoints.
  */
 class HttpCaskFsClient {
 
@@ -576,13 +577,33 @@ class HttpCaskFsClient {
   _buildAutoPath() {
     const self = this;
     const ns = (name) => () => self._notSupported(`auto-path ${name}`);
-    const stub = {
-      getFromPath: ns('test'),
-      set:         ns('set'),
-      remove:      ns('remove'),
-      getConfig:   ns('list'),
-    };
-    return { partition: stub, bucket: stub };
+
+    /**
+     * @function buildType
+     * @description Build the per-type (bucket/partition) auto-path namespace object.
+     * @param {String} type 'bucket' or 'partition'
+     * @returns {Object}
+     */
+    const buildType = (type) => ({
+      /**
+       * @method getFromPath
+       * @description Evaluate every configured rule of this type against a file path via the
+       * HTTP server's admin-only test endpoint.
+       * @param {String} filePath
+       * @returns {Promise<Array<Object>>} array of {name, value} objects, one per matching rule
+       */
+      async getFromPath(filePath) {
+        const url = new URL(`${self.baseUrl}/auto-path/${type}/test`);
+        url.searchParams.set('filePath', filePath);
+        const res = await self._fetch(url.toString());
+        return res.json();
+      },
+      set:       ns('set'),
+      remove:    ns('remove'),
+      getConfig: ns('list'),
+    });
+
+    return { partition: buildType('partition'), bucket: buildType('bucket') };
   }
 
   _buildTransfer() {
