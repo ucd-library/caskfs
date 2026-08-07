@@ -14,6 +14,7 @@ spec:
   - tests/copy.test.js
   - tests/move.test.js
   - tests/lineage.test.js
+  - tests/http-client-auth.test.js
 
 timeout: 30000
 require: tests/helpers/env.js

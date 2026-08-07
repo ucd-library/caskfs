@@ -24,7 +24,8 @@ class HttpCaskFsClient {
    * @param {Object} opts
    * @param {String} opts.host - CaskFS server host including protocol (e.g. http://localhost:3000)
    * @param {String} [opts.path=/api] - API path prefix on the server (e.g. /api)
-   * @param {String} [opts.token] - Bearer token for authentication
+   * @param {String} [opts.token] - Bearer token for authentication. Overridden at
+   * request time by the CASKFS_HTTP_TOKEN env var, if set (see _authHeaders).
    * @param {String} [opts.requestor] - Default requestor username
    */
   constructor(opts={}) {
@@ -56,10 +57,14 @@ class HttpCaskFsClient {
   /**
    * @method _authHeaders
    * @description Build the Authorization header object if a token is configured.
+   * The CASKFS_HTTP_TOKEN env var, if set, overrides opts.token on every call -
+   * this lets deployments swap the token (e.g. for a service account) without
+   * touching application config or recreating the client.
    * @returns {Object}
    */
   _authHeaders() {
-    return this.token ? { Authorization: `Bearer ${this.token}` } : {};
+    const token = process.env.CASKFS_HTTP_TOKEN || this.token;
+    return token ? { Authorization: `Bearer ${token}` } : {};
   }
 
   /**
