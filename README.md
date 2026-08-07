@@ -368,6 +368,7 @@ CaskFS is configured via environment variables. All variables are optional and f
 | `CASKFS_CLOUD_STORAGE_DEFAULT_BUCKET` | `caskfs` | Default GCS bucket name |
 | `CASKFS_CLOUD_STORAGE_PROJECT` | _(none)_ | GCP project ID |
 | `CASKFS_ENABLE_POWERWASH` | `false` | Allow the `init-pg --powerwash` command to drop and recreate the schema |
+| `CASKFS_HTTP_TOKEN` | _(none)_ | Client-side: overrides the bearer token configured on `HttpCaskFsClient` (CLI `http` environments, or services embedding the client). Useful for swapping the token at deploy time without touching stored config |
 
 
 # Deployment
