@@ -79,12 +79,19 @@ class HttpCaskFsClient {
     const res = await fetch(url, {
       ...opts,
       headers: { ...this._authHeaders(), ...(opts.headers || {}) },
+      redirect: 'manual'
     });
+
 
     if (!res.ok) {
       let data;
       try { data = await res.json(); } catch(e) { data = {}; }
-      const err = new Error(data.message || `${opts.method || 'GET'} ${url}\nHTTP ${res.status}: ${res.statusText}`);
+
+      if( !data.message && res.status > 300 && res.status < 400 && res.headers.get('location') ) {
+        data.message = `Redirected to ${res.headers.get('location')}.  Authentication may be required.`;
+      }
+
+      const err = new Error(`${opts.method || 'GET'} ${url}\nHTTP ${res.status}: ${res.statusText}\n${data.message || JSON.stringify(data)}`);
       err.status = res.status;
       err.code = data.code;
       throw err;
