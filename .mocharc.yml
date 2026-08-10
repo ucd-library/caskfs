@@ -2,12 +2,15 @@ spec:
   - tests/basic-read-write.test.js
   - tests/directory.test.js
   - tests/acl.test.js
+  - tests/acl-admin.test.js
   - tests/cas.test.js
   - tests/partitions.test.js
   - tests/ld-operations.test.js
   - tests/sync.test.js
   - tests/transfer.test.js
   - tests/http-fs.test.js
+  - tests/header-auth.test.js
+  - tests/acl-http.test.js
   - tests/auto-path-http.test.js
   - tests/cli.test.js
   - tests/cp.test.js

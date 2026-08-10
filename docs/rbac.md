@@ -9,6 +9,7 @@ Contents:
 - [Permissions](#permissions)
 - [Directory ACL](#directory-acl)
 - [ACL CLI Methods](#acl-cli-methods)
+- [ACL REST API](./acl-rest-api.md)
 
 
 ## Roles
@@ -34,6 +35,11 @@ Additionally directory ACLs have a public flag which, when set to true, grants a
 
 ## ACL CLI Methods
 
+All `cask acl` subcommands work against both `direct-pg` and `http` environments (see
+[CLI](../README.md#cli)) - over HTTP they call the [ACL REST API](./acl-rest-api.md). Directory
+operations require `admin` permission on that directory (or the global `admin` role); role/user
+operations require the global `admin` role.
+
 ### Add User
 Add User to the CaskFS instance.
 
@@ -52,8 +58,15 @@ CLI: `cask acl role-add <role-name> [options]`
 Remove a role from the CaskFS instance.
 CLI: `cask acl role-remove <role-name> [options]`
 
+### List All Roles
+List every role defined on the CaskFS instance.
+
+CLI: `cask acl role-list [options]`
+
 ### List Users or User Roles
-List all users for a role or list all roles for a user.
+List all users for a role or list all roles for a user. Any caller may look up their own
+roles without needing the admin role (this is what `cask whoami` uses); looking up another
+user's roles, or listing the users in a role, requires the global admin role.
 
 CLI: `cask acl user-role-get [options]`
 

@@ -4,7 +4,7 @@ import caskFs from './caskFs.js';
 import { pipeline } from 'stream/promises';
 import { Validator } from './validate.js';
 import { MissingResourceError } from '../lib/errors.js';
-import config from '../lib/config.js';
+import { getRequestor } from '../lib/middleware/header-auth.js';
 
 const router = Router();
 
@@ -204,7 +204,7 @@ async function handleWrite(filePath, req, res, replace) {
       metadata: Object.keys(metadata).length ? metadata : undefined,
       bucket: req.query.bucket || undefined,
       replace,
-      requestor: req.user || config.acl.defaultRequestor || 'http',
+      requestor: getRequestor(req) || 'http',
       corkTraceId: req.corkTraceId,
     };
 
@@ -253,7 +253,7 @@ router.post('/sync', silentJson, async (req, res) => {
       return res.status(400).json({ error: 'files array is required' });
     }
     const result = await caskFs.sync(
-      { requestor: req.user, corkTraceId: req.corkTraceId },
+      { requestor: getRequestor(req), corkTraceId: req.corkTraceId },
       { files }
     );
     res.status(200).json(result);
@@ -274,7 +274,7 @@ router.post('/copy', silentJson, async (req, res) => {
     if (!destPath) return res.status(400).json({ error: 'destPath is required' });
 
     const result = await caskFs.copy(
-      { filePath: srcPath, requestor: req.user || config.acl.defaultRequestor },
+      { filePath: srcPath, requestor: getRequestor(req) },
       { destPath, copyMetadata, copyPartitions, replace }
     );
 
@@ -302,7 +302,7 @@ router.post('/mv', silentJson, async (req, res) => {
     if (!destPath) return res.status(400).json({ error: 'destPath is required' });
 
     const result = await caskFs.move(
-      { filePath: srcPath, requestor: req.user?.username || req.user || config.acl.defaultRequestor },
+      { filePath: srcPath, requestor: getRequestor(req) },
       { destPath }
     );
 
@@ -338,7 +338,7 @@ router.patch(/(.*)/, silentJson, async (req, res) => {
     const result = await caskFs.patchMetadata({
       filePath,
       partitionKeys,
-      requestor: req.user || config.acl.defaultRequestor || 'http',
+      requestor: getRequestor(req) || 'http',
       corkTraceId: req.corkTraceId,
     });
 

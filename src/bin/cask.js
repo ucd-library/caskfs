@@ -841,10 +841,9 @@ program
     console.log(`Current User: ${options.requestor || 'public (no user)'}`);
     if( options.requestor ) {
       const cask = getClient(options);
-      assertDirectPg(cask, 'whoami');
-      let resp = await cask.acl.getUserRoles({
+      let resp = await cask.getUserRoles({
         user: options.requestor,
-        dbClient: cask.dbClient
+        requestor: options.requestor
       });
       console.log('Roles:');
       if( resp.length === 0 ) {

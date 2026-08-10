@@ -79,4 +79,21 @@ function headerAuthMiddleware(req, res, next) {
   next();
 }
 
+/**
+ * @function getRequestor
+ * @description Extract the acting username from a request for use as an ACL/audit "requestor"
+ * value (e.g. last_modified_by). req.user, when set by headerAuthMiddleware, is always an
+ * { username, roles } object — never a plain string — so callers must go through this helper
+ * rather than reading req.user directly, or the object itself ends up stored/compared as the
+ * requestor. Falls back to config.acl.defaultRequestor when header auth is disabled, the header
+ * was absent/malformed, or no username path matched.
+ *
+ * @param {import('express').Request} req
+ * @returns {String|null}
+ */
+function getRequestor(req) {
+  return req.user?.username || config.acl.defaultRequestor || null;
+}
+
 export default headerAuthMiddleware;
+export { getRequestor };

@@ -283,9 +283,14 @@ curl "$BASE/find?type=http://schema.org/Person" \
 # Fetch linked data for a file
 curl "$BASE/ld?file=/people/alice.jsonld.json" \
   -H "Authorization: Bearer $TOKEN"
+
+# Grant a role read access to a directory (requires admin permission on that directory)
+curl -X POST "$BASE/acl/directory/research/papers/permissions" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"role": "researchers", "permission": "read"}'
 ```
 
-For the full REST API reference see [FS REST API](docs/fs-rest-api.md) and [LD REST API](docs/ld-rest-api.md).
+For the full REST API reference see [FS REST API](docs/fs-rest-api.md), [LD REST API](docs/ld-rest-api.md), and [ACL REST API](docs/acl-rest-api.md).
 
 
 # Linked Data Example
@@ -406,4 +411,5 @@ The [RBAC system](docs/rbac.md) integrates with an external OIDC provider (e.g. 
 | Linked Data REST API | [docs/ld-rest-api.md](docs/ld-rest-api.md) |
 | Structural Metadata (hierarchy, partitions, lineage) | [docs/structural-metadata.md](docs/structural-metadata.md) |
 | Role-Based Access Control | [docs/rbac.md](docs/rbac.md) |
+| Role-Based Access Control REST API | [docs/acl-rest-api.md](docs/acl-rest-api.md) |
 | Auto Path / Partition Rules | [docs/auto-path.md](docs/auto-path.md) |

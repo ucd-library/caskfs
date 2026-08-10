@@ -308,6 +308,23 @@ class Acl {
   }
 
   /**
+   * @method getRoles
+   * @description Get all defined roles.
+   *
+   * @param {Object} opts
+   * @param {Object} opts.dbClient Required. database client instance
+   * @returns {Promise<Array>} array of {roleId, role, created} objects, ordered by name
+   */
+  async getRoles(opts={}) {
+    let { dbClient } = opts;
+    if( !dbClient ) {
+      throw new Error('dbClient is required');
+    }
+    let res = await dbClient.query(`SELECT role_id AS "roleId", name AS role, created FROM ${config.database.schema}.acl_role ORDER BY name`);
+    return res.rows;
+  }
+
+  /**
    * @method ensureRole
    * @description Ensure a role exists.  If it does not exist, it will be created.
    *
@@ -448,13 +465,14 @@ class Acl {
       throw new Error('User, role and dbClient are required');
     }
 
-    // TODO: write getters 
     let userId = await this.ensureUser({ user, dbClient });
     let roleId = await this.ensureRole({ role, dbClient });
     let res = await dbClient.query(`
-      WITH role AS (SELECT role_id FROM ${config.database.schema}.acl_role WHERE name = $2),
-           user AS (SELECT user_id FROM ${config.database.schema}.acl_user WHERE name = $1)
-      DELETE FROM ${config.database.schema}.acl_role_user WHERE user_id = (SELECT user_id FROM user) AND role_id = (SELECT role_id FROM role)`, [userId, roleId]);
+      DELETE FROM ${config.database.schema}.acl_role_user
+      WHERE user_id = $1 AND role_id = $2
+      RETURNING acl_role_user_id`,
+      [userId, roleId]
+    );
     return res;
   }
 
