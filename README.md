@@ -287,7 +287,7 @@ curl "$BASE/ld?file=/people/alice.jsonld.json" \
 # Grant a role read access to a directory (requires admin permission on that directory)
 curl -X POST "$BASE/acl/directory/research/papers/permissions" \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"role": "researchers", "permission": "read"}'
+  -d '{"principal": "researchers", "permission": "read"}'
 ```
 
 For the full REST API reference see [FS REST API](docs/fs-rest-api.md), [LD REST API](docs/ld-rest-api.md), and [ACL REST API](docs/acl-rest-api.md).

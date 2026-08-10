@@ -38,13 +38,13 @@ All endpoints require `Authorization: Bearer <token>` like the rest of the REST 
 ## Get Directory ACL
 - GET /acl/directory/{path+}
 
-   - Description: Get the ACL for a directory, including its public flag and role permissions.
+   - Description: Get the ACL for a directory, including its public flag and permissions.
    - Parameters:
      - path (string, required): The directory path.
    - Headers:
      - Authorization (string, required): Bearer token for authentication.
    - Responses:
-     - 200 OK: `{ directory, directory_id, root_acl_directory_id, root_acl_directory, root_directory_acl_id, public, permissions: [{role, permission}] }`
+     - 200 OK: `{ directory, directory_id, root_acl_directory_id, root_acl_directory, root_directory_acl_id, public, permissions: [{permission, principalType, principalName}] }` - `principalType` is `"role"` or `"user"` (see [Principals](./rbac.md#principals)).
      - 403 Forbidden: The requestor lacks `admin` permission on this directory.
      - 404 Not Found: The directory does not exist.
 
@@ -65,30 +65,30 @@ All endpoints require `Authorization: Bearer <token>` like the rest of the REST 
 ## Grant a Directory Permission
 - POST /acl/directory/{path+}/permissions
 
-   - Description: Grant a role a permission on a directory. Creates the role and/or the directory's root ACL if they don't already exist. Child directories inherit this permission unless explicitly overridden.
+   - Description: Grant a principal (a role or a user) a permission on a directory. Creates the principal and/or the directory's root ACL if they don't already exist. Child directories inherit this permission unless explicitly overridden.
    - Parameters:
      - path (string, required): The directory path.
    - Headers:
      - Authorization (string, required): Bearer token for authentication.
      - Content-Type: application/json
-   - Body: `{ "role": string, "permission": "read" | "write" | "admin" }`
+   - Body: `{ "principal": string, "principalType": "role" | "user", "permission": "read" | "write" | "admin" }` - `principalType` defaults to `"role"` if omitted.
    - Responses:
-     - 200 OK: `{ directory, role, permission }`
-     - 400 Bad Request: Missing/invalid role or permission.
+     - 200 OK: `{ directory, principal, principalType, permission }`
+     - 400 Bad Request: Missing/invalid principal or permission.
      - 403 Forbidden: The requestor lacks `admin` permission on this directory.
 
 ## Revoke a Directory Permission
 - DELETE /acl/directory/{path+}/permissions
 
-   - Description: Revoke a role's permission on a directory.
+   - Description: Revoke a principal's (a role's or a user's) permission on a directory.
    - Parameters:
      - path (string, required): The directory path.
    - Headers:
      - Authorization (string, required): Bearer token for authentication.
      - Content-Type: application/json
-   - Body: `{ "role": string, "permission": "read" | "write" | "admin" }`
+   - Body: `{ "principal": string, "principalType": "role" | "user", "permission": "read" | "write" | "admin" }` - `principalType` defaults to `"role"` if omitted.
    - Responses:
-     - 200 OK: `{ directory, role, permission }`
+     - 200 OK: `{ directory, principal, principalType, permission }`
      - 403 Forbidden: The requestor lacks `admin` permission on this directory.
 
 ## Remove a Directory's ACL

@@ -397,6 +397,9 @@ class Transfer {
     }
 
     for (const { user, role } of (aclData['user-roles'] || [])) {
+      // acl_user_roles_view LEFT JOINs role membership, so a user with no role at all
+      // (e.g. one that only ever received a direct principal grant) exports with role: null.
+      if (!role) continue;
       if (conflict === 'fail') {
         const roleRow = await db.query(
           `SELECT role_id FROM ${schema}.acl_role WHERE name = $1`, [role]
@@ -431,9 +434,17 @@ class Transfer {
         // merge: fall through and add permissions on top of the existing ACL
       }
 
-      await acl.ensureRootDirectoryAcl({ directory, isPublic: !!isPublic, dbClient: db });
-      for (const { role, permission } of (permissions || [])) {
-        await acl.setDirectoryPermission({ directory, role, permission, dbClient: db });
+      // ensureRootDirectoryAcl() alone only creates the root_directory_acl row - it does not
+      // link the target directory to it. setDirectoryAcl() does that linking (the same two
+      // calls CaskFs#setDirectoryPermission/setDirectoryPublic make); skipping it left imported
+      // permissions with no effect, since nothing pointed the directory at its new ACL.
+      const { rootDirectoryAclId, directoryId } = await acl.ensureRootDirectoryAcl({
+        directory, isPublic: !!isPublic, dbClient: db
+      });
+      await acl.setDirectoryAcl({ dbClient: db, rootDirectoryAclId, directoryId });
+
+      for (const { principal, principalType, permission } of (permissions || [])) {
+        await acl.setDirectoryPermission({ directory, principal, principalType, permission, dbClient: db });
       }
     }
   }

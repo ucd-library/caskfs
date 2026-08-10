@@ -181,3 +181,80 @@ describe('Transfer – export()', () => {
     }
   });
 });
+
+// ── ACL principal round-trip (export -> import) ────────────────────────────────
+//
+// Self-contained (own setup/teardown) rather than sharing the describe block above,
+// since import wipes/recreates state and shouldn't run interleaved with other tests.
+
+describe('Transfer – ACL principal round-trip', () => {
+  let caskFs;
+  let archivePath;
+
+  before(async () => {
+    caskFs = await setup();
+    await caskFs.write({ filePath: '/rt/file.txt', data: Buffer.from('hi'), requestor: 'test', ignoreAcl: true });
+
+    // One role-based grant, one direct-user grant, on the same directory.
+    await caskFs.setDirectoryPermission({
+      directory: '/rt', principal: 'rt-role', permission: 'read', ignoreAcl: true
+    });
+    await caskFs.setDirectoryPermission({
+      directory: '/rt', principal: 'rt-user', principalType: 'user', permission: 'read', ignoreAcl: true
+    });
+
+    archivePath = path.join(os.tmpdir(), `caskfs-export-acl-principal-rt-${Date.now()}.tar.gz`);
+    await caskFs.export(archivePath, { rootDir: '/', includeAcl: true });
+  });
+
+  after(async () => {
+    await teardown();
+    await fs.rm(archivePath, { force: true });
+  });
+
+  it('exports both a role grant and a direct user grant with principal/principalType', async () => {
+    const buf = await readArchiveEntry(archivePath, 'acl/permissions.json');
+    const dirs = JSON.parse(buf.toString());
+    const rtEntry = dirs.find(d => d.directory === '/rt');
+    assert.ok(rtEntry, '/rt should appear in acl/permissions.json');
+    assert.ok(
+      rtEntry.permissions.some(p => p.principalType === 'role' && p.principal === 'rt-role' && p.permission === 'read'),
+      `expected role grant in exported permissions: ${JSON.stringify(rtEntry.permissions)}`
+    );
+    assert.ok(
+      rtEntry.permissions.some(p => p.principalType === 'user' && p.principal === 'rt-user' && p.permission === 'read'),
+      `expected direct user grant in exported permissions: ${JSON.stringify(rtEntry.permissions)}`
+    );
+  });
+
+  it('re-importing after a powerwash restores both grants', async () => {
+    // Wipe the DB and CAS storage entirely, then re-import from the archive captured above -
+    // reuses the same caskFs/dbClient (tests/helpers/setup.js is a module-level singleton, not
+    // designed for multiple concurrent instances, so we powerwash in place rather than calling
+    // setup() again).
+    const { Transfer } = await import('../src/bin/lib/transfer.js');
+    await caskFs.powerWash();
+
+    await new Transfer().fsImport(archivePath, {
+      cask: caskFs, requestor: 'test', dbClient: caskFs.dbClient
+    });
+
+    const roleGrant = await caskFs.testPermission({
+      user: 'someone-in-rt-role', filePath: '/rt', permission: 'read', ignoreAcl: true
+    });
+    assert.strictEqual(roleGrant, false, 'sanity: a user NOT in rt-role should not have access');
+
+    await aclImpl.ensureUserRole({ user: 'someone-in-rt-role', role: 'rt-role', dbClient: caskFs.dbClient });
+    assert.strictEqual(
+      await caskFs.testPermission({ user: 'someone-in-rt-role', filePath: '/rt', permission: 'read', ignoreAcl: true }),
+      true,
+      'role grant should survive the round-trip'
+    );
+
+    assert.strictEqual(
+      await caskFs.testPermission({ user: 'rt-user', filePath: '/rt', permission: 'read', ignoreAcl: true }),
+      true,
+      'direct user grant should survive the round-trip'
+    );
+  });
+});

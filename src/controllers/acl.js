@@ -8,10 +8,12 @@ import { getRequestor } from '../lib/middleware/header-auth.js';
 const router = Router();
 
 const PERMISSIONS = ['read', 'write', 'admin'];
+const PRINCIPAL_TYPES = ['role', 'user'];
 
 const permissionBodyValidator = new Validator({
-  role:       { type: 'string', required: true },
-  permission: { type: 'string', required: true, inSet: PERMISSIONS }
+  principal:     { type: 'string', required: true },
+  principalType: { type: 'string', inSet: PRINCIPAL_TYPES },
+  permission:    { type: 'string', required: true, inSet: PERMISSIONS }
 });
 
 const roleBodyValidator = new Validator({
@@ -48,7 +50,7 @@ router.get(/^\/directory(\/.*)?$/, async (req, res) => {
     }
 
     const directoryAcl = resp[0];
-    directoryAcl.permissions = (directoryAcl.permissions || []).filter(p => p.role !== null && p.permission !== null);
+    directoryAcl.permissions = (directoryAcl.permissions || []).filter(p => p.principalName !== null && p.permission !== null);
     directoryAcl.public = !!directoryAcl.public;
     res.status(200).json(directoryAcl);
   } catch (e) {
@@ -76,17 +78,17 @@ router.put(/^\/directory(\/.*)?\/public$/, silentJson, async (req, res) => {
 
 /**
  * POST /acl/directory/*\/permissions
- * @description Grant a role a permission on a directory. Creates the role and/or the
- * directory's root ACL if they do not already exist. Child directories inherit this
- * permission unless explicitly overridden.
+ * @description Grant a principal (a role or a user) a permission on a directory. Creates the
+ * principal and/or the directory's root ACL if they do not already exist. Child directories
+ * inherit this permission unless explicitly overridden. `principalType` defaults to 'role'.
  */
 router.post(/^\/directory(\/.*)?\/permissions$/, silentJson, async (req, res) => {
   try {
     const directory = req.params[0] || '/';
-    const { role, permission } = permissionBodyValidator.validate(req.body || {});
+    const { principal, principalType, permission } = permissionBodyValidator.validate(req.body || {});
 
-    await caskFs.setDirectoryPermission({ directory, role, permission, requestor: getRequestor(req) });
-    res.status(200).json({ directory, role, permission });
+    await caskFs.setDirectoryPermission({ directory, principal, principalType, permission, requestor: getRequestor(req) });
+    res.status(200).json({ directory, principal, principalType: principalType || 'role', permission });
   } catch (e) {
     return handleError(res, req, e);
   }
@@ -94,15 +96,16 @@ router.post(/^\/directory(\/.*)?\/permissions$/, silentJson, async (req, res) =>
 
 /**
  * DELETE /acl/directory/*\/permissions
- * @description Revoke a role's permission on a directory.
+ * @description Revoke a principal's (a role's or a user's) permission on a directory.
+ * `principalType` defaults to 'role'.
  */
 router.delete(/^\/directory(\/.*)?\/permissions$/, silentJson, async (req, res) => {
   try {
     const directory = req.params[0] || '/';
-    const { role, permission } = permissionBodyValidator.validate(req.body || {});
+    const { principal, principalType, permission } = permissionBodyValidator.validate(req.body || {});
 
-    await caskFs.removeDirectoryPermission({ directory, role, permission, requestor: getRequestor(req) });
-    res.status(200).json({ directory, role, permission });
+    await caskFs.removeDirectoryPermission({ directory, principal, principalType, permission, requestor: getRequestor(req) });
+    res.status(200).json({ directory, principal, principalType: principalType || 'role', permission });
   } catch (e) {
     return handleError(res, req, e);
   }

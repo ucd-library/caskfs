@@ -1700,11 +1700,13 @@ class CaskFs {
 
   /**
    * @method setDirectoryPermission
-   * @description Set a permission for a role on a directory.  Will create the root directory ACL if needed.
-   * Note, all child directories will inherit the permission unless explicitly overridden.
+   * @description Grant a permission to a principal (a role or a user) on a directory. Will
+   * create the root directory ACL if needed. Note, all child directories will inherit the
+   * permission unless explicitly overridden.
    *
    * @param {Object|CaskFSContext} context
-   * @param {String} context.role Required. role name
+   * @param {String} context.principal Required. role name or username, per context.principalType
+   * @param {String} [context.principalType='role'] 'role' or 'user'
    * @param {String} context.directory Required. directory path
    * @param {String} context.permission Required. permission to set, one of 'read', 'write', 'admin'
    * @param {String} context.requestor user name of the requestor
@@ -1718,7 +1720,8 @@ class CaskFs {
     await this.runInTransaction(async (dbClient) => {
       let {rootDirectoryAclId, directoryId} = await acl.setDirectoryPermission({
         dbClient,
-        role: context.data.role,
+        principal: context.data.principal,
+        principalType: context.data.principalType,
         directory: context.data.directory,
         permission: context.data.permission
       });
@@ -1734,10 +1737,11 @@ class CaskFs {
 
   /**
    * @method removeDirectoryPermission
-   * @description Remove a permission for a role on a directory.
+   * @description Remove a permission for a principal (a role or a user) on a directory.
    *
    * @param {Object|CaskFSContext} context context or object with directory property
-   * @param {String} context.role Required. role name
+   * @param {String} context.principal Required. role name or username, per context.principalType
+   * @param {String} [context.principalType='role'] 'role' or 'user'
    * @param {String} context.directory Required. directory path
    * @param {Object} context.dbClient Optional. database client instance, defaults to instance dbClient
    */
@@ -1749,7 +1753,8 @@ class CaskFs {
     await this.runInTransaction(async (dbClient) => {
       await acl.removeDirectoryPermission({
         dbClient,
-        role: context.data.role,
+        principal: context.data.principal,
+        principalType: context.data.principalType,
         directory: context.data.directory,
         permission: context.data.permission
       });

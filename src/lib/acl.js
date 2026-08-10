@@ -538,14 +538,15 @@ class Acl {
 
   /**
    * @method getDirectoryAcl
-   * @description Get the ACL for a specific directory, including permissions and 
-   * roles.
-   * 
-   * @param {Object} opts 
+   * @description Get the ACL for a specific directory, including permissions and the
+   * role-or-user principal each is granted to.
+   *
+   * @param {Object} opts
    * @param {Object} opts.dbClient Required. database client instance
    * @param {String} opts.directory Required. directory path
-   * 
-   * @returns 
+   *
+   * @returns {Promise<Array<Object>|null>} rows with a `permissions` array of
+   *   {permission, principalType, principalName} objects, or null if the directory doesn't exist
    */
   async getDirectoryAcl(opts={}) {
     let {dbClient, directory} = opts;
@@ -554,7 +555,7 @@ class Acl {
     }
 
     let res = await dbClient.query(`
-      SELECT 
+      SELECT
         d.fullname AS directory,
         d.directory_id,
         rd.directory_id AS root_acl_directory_id,
@@ -564,17 +565,19 @@ class Acl {
         json_agg(
           jsonb_build_object(
             'permission', p.permission,
-            'role', r.name
+            'principalType', p.principal_type,
+            'principalName', COALESCE(r.name, u.name)
           )
         ) AS permissions
-      FROM ${config.database.schema}.directory d 
+      FROM ${config.database.schema}.directory d
       LEFT JOIN ${config.database.schema}.directory_acl da ON d.directory_id = da.directory_id
       LEFT JOIN ${config.database.schema}.root_directory_acl rda ON da.root_directory_acl_id = rda.root_directory_acl_id
       LEFT JOIN ${config.database.schema}.directory rd ON rda.directory_id = rd.directory_id
       LEFT JOIN ${config.database.schema}.acl_permission p ON rda.root_directory_acl_id = p.root_directory_acl_id
-      LEFT JOIN ${config.database.schema}.acl_role r ON p.role_id = r.role_id
+      LEFT JOIN ${config.database.schema}.acl_role r ON p.principal_type = 'role' AND p.principal_id = r.role_id
+      LEFT JOIN ${config.database.schema}.acl_user u ON p.principal_type = 'user' AND p.principal_id = u.user_id
       WHERE d.fullname = $1
-      GROUP BY d.fullname, d.directory_id, rd.directory_id, rd.fullname, rda.root_directory_acl_id, rda.public 
+      GROUP BY d.fullname, d.directory_id, rd.directory_id, rd.fullname, rda.root_directory_acl_id, rda.public
       `, [directory]);
     if( res.rows.length === 0 ) {
       return null;
@@ -678,68 +681,86 @@ class Acl {
 
   /**
    * @method removeDirectoryPermission
-   * @description Remove a permission for a role on a directory.
+   * @description Remove a permission for a principal (a role or a user) on a directory.
+   * A no-op (0 rows deleted) if the principal doesn't exist or doesn't hold that grant.
    *
    * @param {Object} opts
    * @param {String} opts.directory Required. directory path
-   * @param {String} opts.role Required. role name
+   * @param {String} opts.principal Required. role name or username, per opts.principalType
+   * @param {String} [opts.principalType='role'] 'role' or 'user'
    * @param {String} opts.permission Required. permission name
    * @param {Object} opts.dbClient Required. database client instance
    * @returns {Promise<Object>} result of the delete query
    */
   async removeDirectoryPermission(opts={}) {
-    let { directory, role, permission, dbClient } = opts;
-    if( !directory || !role || !permission || !dbClient ) {
-      throw new Error('Directory, role, permission and dbClient are required');
+    let { directory, principal, permission, dbClient } = opts;
+    let principalType = opts.principalType || 'role';
+    if( !directory || !principal || !permission || !dbClient ) {
+      throw new Error('Directory, principal, permission and dbClient are required');
+    }
+    if( !['role', 'user'].includes(principalType) ) {
+      throw new Error(`Invalid principalType: ${principalType}. Must be one of: role, user`);
     }
 
+    const principalTable = principalType === 'user' ? 'acl_user' : 'acl_role';
+    const principalIdColumn = principalType === 'user' ? 'user_id' : 'role_id';
+
     let res = await dbClient.query(`
-      WITH role AS (SELECT role_id FROM ${config.database.schema}.acl_role WHERE name = $2),
+      WITH principal AS (SELECT ${principalIdColumn} AS principal_id FROM ${config.database.schema}.${principalTable} WHERE name = $2),
            dir AS (SELECT directory_id FROM ${config.database.schema}.directory WHERE fullname = $1),
            rda AS (SELECT root_directory_acl_id FROM ${config.database.schema}.root_directory_acl WHERE directory_id = (SELECT directory_id FROM dir))
-      DELETE FROM ${config.database.schema}.acl_permission 
-      WHERE root_directory_acl_id = (SELECT root_directory_acl_id FROM rda) 
-        AND role_id = (SELECT role_id FROM role)
+      DELETE FROM ${config.database.schema}.acl_permission
+      WHERE root_directory_acl_id = (SELECT root_directory_acl_id FROM rda)
+        AND principal_type = $4
+        AND principal_id = (SELECT principal_id FROM principal)
         AND permission = $3
-      RETURNING acl_permission_id`, 
-      [directory, role, permission]
+      RETURNING acl_permission_id`,
+      [directory, principal, permission, principalType]
     );
-  
+
     return res;
   }
 
   /**
    * @method setDirectoryPermission
-   * @description Set a permission for a role on a directory.  If the role does not exist, they will be created.
-   * If the directory does not have a root directory ACL, one will be created.
+   * @description Grant a permission to a principal (a role or a user) on a directory. If the
+   * principal doesn't exist, it will be created. If the directory does not have a root
+   * directory ACL, one will be created.
    *
    * @param {Object} opts
    * @param {String} opts.directory Required. directory path
-   * @param {String} opts.role Required. role name
+   * @param {String} opts.principal Required. role name or username, per opts.principalType
+   * @param {String} [opts.principalType='role'] 'role' or 'user'
    * @param {String} opts.permission Required. permission name
    * @param {Object} opts.dbClient Required. database client instance
    * @returns {Promise<Object>} result of the insert query
    */
   async setDirectoryPermission(opts={}) {
-    let { directory, role, permission, dbClient } = opts;
-    if( !directory || !role || !permission || !dbClient ) {
-      throw new Error('Directory, role, permission and dbClient are required');
+    let { directory, principal, permission, dbClient } = opts;
+    let principalType = opts.principalType || 'role';
+    if( !directory || !principal || !permission || !dbClient ) {
+      throw new Error('Directory, principal, permission and dbClient are required');
     }
- 
-    let roleId = await this.ensureRole({ role, dbClient });
+    if( !['role', 'user'].includes(principalType) ) {
+      throw new Error(`Invalid principalType: ${principalType}. Must be one of: role, user`);
+    }
+
+    let principalId = principalType === 'user'
+      ? await this.ensureUser({ user: principal, dbClient })
+      : await this.ensureRole({ role: principal, dbClient });
     let {rootDirectoryAclId, directoryId} = await this.ensureRootDirectoryAcl({ directory, dbClient, public: false });
 
     let res = await dbClient.query(`
-      INSERT INTO ${config.database.schema}.acl_permission (root_directory_acl_id, role_id, permission) 
-      VALUES ($1, $2, $3) 
-      ON CONFLICT (root_directory_acl_id, role_id, permission) 
+      INSERT INTO ${config.database.schema}.acl_permission (root_directory_acl_id, permission, principal_type, principal_id)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (root_directory_acl_id, permission, principal_type, principal_id)
       DO UPDATE SET permission = EXCLUDED.permission
-      RETURNING acl_permission_id`, 
-      [rootDirectoryAclId, roleId, permission]
+      RETURNING acl_permission_id`,
+      [rootDirectoryAclId, permission, principalType, principalId]
     );
     let aclPermissionId = res.rows[0].acl_permission_id;
 
-    return { aclPermissionId, rootDirectoryAclId, roleId, directoryId };
+    return { aclPermissionId, rootDirectoryAclId, principalType, principalId, directoryId };
   }
 
   /**

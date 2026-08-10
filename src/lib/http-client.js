@@ -578,39 +578,40 @@ class HttpCaskFsClient {
 
   /**
    * @method setDirectoryPermission
-   * @description Grant a role a permission on a directory via POST /acl/directory/*\/permissions.
-   * Directory-scoped admin only (or global admin).
+   * @description Grant a principal (a role or a user) a permission on a directory via
+   * POST /acl/directory/*\/permissions. Directory-scoped admin only (or global admin).
    *
-   * @param {Object|CaskFSContext} context context or object with directory/role/permission properties
+   * @param {Object|CaskFSContext} context context or object with directory/principal/permission properties
    * @param {String} context.directory directory path
-   * @param {String} context.role role name
+   * @param {String} context.principal role name or username, per context.principalType
+   * @param {String} [context.principalType='role'] 'role' or 'user'
    * @param {String} context.permission 'read' | 'write' | 'admin'
    * @returns {Promise<Object>}
    */
   async setDirectoryPermission(context={}) {
-    const { directory, role, permission } = this._extract(context);
+    const { directory, principal, principalType, permission } = this._extract(context);
     const res = await this._fetch(`${this.baseUrl}/acl/directory${directory}/permissions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role, permission }),
+      body: JSON.stringify({ principal, principalType, permission }),
     });
     return res.json();
   }
 
   /**
    * @method removeDirectoryPermission
-   * @description Revoke a role's permission on a directory via DELETE /acl/directory/*\/permissions.
-   * Directory-scoped admin only (or global admin).
+   * @description Revoke a principal's (a role's or a user's) permission on a directory via
+   * DELETE /acl/directory/*\/permissions. Directory-scoped admin only (or global admin).
    *
-   * @param {Object|CaskFSContext} context context or object with directory/role/permission properties
+   * @param {Object|CaskFSContext} context context or object with directory/principal/permission properties
    * @returns {Promise<Object>}
    */
   async removeDirectoryPermission(context={}) {
-    const { directory, role, permission } = this._extract(context);
+    const { directory, principal, principalType, permission } = this._extract(context);
     const res = await this._fetch(`${this.baseUrl}/acl/directory${directory}/permissions`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role, permission }),
+      body: JSON.stringify({ principal, principalType, permission }),
     });
     return res.json();
   }

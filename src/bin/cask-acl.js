@@ -120,19 +120,29 @@ program.command('public-set <directory> <permission>')
     await endClient(cask);
   });
 
-program.command('permission-set <directory> <role> <permission>')
-  .description('Set a permission for a role on a directory')
-  .action(async (directory, role, permission) => {
-    const opts = handleGlobalOpts({ directory, role, permission });
+program.command('permission-set <directory> <principal> <permission>')
+  .description('Grant a permission to a role or user on a directory')
+  .option('-t, --type <role|user>', 'principal type: role or user', 'role')
+  .action(async (directory, principal, permission, options={}) => {
+    if( !['role', 'user'].includes(options.type) ) {
+      throw new Error(`Invalid type: ${options.type}.  Must be one of: role, user`);
+    }
+
+    const opts = handleGlobalOpts({ directory, principal, principalType: options.type, permission });
     const cask = getClient(opts);
     await cask.setDirectoryPermission(opts);
     await endClient(cask);
   });
 
-program.command('permission-remove <directory> <role> <permission>')
-  .description('Remove a permission for a role on a directory')
-  .action(async (directory, role, permission) => {
-    const opts = handleGlobalOpts({ directory, role, permission });
+program.command('permission-remove <directory> <principal> <permission>')
+  .description('Remove a permission for a role or user on a directory')
+  .option('-t, --type <role|user>', 'principal type: role or user', 'role')
+  .action(async (directory, principal, permission, options={}) => {
+    if( !['role', 'user'].includes(options.type) ) {
+      throw new Error(`Invalid type: ${options.type}.  Must be one of: role, user`);
+    }
+
+    const opts = handleGlobalOpts({ directory, principal, principalType: options.type, permission });
     const cask = getClient(opts);
     await cask.removeDirectoryPermission(opts);
     await endClient(cask);
@@ -169,12 +179,12 @@ program.command('get <path>')
     }
     resp = resp[0];
 
-    resp.permissions = resp.permissions.filter(p => p.role !== null && p.permission !== null);
+    resp.permissions = resp.permissions.filter(p => p.principalName !== null && p.permission !== null);
 
     let pObj = {
       'ACL Directory': resp.root_acl_directory,
       'Public Read Access': resp.public ? 'Yes' : 'No',
-      'Role Permissions': resp.permissions
+      'Permissions': resp.permissions
     }
 
     console.log(stringifyYaml(pObj));

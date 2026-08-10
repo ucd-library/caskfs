@@ -342,7 +342,7 @@ async getChildDirectories(directory, opts = {}) {
       JOIN ${config.database.schema}.directory_acl da ON d.directory_id = da.directory_id
       JOIN ${config.database.schema}.root_directory_acl rda USING (root_directory_acl_id)
       LEFT JOIN ${config.database.schema}.acl_permission p USING (root_directory_acl_id)
-      LEFT JOIN ${config.database.schema}.acl_role_user ru ON p.role_id = ru.role_id
+      LEFT JOIN ${config.database.schema}.acl_role_user ru ON p.principal_type = 'role' AND p.principal_id = ru.role_id
     `;
 
     if (opts.requestor) {

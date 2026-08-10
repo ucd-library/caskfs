@@ -104,6 +104,18 @@ async function runAclCliFlow(env, dataFile) {
   r = await runCask(['acl', 'permission-remove', dir, role, 'read'], { env });
   assert.strictEqual(r.code, 0, `permission-remove failed: ${r.stderr}`);
 
+  // Direct user grant (--type user), bypassing roles entirely - the role-based read
+  // permission was just removed above, so this proves the direct grant works on its own.
+  r = await runCask(['acl', 'permission-set', dir, user, 'read', '--type', 'user'], { env });
+  assert.strictEqual(r.code, 0, `permission-set --type user failed: ${r.stderr}`);
+
+  r = await runCask(['acl', 'test', dir, user, 'read'], { env });
+  assert.strictEqual(r.code, 0, `test (direct user grant) failed: ${r.stderr}`);
+  assert.strictEqual(r.stdout.trim(), 'true', `expected 'true' from acl test after direct user grant:\n${r.stdout}`);
+
+  r = await runCask(['acl', 'permission-remove', dir, user, 'read', '--type', 'user'], { env });
+  assert.strictEqual(r.code, 0, `permission-remove --type user failed: ${r.stderr}`);
+
   r = await runCask(['acl', 'remove', dir], { env });
   assert.strictEqual(r.code, 0, `remove failed: ${r.stderr}`);
 

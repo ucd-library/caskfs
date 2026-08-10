@@ -13,6 +13,16 @@ EXCEPTION
 END;
 $$;
 
+-- The principal an acl_permission grant applies to: either a role (whose members inherit
+-- the grant) or a single user (a direct grant, bypassing roles entirely).
+DO $$
+BEGIN
+CREATE TYPE caskfs.principal_type AS ENUM ('role', 'user');
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END;
+$$;
+
 ----------------
 -- acl_role
 ----------------
@@ -102,20 +112,24 @@ CREATE TABLE IF NOT EXISTS caskfs.directory_acl (
 ----------------
 -- acl_permission
 ----------------
+-- principal_id has no foreign key - Postgres can't FK one column to two different tables
+-- (acl_role or acl_user) depending on principal_type. trigger_acl_permission_validate_principal
+-- and the two trigger_acl_{role,user}_cascade_delete_permissions triggers (see the triggers
+-- section below) do what the old role_id FK + ON DELETE CASCADE used to do for free: validate
+-- the principal exists, and clean up grants when a role or user is deleted.
 CREATE TABLE IF NOT EXISTS caskfs.acl_permission (
     acl_permission_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     root_directory_acl_id      UUID NOT NULL REFERENCES caskfs.root_directory_acl(root_directory_acl_id) ON DELETE CASCADE,
     permission        caskfs.permission NOT NULL,
-    role_id           UUID REFERENCES caskfs.acl_role(role_id) ON DELETE CASCADE,
+    principal_type    caskfs.principal_type NOT NULL,
+    principal_id      UUID NOT NULL,
     created           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     modified          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(root_directory_acl_id, permission, role_id)
+    UNIQUE(root_directory_acl_id, permission, principal_type, principal_id)
 );
--- This index is redundant because the composite index on (role_id, permission) already covers role_id-only lookups.
--- CREATE INDEX IF NOT EXISTS idx_acl_permission_role_id ON caskfs.acl_permission(role_id);
 -- This index is redundant because the UNIQUE constraint starting with root_directory_acl_id already covers this lookup.
 -- CREATE INDEX IF NOT EXISTS idx_acl_permission_root_directory_acl_id ON caskfs.acl_permission(root_directory_acl_id);
-CREATE INDEX IF NOT EXISTS idx_acl_permission_role_id_permission ON caskfs.acl_permission(role_id, permission);
+CREATE INDEX IF NOT EXISTS idx_acl_permission_principal_permission ON caskfs.acl_permission(principal_type, principal_id, permission);
 
 ----------------
 -- acl_user_roles_view
@@ -134,37 +148,64 @@ LEFT JOIN caskfs.acl_role r ON ru.role_id = r.role_id;
 -- directory_user_permissions_lookup
 ----------------
 CREATE OR REPLACE VIEW caskfs.directory_user_permissions_lookup_by_permission AS
+-- Role-based grants: permission -> role -> role members
 SELECT
     d.directory_id,
     u.user_id,
-    CASE 
+    CASE
         WHEN p.permission = 'read' THEN TRUE
         WHEN p.permission = 'write' THEN TRUE
         WHEN p.permission = 'admin' THEN TRUE
         WHEN rda.public = TRUE THEN TRUE
         ELSE FALSE
     END AS can_read,
-    CASE 
+    CASE
         WHEN p.permission = 'write' THEN TRUE
         WHEN p.permission = 'admin' THEN TRUE
         ELSE FALSE
     END AS can_write,
-    CASE 
+    CASE
         WHEN p.permission = 'admin' THEN TRUE
         ELSE FALSE
     END AS is_admin
 FROM caskfs.directory d
 LEFT JOIN caskfs.directory_acl da ON d.directory_id = da.directory_id
 LEFT JOIN caskfs.root_directory_acl rda ON da.root_directory_acl_id = rda.root_directory_acl_id
-LEFT JOIN caskfs.acl_permission p ON rda.root_directory_acl_id = p.root_directory_acl_id
-LEFT JOIN caskfs.acl_role r ON p.role_id = r.role_id
+LEFT JOIN caskfs.acl_permission p ON rda.root_directory_acl_id = p.root_directory_acl_id AND p.principal_type = 'role'
+LEFT JOIN caskfs.acl_role r ON p.principal_id = r.role_id
 LEFT JOIN caskfs.acl_role_user ru ON r.role_id = ru.role_id
 LEFT JOIN caskfs.acl_user u ON ru.user_id = u.user_id
 UNION
+-- Direct user grants: permission -> user, no role involved
+SELECT
+    d.directory_id,
+    u.user_id,
+    CASE
+        WHEN p.permission = 'read' THEN TRUE
+        WHEN p.permission = 'write' THEN TRUE
+        WHEN p.permission = 'admin' THEN TRUE
+        ELSE FALSE
+    END AS can_read,
+    CASE
+        WHEN p.permission = 'write' THEN TRUE
+        WHEN p.permission = 'admin' THEN TRUE
+        ELSE FALSE
+    END AS can_write,
+    CASE
+        WHEN p.permission = 'admin' THEN TRUE
+        ELSE FALSE
+    END AS is_admin
+FROM caskfs.directory d
+LEFT JOIN caskfs.directory_acl da ON d.directory_id = da.directory_id
+LEFT JOIN caskfs.root_directory_acl rda ON da.root_directory_acl_id = rda.root_directory_acl_id
+JOIN caskfs.acl_permission p ON rda.root_directory_acl_id = p.root_directory_acl_id AND p.principal_type = 'user'
+JOIN caskfs.acl_user u ON p.principal_id = u.user_id
+UNION
+-- Public/anonymous access
 SELECT
     d.directory_id,
     NULL as user_id,
-    CASE 
+    CASE
         WHEN rda.public = TRUE THEN TRUE
         ELSE FALSE
     END AS can_read,
@@ -182,7 +223,7 @@ CREATE OR REPLACE FUNCTION caskfs.get_permission(
 RETURNS TABLE(can_read BOOLEAN, can_write BOOLEAN, is_admin BOOLEAN)
 LANGUAGE sql STABLE
 AS $$
-  -- Authenticated user check
+  -- Role-based grants: permission -> role -> role members
   SELECT
     bool_or(rda.public OR p.permission IN ('read', 'write', 'admin')),
     bool_or(p.permission IN ('write', 'admin')),
@@ -190,8 +231,22 @@ AS $$
   FROM caskfs.directory_acl da
   JOIN caskfs.root_directory_acl rda USING (root_directory_acl_id)
   INNER JOIN caskfs.acl_permission p USING (root_directory_acl_id)
-  INNER JOIN caskfs.acl_role_user ru ON p.role_id = ru.role_id AND ru.user_id = p_user_id
+  INNER JOIN caskfs.acl_role_user ru ON p.principal_type = 'role' AND p.principal_id = ru.role_id AND ru.user_id = p_user_id
   WHERE da.directory_id = p_directory_id
+    AND p_user_id IS NOT NULL
+
+  UNION ALL
+
+  -- Direct user grants: permission -> user, no role involved
+  SELECT
+    bool_or(rda.public OR p.permission IN ('read', 'write', 'admin')),
+    bool_or(p.permission IN ('write', 'admin')),
+    bool_or(p.permission = 'admin')
+  FROM caskfs.directory_acl da
+  JOIN caskfs.root_directory_acl rda USING (root_directory_acl_id)
+  INNER JOIN caskfs.acl_permission p USING (root_directory_acl_id)
+  WHERE p.principal_type = 'user' AND p.principal_id = p_user_id
+    AND da.directory_id = p_directory_id
     AND p_user_id IS NOT NULL
 
   UNION ALL
@@ -255,23 +310,24 @@ GROUP BY directory_id, user_id;
 --     ON caskfs.directory_user_permissions_lookup(user_id);
 
 CREATE OR REPLACE VIEW caskfs.directory_user_permissions_by_permission AS
+-- Role-based grants: permission -> role -> role members
 SELECT
     d.fullname AS directory,
     u.name as user,
     p.acl_permission_id,
-    CASE 
+    CASE
         WHEN p.permission = 'read' THEN TRUE
         WHEN p.permission = 'write' THEN TRUE
         WHEN p.permission = 'admin' THEN TRUE
         WHEN rda.public = TRUE THEN TRUE
         ELSE FALSE
     END AS can_read,
-    CASE 
+    CASE
         WHEN p.permission = 'write' THEN TRUE
         WHEN p.permission = 'admin' THEN TRUE
         ELSE FALSE
     END AS can_write,
-    CASE 
+    CASE
         WHEN p.permission = 'admin' THEN TRUE
         ELSE FALSE
     END AS is_admin,
@@ -280,16 +336,45 @@ FROM caskfs.directory d
 LEFT JOIN caskfs.directory_acl da ON d.directory_id = da.directory_id
 LEFT JOIN caskfs.root_directory_acl rda ON da.root_directory_acl_id = rda.root_directory_acl_id
 LEFT JOIN caskfs.directory rd ON rda.directory_id = rd.directory_id
-LEFT JOIN caskfs.acl_permission p ON rda.root_directory_acl_id = p.root_directory_acl_id
-LEFT JOIN caskfs.acl_role r ON p.role_id = r.role_id
+LEFT JOIN caskfs.acl_permission p ON rda.root_directory_acl_id = p.root_directory_acl_id AND p.principal_type = 'role'
+LEFT JOIN caskfs.acl_role r ON p.principal_id = r.role_id
 LEFT JOIN caskfs.acl_role_user ru ON r.role_id = ru.role_id
 LEFT JOIN caskfs.acl_user u ON ru.user_id = u.user_id
 UNION
+-- Direct user grants: permission -> user, no role involved
+SELECT
+    d.fullname AS directory,
+    u.name as user,
+    p.acl_permission_id,
+    CASE
+        WHEN p.permission = 'read' THEN TRUE
+        WHEN p.permission = 'write' THEN TRUE
+        WHEN p.permission = 'admin' THEN TRUE
+        ELSE FALSE
+    END AS can_read,
+    CASE
+        WHEN p.permission = 'write' THEN TRUE
+        WHEN p.permission = 'admin' THEN TRUE
+        ELSE FALSE
+    END AS can_write,
+    CASE
+        WHEN p.permission = 'admin' THEN TRUE
+        ELSE FALSE
+    END AS is_admin,
+    rd.fullname AS acl_root_directory
+FROM caskfs.directory d
+LEFT JOIN caskfs.directory_acl da ON d.directory_id = da.directory_id
+LEFT JOIN caskfs.root_directory_acl rda ON da.root_directory_acl_id = rda.root_directory_acl_id
+LEFT JOIN caskfs.directory rd ON rda.directory_id = rd.directory_id
+JOIN caskfs.acl_permission p ON rda.root_directory_acl_id = p.root_directory_acl_id AND p.principal_type = 'user'
+JOIN caskfs.acl_user u ON p.principal_id = u.user_id
+UNION
+-- Public/anonymous access
 SELECT
     d.fullname AS directory,
     NULL as user,
     NULL as acl_permission_id,
-    CASE 
+    CASE
         WHEN rda.public = TRUE THEN TRUE
         ELSE FALSE
     END AS can_read,
@@ -638,3 +723,54 @@ CREATE OR REPLACE TRIGGER trigger_derivative_link_update_modified
     BEFORE UPDATE ON caskfs.derivative_link
     FOR EACH ROW
     EXECUTE FUNCTION caskfs.update_modified_timestamp();
+
+-- acl_permission.principal_id has no FK (see comment on the table), so this trigger does what
+-- the old role_id FK used to do for free: reject a grant whose principal doesn't exist.
+CREATE OR REPLACE FUNCTION caskfs.validate_acl_permission_principal()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.principal_type = 'role' THEN
+        IF NOT EXISTS (SELECT 1 FROM caskfs.acl_role WHERE role_id = NEW.principal_id) THEN
+            RAISE EXCEPTION 'acl_permission.principal_id % does not reference an existing role', NEW.principal_id;
+        END IF;
+    ELSIF NEW.principal_type = 'user' THEN
+        IF NOT EXISTS (SELECT 1 FROM caskfs.acl_user WHERE user_id = NEW.principal_id) THEN
+            RAISE EXCEPTION 'acl_permission.principal_id % does not reference an existing user', NEW.principal_id;
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER trigger_acl_permission_validate_principal
+    BEFORE INSERT OR UPDATE ON caskfs.acl_permission
+    FOR EACH ROW
+    EXECUTE FUNCTION caskfs.validate_acl_permission_principal();
+
+-- Replaces the old role_id "ON DELETE CASCADE" - removes permission grants for a role/user
+-- that no longer exists, since principal_id can't carry that FK itself.
+CREATE OR REPLACE FUNCTION caskfs.cascade_delete_acl_permission_for_role()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM caskfs.acl_permission WHERE principal_type = 'role' AND principal_id = OLD.role_id;
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER trigger_acl_role_cascade_delete_permissions
+    AFTER DELETE ON caskfs.acl_role
+    FOR EACH ROW
+    EXECUTE FUNCTION caskfs.cascade_delete_acl_permission_for_role();
+
+CREATE OR REPLACE FUNCTION caskfs.cascade_delete_acl_permission_for_user()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM caskfs.acl_permission WHERE principal_type = 'user' AND principal_id = OLD.user_id;
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER trigger_acl_user_cascade_delete_permissions
+    AFTER DELETE ON caskfs.acl_user
+    FOR EACH ROW
+    EXECUTE FUNCTION caskfs.cascade_delete_acl_permission_for_user();

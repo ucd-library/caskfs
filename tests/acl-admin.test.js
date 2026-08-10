@@ -61,7 +61,7 @@ describe('CaskFs ACL admin methods', () => {
 
     it('testPermission evaluates a directory permission for a given user', async () => {
       await caskFs.write({ filePath: '/perm-test/file.txt', data: Buffer.from('x'), requestor: 'setup', ignoreAcl: true });
-      await caskFs.setDirectoryPermission({ directory: '/perm-test', role: 'reader', permission: 'read' });
+      await caskFs.setDirectoryPermission({ directory: '/perm-test', principal: 'reader', permission: 'read' });
       await caskFs.setUserRole({ user: 'carol', role: 'reader' });
 
       const canRead = await caskFs.testPermission({
@@ -71,6 +71,23 @@ describe('CaskFs ACL admin methods', () => {
 
       const canWrite = await caskFs.testPermission({
         user: 'carol', filePath: '/perm-test/file.txt', permission: 'write', isFile: true
+      });
+      assert.strictEqual(canWrite, false);
+    });
+
+    it('testPermission evaluates a direct user grant (no role involved)', async () => {
+      await caskFs.write({ filePath: '/perm-test-direct/file.txt', data: Buffer.from('x'), requestor: 'setup', ignoreAcl: true });
+      await caskFs.setDirectoryPermission({
+        directory: '/perm-test-direct', principal: 'frank', principalType: 'user', permission: 'read'
+      });
+
+      const canRead = await caskFs.testPermission({
+        user: 'frank', filePath: '/perm-test-direct/file.txt', permission: 'read', isFile: true
+      });
+      assert.strictEqual(canRead, true);
+
+      const canWrite = await caskFs.testPermission({
+        user: 'frank', filePath: '/perm-test-direct/file.txt', permission: 'write', isFile: true
       });
       assert.strictEqual(canWrite, false);
     });

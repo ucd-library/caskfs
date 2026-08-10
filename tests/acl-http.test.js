@@ -44,20 +44,41 @@ describe('/acl HTTP API — directory routes, ACL disabled (default)', () => {
     assert.strictEqual(body.public, false);
   });
 
-  it('full set/get/remove round trip for a directory permission', async () => {
+  it('full set/get/remove round trip for a directory permission (role principal)', async () => {
     let res = await jsonFetch(`${baseUrl}/acl/directory/acl-http-test/permissions`, {
-      method: 'POST', body: { role: 'editors', permission: 'write' },
+      method: 'POST', body: { principal: 'editors', permission: 'write' },
     });
     assert.strictEqual(res.status, 200);
 
     res = await fetch(`${baseUrl}/acl/directory/acl-http-test`);
     assert.strictEqual(res.status, 200);
     let body = await res.json();
-    assert.deepStrictEqual(body.permissions, [{ permission: 'write', role: 'editors' }]);
+    assert.deepStrictEqual(body.permissions, [{ permission: 'write', principalType: 'role', principalName: 'editors' }]);
     assert.strictEqual(body.public, false);
 
     res = await jsonFetch(`${baseUrl}/acl/directory/acl-http-test/permissions`, {
-      method: 'DELETE', body: { role: 'editors', permission: 'write' },
+      method: 'DELETE', body: { principal: 'editors', permission: 'write' },
+    });
+    assert.strictEqual(res.status, 200);
+
+    res = await fetch(`${baseUrl}/acl/directory/acl-http-test`);
+    body = await res.json();
+    assert.deepStrictEqual(body.permissions, []);
+  });
+
+  it('full set/get/remove round trip for a directory permission (direct user principal)', async () => {
+    let res = await jsonFetch(`${baseUrl}/acl/directory/acl-http-test/permissions`, {
+      method: 'POST', body: { principal: 'grace', principalType: 'user', permission: 'read' },
+    });
+    assert.strictEqual(res.status, 200);
+
+    res = await fetch(`${baseUrl}/acl/directory/acl-http-test`);
+    assert.strictEqual(res.status, 200);
+    let body = await res.json();
+    assert.deepStrictEqual(body.permissions, [{ permission: 'read', principalType: 'user', principalName: 'grace' }]);
+
+    res = await jsonFetch(`${baseUrl}/acl/directory/acl-http-test/permissions`, {
+      method: 'DELETE', body: { principal: 'grace', principalType: 'user', permission: 'read' },
     });
     assert.strictEqual(res.status, 200);
 
@@ -89,7 +110,7 @@ describe('/acl HTTP API — directory routes, ACL disabled (default)', () => {
 
   it('rejects an invalid permission value with 400', async () => {
     const res = await jsonFetch(`${baseUrl}/acl/directory/acl-http-test/permissions`, {
-      method: 'POST', body: { role: 'editors', permission: 'nope' },
+      method: 'POST', body: { principal: 'editors', permission: 'nope' },
     });
     assert.strictEqual(res.status, 400);
   });
@@ -107,7 +128,7 @@ describe('/acl HTTP API — directory routes, ACL enabled', () => {
     await caskFs.write({ filePath: '/dir-b/file.txt', data: Buffer.from('b'), requestor: 'setup', ignoreAcl: true });
 
     // 'dir-a-admin' is a directory-scoped admin: can manage ACLs on /dir-a only.
-    await caskFs.setDirectoryPermission({ directory: '/dir-a', role: 'dir-a-managers', permission: 'admin', ignoreAcl: true });
+    await caskFs.setDirectoryPermission({ directory: '/dir-a', principal: 'dir-a-managers', permission: 'admin', ignoreAcl: true });
     await aclImpl.ensureUserRole({ user: 'dir-a-admin', role: 'dir-a-managers', dbClient: caskFs.dbClient });
 
     // 'global-admin' holds the global admin role: can manage ACLs anywhere.
@@ -132,21 +153,28 @@ describe('/acl HTTP API — directory routes, ACL enabled', () => {
 
   it('allows a directory-scoped admin to manage ACLs on their own directory', async () => {
     const res = await jsonFetch(`${baseUrl}/acl/directory/dir-a/permissions`, {
-      method: 'POST', headers: userHeader('dir-a-admin'), body: { role: 'dir-a-readers', permission: 'read' },
+      method: 'POST', headers: userHeader('dir-a-admin'), body: { principal: 'dir-a-readers', permission: 'read' },
+    });
+    assert.strictEqual(res.status, 200);
+  });
+
+  it('allows a directory-scoped admin to grant a direct user permission on their own directory', async () => {
+    const res = await jsonFetch(`${baseUrl}/acl/directory/dir-a/permissions`, {
+      method: 'POST', headers: userHeader('dir-a-admin'), body: { principal: 'henry', principalType: 'user', permission: 'read' },
     });
     assert.strictEqual(res.status, 200);
   });
 
   it('denies a directory-scoped admin write access on a different directory (per-directory, not global)', async () => {
     const res = await jsonFetch(`${baseUrl}/acl/directory/dir-b/permissions`, {
-      method: 'POST', headers: userHeader('dir-a-admin'), body: { role: 'dir-b-readers', permission: 'read' },
+      method: 'POST', headers: userHeader('dir-a-admin'), body: { principal: 'dir-b-readers', permission: 'read' },
     });
     assert.strictEqual(res.status, 403);
   });
 
   it('allows the global admin to manage ACLs on any directory', async () => {
     const res = await jsonFetch(`${baseUrl}/acl/directory/dir-b/permissions`, {
-      method: 'POST', headers: userHeader('global-admin'), body: { role: 'dir-b-readers', permission: 'read' },
+      method: 'POST', headers: userHeader('global-admin'), body: { principal: 'dir-b-readers', permission: 'read' },
     });
     assert.strictEqual(res.status, 200);
   });
@@ -161,7 +189,7 @@ describe('/acl HTTP API — global roles/users routes', () => {
     aclImpl.enabled = true;
 
     await caskFs.write({ filePath: '/global-acl-test/file.txt', data: Buffer.from('x'), requestor: 'setup', ignoreAcl: true });
-    await caskFs.setDirectoryPermission({ directory: '/global-acl-test', role: 'local-managers', permission: 'admin', ignoreAcl: true });
+    await caskFs.setDirectoryPermission({ directory: '/global-acl-test', principal: 'local-managers', permission: 'admin', ignoreAcl: true });
     await aclImpl.ensureUserRole({ user: 'local-only-admin', role: 'local-managers', dbClient: caskFs.dbClient });
 
     await aclImpl.ensureUserRole({ user: 'global-admin-2', role: 'admin', dbClient: caskFs.dbClient });
@@ -237,7 +265,7 @@ describe('GET /acl/test', () => {
     aclImpl.enabled = true;
 
     await caskFs.write({ filePath: '/test-endpoint/file.txt', data: Buffer.from('x'), requestor: 'setup', ignoreAcl: true });
-    await caskFs.setDirectoryPermission({ directory: '/test-endpoint', role: 'readers', permission: 'read', ignoreAcl: true });
+    await caskFs.setDirectoryPermission({ directory: '/test-endpoint', principal: 'readers', permission: 'read', ignoreAcl: true });
     await aclImpl.ensureUserRole({ user: 'eve', role: 'readers', dbClient: caskFs.dbClient });
     await aclImpl.ensureUserRole({ user: 'test-admin', role: 'admin', dbClient: caskFs.dbClient });
   });
