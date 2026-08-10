@@ -1668,6 +1668,23 @@ class CaskFs {
   }
 
   /**
+   * @method getUsers
+   * @description Get all defined users.
+   *
+   * @param {Object|CaskFSContext} context
+   * @param {Object} context.dbClient Optional. database client instance, defaults to instance dbClient
+   * @returns {Promise<Array<Object>>} array of {userId, user, created} objects
+   */
+  async getUsers(context={}) {
+    context = createContext(context, this.dbClient);
+    await this.allowAdminAction(context);
+
+    return acl.getUsers({
+      dbClient: context.data.dbClient || this.dbClient
+    });
+  }
+
+  /**
    * @method setDirectoryPublic
    * @description Set a directory as public or private.  Will create the root directory ACL if needed.
    * 

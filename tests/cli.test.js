@@ -72,6 +72,10 @@ async function runAclCliFlow(env, dataFile) {
   r = await runCask(['acl', 'user-add', user], { env });
   assert.strictEqual(r.code, 0, `user-add failed: ${r.stderr}`);
 
+  r = await runCask(['acl', 'user-list'], { env });
+  assert.strictEqual(r.code, 0, `user-list failed: ${r.stderr}`);
+  assert.ok(r.stdout.includes(user), `expected ${user} in user-list output:\n${r.stdout}`);
+
   r = await runCask(['acl', 'user-role-set', user, role], { env });
   assert.strictEqual(r.code, 0, `user-role-set failed: ${r.stderr}`);
 

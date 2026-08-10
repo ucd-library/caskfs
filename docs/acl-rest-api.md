@@ -9,12 +9,15 @@ Overview:
    - [Grant a Directory Permission](#grant-a-directory-permission)
    - [Revoke a Directory Permission](#revoke-a-directory-permission)
    - [Remove a Directory's ACL](#remove-a-directorys-acl)
+ - [Identity](#identity)
+   - [Who Am I](#who-am-i)
  - [Role Operations: /acl/roles](#role-operations-aclroles)
    - [List Roles](#list-roles)
    - [Create a Role](#create-a-role)
    - [Remove a Role](#remove-a-role)
    - [List Users in a Role](#list-users-in-a-role)
  - [User Operations: /acl/users](#user-operations-aclusers)
+   - [List Users](#list-users)
    - [Create a User](#create-a-user)
    - [Remove a User](#remove-a-user)
    - [List a User's Roles](#list-a-users-roles)
@@ -32,6 +35,8 @@ All endpoints require `Authorization: Bearer <token>` like the rest of the REST 
   directory, so they require the global `admin` role, with one exception:
   `GET /acl/users/{user}/roles` also allows a caller to look up **their own** roles without
   being an admin (used by `cask whoami`).
+- **`GET /acl/whoami`** requires no permission at all - it only ever reports the caller's own
+  identity.
 
 # Directory ACL Operations: /acl/directory
 
@@ -103,6 +108,18 @@ All endpoints require `Authorization: Bearer <token>` like the rest of the REST 
      - 200 OK: `{ directory }`
      - 403 Forbidden: The requestor lacks `admin` permission on this directory.
 
+# Identity
+
+## Who Am I
+- GET /acl/whoami
+
+   - Description: Report the caller's own identity - username, roles, and whether they hold
+     the global admin role. No permission required; an unauthenticated caller gets a null
+     identity rather than an error. `isAdmin` is computed the same way real ACL enforcement
+     decides it, so it always matches what the caller can actually do.
+   - Responses:
+     - 200 OK: `{ username: string|null, roles: string[], isAdmin: boolean }`
+
 # Role Operations: /acl/roles
 
 ## List Roles
@@ -139,6 +156,14 @@ All endpoints require `Authorization: Bearer <token>` like the rest of the REST 
      - 403 Forbidden: The requestor is not a global admin.
 
 # User Operations: /acl/users
+
+## List Users
+- GET /acl/users
+
+   - Description: List all defined users. Global admin only.
+   - Responses:
+     - 200 OK: `[{ userId, user, created }]`
+     - 403 Forbidden: The requestor is not a global admin.
 
 ## Create a User
 - POST /acl/users

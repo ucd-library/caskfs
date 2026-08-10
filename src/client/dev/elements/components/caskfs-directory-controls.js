@@ -9,6 +9,7 @@ import './caskfs-delete-form.js';
 import './caskfs-upload-button.js';
 import './caskf-sort-form.js';
 import './caskfs-upload-tracker-toggle.js';
+import './caskfs-acl-form.js';
 
 export default class CaskfsDirectoryControls extends Mixin(LitElement)
   .with(LitCorkUtils) {
@@ -68,6 +69,15 @@ export default class CaskfsDirectoryControls extends Mixin(LitElement)
   _onCopyPathClick() {
     navigator.clipboard.writeText(this.ctl.directoryPath.pathname);
     this.AppStateModel.showToast({text: 'Directory path copied to clipboard', type: 'success'});
+  }
+
+  _onManageAccessClick() {
+    const directory = this.ctl.directoryPath.pathname;
+    this.AppStateModel.showDialogModal({
+      title: `Manage Access: ${directory}`,
+      content: () => html`<caskfs-acl-form .directory=${directory}></caskfs-acl-form>`,
+      fullWidth: true
+    });
   }
 
 }

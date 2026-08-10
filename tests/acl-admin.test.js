@@ -48,6 +48,9 @@ describe('CaskFs ACL admin methods', () => {
 
       const roles = await caskFs.getRoles();
       assert.ok(roles.some(r => r.role === 'editor'));
+
+      const users = await caskFs.getUsers();
+      assert.ok(users.some(u => u.user === 'alice'));
     });
 
     it('removeUserRole actually removes the association (regression: used to always throw)', async () => {
@@ -119,6 +122,7 @@ describe('CaskFs ACL admin methods', () => {
       getUserRoles: () => caskFs.getUserRoles({ requestor: 'nobody', user: 'x' }),
       getRole: () => caskFs.getRole({ requestor: 'nobody', role: 'x' }),
       getRoles: () => caskFs.getRoles({ requestor: 'nobody' }),
+      getUsers: () => caskFs.getUsers({ requestor: 'nobody' }),
       testPermission: () => caskFs.testPermission({ requestor: 'nobody', user: 'x', filePath: '/', permission: 'read' }),
     };
 
@@ -141,6 +145,7 @@ describe('CaskFs ACL admin methods', () => {
 
       assert.ok((await caskFs.getUserRoles({ requestor: 'admin-user', user: 'dave' })).includes('billing'));
       assert.ok((await caskFs.getRoles({ requestor: 'admin-user' })).some(r => r.role === 'billing'));
+      assert.ok((await caskFs.getUsers({ requestor: 'admin-user' })).some(u => u.user === 'dave'));
 
       await caskFs.removeUserRole({ requestor: 'admin-user', user: 'dave', role: 'billing' });
       assert.ok(!(await caskFs.getUserRoles({ requestor: 'admin-user', user: 'dave' })).includes('billing'));

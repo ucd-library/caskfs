@@ -325,6 +325,23 @@ class Acl {
   }
 
   /**
+   * @method getUsers
+   * @description Get all defined users.
+   *
+   * @param {Object} opts
+   * @param {Object} opts.dbClient Required. database client instance
+   * @returns {Promise<Array>} array of {userId, user, created} objects, ordered by name
+   */
+  async getUsers(opts={}) {
+    let { dbClient } = opts;
+    if( !dbClient ) {
+      throw new Error('dbClient is required');
+    }
+    let res = await dbClient.query(`SELECT user_id AS "userId", name AS user, created FROM ${config.database.schema}.acl_user ORDER BY name`);
+    return res.rows;
+  }
+
+  /**
    * @method ensureRole
    * @description Ensure a role exists.  If it does not exist, it will be created.
    *

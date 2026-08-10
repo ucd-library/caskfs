@@ -43,6 +43,12 @@ return html`
       @click=${this._onCopyPathClick}
       link-aria-label='Copy Directory Path'>
     </cork-icon-button>
+    <cork-icon-button
+      icon='fas.user-shield'
+      title='Manage Access'
+      @click=${this._onManageAccessClick}
+      link-aria-label='Manage Access'>
+    </cork-icon-button>
     <cork-icon-button 
       icon="fas.folder-plus" 
       title="Create Empty Folder" 

@@ -308,6 +308,54 @@ describe('ACL', () => {
     });
   });
 
+  // ── 4b. Inheritance for directories created after the ACL was already set ──
+
+  describe('ACL inheritance — directory created after the ancestor ACL already exists', () => {
+    let caskFs;
+
+    before(async () => {
+      // /created-later exists (via a seed file) and gets its own ACL BEFORE
+      // /created-later/newchild is ever created - unlike aclSetup's usual order
+      // (seed files first, then permission), this reproduces mkdir() having to
+      // link a brand new directory to an ACL that predates it.
+      caskFs = await aclSetup({
+        directory: '/created-later',
+        role: 'family',
+        user: 'alice',
+        permission: 'read',
+        seedFiles: [
+          { filePath: '/created-later/top.txt', data: 'top' },
+        ],
+      });
+
+      await caskFs.write({
+        filePath: '/created-later/newchild/later.txt',
+        data: Buffer.from('later'),
+        requestor: 'admin',
+        ignoreAcl: true,
+      });
+    });
+
+    after(aclTeardown);
+
+    it('user can ls() the directory created after the ACL was set', async () => {
+      const result = await caskFs.ls({ directory: '/created-later/newchild', requestor: 'alice' });
+      assert.ok(result.files.some(f => f.filename === 'later.txt'));
+    });
+
+    it('user can read() a file in that directory via inherited permission', async () => {
+      const buf = await caskFs.read({ filePath: '/created-later/newchild/later.txt', requestor: 'alice' });
+      assert.strictEqual(buf.toString(), 'later');
+    });
+
+    it('a user NOT in the role is denied on the newly created child', async () => {
+      await assert.rejects(
+        () => caskFs.ls({ directory: '/created-later/newchild', requestor: 'bob' }),
+        { name: 'AclAccessError' }
+      );
+    });
+  });
+
   // ── 5. Override ────────────────────────────────────────────────────────────
 
   describe('ACL override — child ACL replaces parent ACL entirely', () => {

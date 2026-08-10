@@ -1,7 +1,6 @@
 import config from './config.js';
 import path from 'path';
 import { getLogger } from './logger.js';
-import acl from './acl.js';
 
 class Directory {
 
@@ -61,18 +60,10 @@ class Directory {
     }
     let parentId = res.rows[0].directory_id;
 
-    // get root acl if it exists
-    let rootAcl = await acl.getRootDirectoryAcl({
-      dbClient: opts.dbClient,
-      directory: '/'
-    });
-
     // handle root directory case, fetch its ID if it exists
     if( parts.length === 0 ) {
       return parentId;
     }
-
-    let created = false;
 
     for (let part of parts) {
       let fullPath = path.posix.join(currentPath, part);
@@ -85,6 +76,15 @@ class Directory {
         continue;
       }
 
+      // A brand new directory never has an ACL of its own to check, so look up
+      // the parent's effective ACL (its own or inherited) before creating - this
+      // is what the new directory needs to link to, not the root's.
+      let parentAcl = await opts.dbClient.query(
+        `SELECT root_directory_acl_id FROM ${config.database.schema}.directory_acl WHERE directory_id = $1`,
+        [parentId]
+      );
+      let parentRootDirectoryAclId = parentAcl.rows[0]?.root_directory_acl_id || null;
+
       res = await opts.dbClient.query(
         `INSERT INTO ${config.database.schema}.directory (fullname, parent_id)
          VALUES ($1, $2)
@@ -94,29 +94,18 @@ class Directory {
       );
       parentId = res.rows[0].directory_id;
       currentPath = fullPath;
-      created = true;
 
-      // if we don't have a rootAcl yet, check if the root directory has one
-      if( !rootAcl ) {
-        rootAcl = await acl.getRootDirectoryAcl({
-          dbClient: opts.dbClient,
-          directory: fullPath
-        });
-      }
-
-      // if you have a rootAcl, set the directory to the current directory
-      // this method will skip if the directory already has an explicit ACL set
-      // and return the root_directory_acl_id if it was set.
-      // This function is set to not recurse and only set the ACL on the current directory
-      if( rootAcl ) {
-        rootAcl.root_directory_acl_id = await this.acl.setDirectoryAcl({ 
+      // link the new directory to its parent's effective ACL, if any. Not
+      // recursive - this directory was just created, so it has no children yet.
+      if( parentRootDirectoryAclId ) {
+        await this.acl.setDirectoryAcl({
           recurse: false,
-          rootDirectoryAclId: rootAcl.root_directory_acl_id,
-          directoryId: parentId, 
-          dbClient: opts.dbClient 
+          rootDirectoryAclId: parentRootDirectoryAclId,
+          directoryId: parentId,
+          dbClient: opts.dbClient
         });
       }
-    }    
+    }
 
     return parentId; // Return the parent directory ID
   }

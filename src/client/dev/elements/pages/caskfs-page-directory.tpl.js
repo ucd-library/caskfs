@@ -1,6 +1,7 @@
 import { html, css } from 'lit';
 import '../components/caskfs-directory-controls.js';
 import '../components/caskfs-directory-list.js';
+import '../components/caskfs-public-badge.js';
 
 import appUrlUtils from '../../utils/appUrlUtils.js';
 
@@ -44,6 +45,9 @@ export function styles() {
     caskfs-page-directory caskfs-directory-controls {
       margin-bottom: 1rem;
     }
+    caskfs-page-directory caskfs-public-badge {
+      margin-bottom: 1rem;
+    }
 
     @media (min-width: 480px) {
       caskfs-page-directory .content {
@@ -75,6 +79,7 @@ return html`
     <ol class="breadcrumbs">
       <li>Directory</li>
     </ol>
+    <caskfs-public-badge .directory=${this.ctl.directoryPath.pathname}></caskfs-public-badge>
     <div class="l-container u-space-mt--large">
       <div class='content'>
         <caskfs-directory-controls></caskfs-directory-controls>

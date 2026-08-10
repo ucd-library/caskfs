@@ -15,6 +15,11 @@ export function styles() {
     .branding-bar caskfs-partition-status-button {
       margin-bottom: 1rem;
     }
+    .current-user {
+      font-size: .875rem;
+      color: var(--ucd-black-60, #666);
+      white-space: nowrap;
+    }
     @media (min-width: 768px) {
       .branding-bar {
         flex-direction: row;
@@ -37,7 +42,7 @@ export function styles() {
 
 export function render() { 
 return html`
-  ${renderHeader()}
+  ${renderHeader.call(this)}
   <main>
     <cork-app-loader-bar></cork-app-loader-bar>
     <cork-app-error></cork-app-error>
@@ -54,6 +59,7 @@ return html`
       <caskfs-page-file-single page-id='file'></caskfs-page-file-single>
       <caskfs-page-relationships page-id='rel'></caskfs-page-relationships>
       <caskfs-page-statistics page-id='statistics'></caskfs-page-statistics>
+      <caskfs-page-access page-id='access'></caskfs-page-access>
     </ucdlib-pages>
   </main>
 `;}
@@ -68,6 +74,9 @@ function renderHeader(){
             slogan="Cask File System">
         </ucdlib-branding-bar>
         <!--<caskfs-partition-status-button></caskfs-partition-status-button> -->
+        <div class="current-user" ?hidden=${!this.currentUser?.username}>
+          Signed in as ${this.currentUser?.username}
+        </div>
       </div>
 
       <ucd-theme-primary-nav>
@@ -80,6 +89,9 @@ function renderHeader(){
         </ul>
         <ul link-text='Config'>
           <li><a href=${appUrlUtils.fullLocation('/config/partitions')}>Partitions</a></li>
+          <li ?hidden=${!this.currentUser?.isAdmin}>
+            <a href=${appUrlUtils.fullLocation('/config/access')}>Access</a>
+          </li>
         </ul>
         <a href=${appUrlUtils.fullLocation('/statistics')}>Statistics</a>
       </ucd-theme-primary-nav>

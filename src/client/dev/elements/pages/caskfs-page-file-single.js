@@ -8,6 +8,7 @@ import AppComponentController from '../../controllers/AppComponentController.js'
 import ScrollController from '../../controllers/ScrollController.js';
 
 import '../components/caskfs-delete-form.js';
+import '../components/caskfs-acl-form.js';
 
 export default class CaskfsPageFileSingle extends Mixin(LitElement)
   .with(LitCorkUtils, MainDomElement) {
@@ -64,6 +65,16 @@ export default class CaskfsPageFileSingle extends Mixin(LitElement)
   _onCopyPathClick() {
     navigator.clipboard.writeText(this.ctl.directoryPath.pathname);
     this.AppStateModel.showToast({text: 'File system path copied to clipboard', type: 'success'});
+  }
+
+  _onManageAccessClick() {
+    // ACL is directory-scoped, so this manages the ACL of the file's owning directory.
+    const directory = this.ctl.directoryPath.parentPath || '/';
+    this.AppStateModel.showDialogModal({
+      title: `Manage Access: ${directory}`,
+      content: () => html`<caskfs-acl-form .directory=${directory}></caskfs-acl-form>`,
+      fullWidth: true
+    });
   }
 
 }

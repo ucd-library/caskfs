@@ -4,6 +4,7 @@ import { LitCorkUtils, Mixin } from '@ucd-lib/cork-app-utils';
 import { MainDomElement } from "@ucd-lib/theme-elements/utils/mixins/main-dom-element.js";
 
 import './caskfs-delete-form.js';
+import './caskfs-acl-form.js';
 import DirectoryItemSelectController from '../../controllers/DirectoryItemSelectController.js';
 import FsDisplayUtils from '../../utils/FsDisplayUtils.js';
 
@@ -44,6 +45,15 @@ export default class CaskfsFsItem extends Mixin(LitElement)
   _onDeleteClick(){
     this.AppStateModel.showDialogModal({
       content: () => html`<caskfs-delete-form .items=${this.data}></caskfs-delete-form>`,
+    });
+  }
+
+  _onManageAccessClick(){
+    const directory = this.data.fullname;
+    this.AppStateModel.showDialogModal({
+      title: `Manage Access: ${directory}`,
+      content: () => html`<caskfs-acl-form .directory=${directory}></caskfs-acl-form>`,
+      fullWidth: true
     });
   }
 

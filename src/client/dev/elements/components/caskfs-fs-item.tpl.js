@@ -47,6 +47,7 @@ function renderMobileView(){
             </div>
           </div>
         </div>
+        ${renderManageAccessIcon.call(this)}
         ${renderDeleteIcon.call(this)}
       </div>
     </div>
@@ -62,10 +63,25 @@ function renderDesktopView(){
         <div class='item-cell field--size'>${this.fsUtils.size}</div>
         ${renderModifiedDate.call(this)}
         <div class='item-cell'>${this.fsUtils.modifiedBy}</div>
+        ${renderManageAccessIcon.call(this)}
         ${renderDeleteIcon.call(this)}
       </div>
     </div>
   `
+}
+
+function renderManageAccessIcon(){
+  if ( !this.fsUtils.isDirectory ) return '';
+  return html`
+    <cork-icon-button
+      @click=${this._onManageAccessClick}
+      class='manage-access-icon'
+      icon='fas.user-shield'
+      basic
+      link-aria-label='Manage Access'
+      title='Manage Access'>
+    </cork-icon-button>
+  `;
 }
 
 function renderDeleteIcon(){

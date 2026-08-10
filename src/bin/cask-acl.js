@@ -26,6 +26,16 @@ program.command('user-remove <username>')
     await endClient(cask);
   });
 
+program.command('user-list')
+  .description('List all defined users')
+  .action(async (options={}) => {
+    handleGlobalOpts(options);
+    const cask = getClient(options);
+    let resp = await cask.getUsers(options);
+    console.log(resp.map(u => u.user).join('\n'));
+    await endClient(cask);
+  });
+
 program.command('user-role-get')
   .description('Get a users roles or get users with a role')
   .option('-u, --user <username>', 'username to get roles for')

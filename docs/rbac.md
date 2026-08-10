@@ -63,6 +63,11 @@ Remove User from the CaskFS instance.
 
 CLI: `cask acl user-remove <username> [options]`
 
+### List All Users
+List every user defined on the CaskFS instance.
+
+CLI: `cask acl user-list [options]`
+
 ### Add Role
 Add a new role to the CaskFS instance.
 CLI: `cask acl role-add <role-name> [options]`

@@ -222,6 +222,11 @@ describe('/acl HTTP API — global roles/users routes', () => {
     assert.strictEqual(res.status, 403);
   });
 
+  it('GET /acl/users rejects a directory-scoped (non-global) admin with 403', async () => {
+    const res = await fetch(`${baseUrl}/acl/users`, { headers: userHeader('local-only-admin') });
+    assert.strictEqual(res.status, 403);
+  });
+
   it('runs the full role/user management flow for a global admin', async () => {
     const admin = userHeader('global-admin-2');
 
@@ -237,6 +242,10 @@ describe('/acl HTTP API — global roles/users routes', () => {
 
     res = await fetch(`${baseUrl}/acl/users/dana/roles`, { headers: admin });
     assert.deepStrictEqual(await res.json(), ['billing']);
+
+    res = await fetch(`${baseUrl}/acl/users`, { headers: admin });
+    assert.strictEqual(res.status, 200);
+    assert.ok((await res.json()).some(u => u.user === 'dana'));
 
     res = await fetch(`${baseUrl}/acl/roles/billing/users`, { headers: admin });
     assert.strictEqual(res.status, 200);
@@ -301,5 +310,47 @@ describe('GET /acl/test', () => {
     url.searchParams.set('permission', 'write');
     res = await fetch(url, { headers: admin });
     assert.strictEqual((await res.json()).hasPermission, false);
+  });
+});
+
+describe('GET /acl/whoami', () => {
+  let caskFs, baseUrl;
+
+  before(async () => {
+    config.headerAuth.enabled = true;
+    ({ caskFs, baseUrl } = await setup());
+    aclImpl.enabled = true;
+
+    await aclImpl.ensureUserRole({ user: 'whoami-viewer', role: 'viewer', dbClient: caskFs.dbClient });
+    await aclImpl.ensureUserRole({ user: 'whoami-admin', role: 'admin', dbClient: caskFs.dbClient });
+  });
+
+  after(async () => {
+    aclImpl.enabled = false;
+    config.headerAuth.enabled = false;
+    await teardown();
+  });
+
+  it('falls back to config.acl.defaultRequestor when the auth header is absent, with no error', async () => {
+    // setup() sets config.acl.defaultRequestor = 'test-user' (see helpers/http-setup.js),
+    // which is never assigned a role here, so it resolves to a real but non-admin identity.
+    const res = await fetch(`${baseUrl}/acl/whoami`);
+    assert.strictEqual(res.status, 200);
+    assert.deepStrictEqual(await res.json(), { username: 'test-user', roles: [], isAdmin: false });
+  });
+
+  it('reports a non-admin caller\'s own username/roles with isAdmin:false', async () => {
+    const res = await fetch(`${baseUrl}/acl/whoami`, { headers: userHeader('whoami-viewer') });
+    assert.strictEqual(res.status, 200);
+    assert.deepStrictEqual(await res.json(), { username: 'whoami-viewer', roles: ['viewer'], isAdmin: false });
+  });
+
+  it('reports isAdmin:true for a global admin caller', async () => {
+    const res = await fetch(`${baseUrl}/acl/whoami`, { headers: userHeader('whoami-admin') });
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.strictEqual(body.username, 'whoami-admin');
+    assert.deepStrictEqual(body.roles, ['admin']);
+    assert.strictEqual(body.isAdmin, true);
   });
 });

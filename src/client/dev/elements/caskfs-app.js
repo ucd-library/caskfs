@@ -19,6 +19,7 @@ import './pages/caskfs-page-partitions.js';
 import './pages/caskfs-page-file-single.js';
 import './pages/caskfs-page-relationships.js';
 import './pages/caskfs-page-statistics.js';
+import './pages/caskfs-page-access.js';
 
 // app global components
 import './components/cork-app-error.js';
@@ -34,6 +35,7 @@ import './components/caskfs-upload-tracker.js';
 import '@ucd-lib/cork-icon';
 
 // cork models
+import '../../../api/models/AclModel.js';
 import '../../../api/models/AppStateModel.js';
 import '../../../api/models/AutoPathModel.js';
 import '../../../api/models/DirectoryModel.js';
@@ -55,6 +57,7 @@ export default class CaskfsApp extends Mixin(LitElement)
   static get properties() {
     return {
       page: {type: String},
+      currentUser: { state: true },
       _firstAppStateUpdate : { state: true }
     }
   }
@@ -68,15 +71,24 @@ export default class CaskfsApp extends Mixin(LitElement)
     this.render = render.bind(this);
 
     this.page = '';
+    this.currentUser = { username: null, roles: [], isAdmin: false };
     this._firstAppStateUpdate = false;
 
-    this._injectModel('AppStateModel');
+    this._injectModel('AppStateModel', 'AclModel');
 
     this.scrollCtl = new ScrollController(this, {attachListener: true});
   }
 
   firstUpdated(){
     this.AppStateModel.refresh();
+    this.getWhoAmI();
+  }
+
+  async getWhoAmI(){
+    const res = await this.AclModel.getWhoAmI();
+    if ( res.state === 'loaded' ) {
+      this.currentUser = res.payload;
+    }
   }
 
   async _onAppStateUpdate(e) {

@@ -535,6 +535,16 @@ class HttpCaskFsClient {
   // ---------------------------------------------------------------------------
 
   /**
+   * @method getWhoAmI
+   * @description Report the caller's own identity via GET /acl/whoami - no admin required.
+   * @returns {Promise<{username: String|null, roles: Array<String>, isAdmin: Boolean}>}
+   */
+  async getWhoAmI() {
+    const res = await this._fetch(`${this.baseUrl}/acl/whoami`);
+    return res.json();
+  }
+
+  /**
    * @method getDirectoryAcl
    * @description Get the ACL for a directory, including inherited permissions, via
    * GET /acl/directory/*. Wraps the result in a single-element array (or returns null for a
@@ -696,6 +706,16 @@ class HttpCaskFsClient {
    */
   async getRoles() {
     const res = await this._fetch(`${this.baseUrl}/acl/roles`);
+    return res.json();
+  }
+
+  /**
+   * @method getUsers
+   * @description List all defined users via GET /acl/users. Global admin only.
+   * @returns {Promise<Array<Object>>} array of {userId, user, created} objects
+   */
+  async getUsers() {
+    const res = await this._fetch(`${this.baseUrl}/acl/users`);
     return res.json();
   }
 

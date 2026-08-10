@@ -4,6 +4,7 @@ import caskFs from './caskFs.js';
 import { Validator } from './validate.js';
 import { silentJson } from './fs.js';
 import { getRequestor } from '../lib/middleware/header-auth.js';
+import acl from '../lib/acl.js';
 
 const router = Router();
 
@@ -127,6 +128,32 @@ router.delete(/^\/directory(\/.*)?$/, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Identity - no admin gate. This is inherently a "tell me about myself" endpoint,
+// used by the webapp to know its own username/roles and whether to show admin-only UI.
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /acl/whoami
+ * @description Report the caller's own identity: username, roles, and whether they hold
+ * global admin access. `isAdmin` is computed the same way real ACL enforcement decides it
+ * (acl.aclLookupRequired) so it can't drift out of sync with what the caller can actually do.
+ */
+router.get('/whoami', async (req, res) => {
+  try {
+    const username = getRequestor(req);
+    if (!username) {
+      return res.status(200).json({ username: null, roles: [], isAdmin: false });
+    }
+
+    const roles = await caskFs.getUserRoles({ user: username, requestor: username });
+    const isAdmin = !(await acl.aclLookupRequired({ requestor: username, dbClient: caskFs.dbClient }));
+    res.status(200).json({ username, roles, isAdmin });
+  } catch (e) {
+    return handleError(res, req, e);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Global roles/users - system-wide, not scoped to a directory. Enforced by
 // caskFs.allowAdminAction() inside each of these caskFs methods, which requires the
 // requestor to hold the global admin role (or ACL to be disabled/bypassed).
@@ -180,6 +207,19 @@ router.delete('/roles/:role', async (req, res) => {
   try {
     await caskFs.removeRole({ role: req.params.role, requestor: getRequestor(req) });
     res.status(200).json({ role: req.params.role });
+  } catch (e) {
+    return handleError(res, req, e);
+  }
+});
+
+/**
+ * GET /acl/users
+ * @description List all defined users. Admin-only.
+ */
+router.get('/users', async (req, res) => {
+  try {
+    const resp = await caskFs.getUsers({ requestor: getRequestor(req) });
+    res.status(200).json(resp);
   } catch (e) {
     return handleError(res, req, e);
   }
