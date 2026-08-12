@@ -47,8 +47,10 @@ function renderMobileView(){
             </div>
           </div>
         </div>
-        ${renderManageAccessIcon.call(this)}
-        ${renderDeleteIcon.call(this)}
+        <div>
+          ${renderManageAccessIcon.call(this)}
+          ${renderDeleteIcon.call(this)}
+        </div>
       </div>
     </div>
   `
@@ -63,8 +65,10 @@ function renderDesktopView(){
         <div class='item-cell field--size'>${this.fsUtils.size}</div>
         ${renderModifiedDate.call(this)}
         <div class='item-cell'>${this.fsUtils.modifiedBy}</div>
-        ${renderManageAccessIcon.call(this)}
-        ${renderDeleteIcon.call(this)}
+        <div class='item-cell'>
+          ${renderManageAccessIcon.call(this)}
+          ${renderDeleteIcon.call(this)}
+        </div>
       </div>
     </div>
   `

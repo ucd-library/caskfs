@@ -214,7 +214,7 @@ describe('/acl HTTP API — global roles/users routes', () => {
   it('GET /acl/users/:user/roles allows a non-admin caller to look up their own roles', async () => {
     const res = await fetch(`${baseUrl}/acl/users/local-only-admin/roles`, { headers: userHeader('local-only-admin') });
     assert.strictEqual(res.status, 200);
-    assert.deepStrictEqual(await res.json(), ['local-managers']);
+    assert.deepStrictEqual(await res.json(), { total: 1, roles: ['local-managers'] });
   });
 
   it('GET /acl/users/:user/roles still rejects a non-admin caller looking up someone else', async () => {
@@ -235,33 +235,114 @@ describe('/acl HTTP API — global roles/users routes', () => {
 
     res = await fetch(`${baseUrl}/acl/roles`, { headers: admin });
     assert.strictEqual(res.status, 200);
-    assert.ok((await res.json()).some(r => r.role === 'billing'));
+    let body = await res.json();
+    assert.ok(body.roles.some(r => r.role === 'billing'));
+    assert.strictEqual(typeof body.total, 'number');
 
     res = await jsonFetch(`${baseUrl}/acl/users/dana/roles`, { method: 'POST', headers: admin, body: { role: 'billing' } });
     assert.strictEqual(res.status, 200);
 
     res = await fetch(`${baseUrl}/acl/users/dana/roles`, { headers: admin });
-    assert.deepStrictEqual(await res.json(), ['billing']);
+    assert.deepStrictEqual(await res.json(), { total: 1, roles: ['billing'] });
 
     res = await fetch(`${baseUrl}/acl/users`, { headers: admin });
     assert.strictEqual(res.status, 200);
-    assert.ok((await res.json()).some(u => u.user === 'dana'));
+    assert.ok((await res.json()).users.some(u => u.user === 'dana'));
 
     res = await fetch(`${baseUrl}/acl/roles/billing/users`, { headers: admin });
     assert.strictEqual(res.status, 200);
-    assert.ok((await res.json()).some(r => r.user === 'dana'));
+    assert.ok((await res.json()).users.some(u => u.user === 'dana'));
 
     res = await fetch(`${baseUrl}/acl/users/dana/roles/billing`, { method: 'DELETE', headers: admin });
     assert.strictEqual(res.status, 200);
 
     res = await fetch(`${baseUrl}/acl/users/dana/roles`, { headers: admin });
-    assert.deepStrictEqual(await res.json(), []);
+    assert.deepStrictEqual(await res.json(), { total: 0, roles: [] });
 
     res = await fetch(`${baseUrl}/acl/users/dana`, { method: 'DELETE', headers: admin });
     assert.strictEqual(res.status, 200);
 
     res = await fetch(`${baseUrl}/acl/roles/billing`, { method: 'DELETE', headers: admin });
     assert.strictEqual(res.status, 200);
+  });
+
+  it('GET /acl/roles supports ?search= and ?limit=&offset= pagination', async () => {
+    const admin = userHeader('global-admin-2');
+    for ( const name of ['http-pg-a', 'http-pg-b', 'http-pg-c', 'http-pg-d', 'http-other'] ) {
+      const res = await jsonFetch(`${baseUrl}/acl/roles`, { method: 'POST', headers: admin, body: { role: name } });
+      assert.strictEqual(res.status, 200);
+    }
+
+    let res = await fetch(`${baseUrl}/acl/roles?search=http-pg-`, { headers: admin });
+    let body = await res.json();
+    assert.strictEqual(body.total, 4);
+    assert.ok(body.roles.every(r => r.role.startsWith('http-pg-')));
+
+    res = await fetch(`${baseUrl}/acl/roles?search=no-such-role-xyz`, { headers: admin });
+    assert.deepStrictEqual(await res.json(), { total: 0, roles: [] });
+
+    res = await fetch(`${baseUrl}/acl/roles?search=http-pg-&limit=2&offset=0`, { headers: admin });
+    const page1 = await res.json();
+    res = await fetch(`${baseUrl}/acl/roles?search=http-pg-&limit=2&offset=2`, { headers: admin });
+    const page2 = await res.json();
+    assert.strictEqual(page1.total, 4);
+    assert.strictEqual(page1.roles.length, 2);
+    assert.strictEqual(page2.roles.length, 2);
+    const names = [...page1.roles, ...page2.roles].map(r => r.role);
+    assert.strictEqual(new Set(names).size, 4, 'no duplicates/gaps across pages');
+  });
+
+  it('GET /acl/roles rejects a non-numeric ?limit= with 400', async () => {
+    const admin = userHeader('global-admin-2');
+    const res = await fetch(`${baseUrl}/acl/roles?limit=not-a-number`, { headers: admin });
+    assert.strictEqual(res.status, 400);
+  });
+
+  it('GET /acl/roles/:role/users supports ?search= and ?limit=&offset= pagination, scoped to one role', async () => {
+    const admin = userHeader('global-admin-2');
+    await jsonFetch(`${baseUrl}/acl/roles`, { method: 'POST', headers: admin, body: { role: 'http-scoped-role' } });
+    for ( const name of ['http-mem-a', 'http-mem-b', 'http-mem-c', 'http-mem-d'] ) {
+      await jsonFetch(`${baseUrl}/acl/users/${name}/roles`, { method: 'POST', headers: admin, body: { role: 'http-scoped-role' } });
+    }
+    // an unrelated user/role should never show up in this role's member list
+    await jsonFetch(`${baseUrl}/acl/users/http-unrelated/roles`, { method: 'POST', headers: admin, body: { role: 'http-unrelated-role' } });
+
+    let res = await fetch(`${baseUrl}/acl/roles/http-scoped-role/users?search=http-mem-b`, { headers: admin });
+    let body = await res.json();
+    assert.strictEqual(body.total, 1);
+    assert.strictEqual(body.users[0].user, 'http-mem-b');
+
+    res = await fetch(`${baseUrl}/acl/roles/http-scoped-role/users?limit=2&offset=0`, { headers: admin });
+    const page1 = await res.json();
+    res = await fetch(`${baseUrl}/acl/roles/http-scoped-role/users?limit=2&offset=2`, { headers: admin });
+    const page2 = await res.json();
+    assert.strictEqual(page1.total, 4);
+    assert.strictEqual(page1.users.length, 2);
+    assert.strictEqual(page2.users.length, 2);
+    const names = [...page1.users, ...page2.users].map(u => u.user);
+    assert.strictEqual(new Set(names).size, 4, 'no duplicates/gaps across pages');
+  });
+
+  it('GET /acl/users/:user/roles supports ?search= and ?limit=&offset= pagination, scoped to one user', async () => {
+    const admin = userHeader('global-admin-2');
+    for ( const name of ['http-role-a', 'http-role-b', 'http-role-c', 'http-role-d'] ) {
+      await jsonFetch(`${baseUrl}/acl/users/http-scoped-user/roles`, { method: 'POST', headers: admin, body: { role: name } });
+    }
+
+    let res = await fetch(`${baseUrl}/acl/users/http-scoped-user/roles?search=http-role-b`, { headers: admin });
+    let body = await res.json();
+    assert.strictEqual(body.total, 1);
+    assert.deepStrictEqual(body.roles, ['http-role-b']);
+
+    res = await fetch(`${baseUrl}/acl/users/http-scoped-user/roles?limit=2&offset=0`, { headers: admin });
+    const page1 = await res.json();
+    res = await fetch(`${baseUrl}/acl/users/http-scoped-user/roles?limit=2&offset=2`, { headers: admin });
+    const page2 = await res.json();
+    assert.strictEqual(page1.total, 4);
+    assert.strictEqual(page1.roles.length, 2);
+    assert.strictEqual(page2.roles.length, 2);
+    const names = [...page1.roles, ...page2.roles];
+    assert.strictEqual(new Set(names).size, 4, 'no duplicates/gaps across pages');
   });
 });
 

@@ -45,9 +45,6 @@ export function styles() {
     caskfs-page-directory caskfs-directory-controls {
       margin-bottom: 1rem;
     }
-    caskfs-page-directory caskfs-public-badge {
-      margin-bottom: 1rem;
-    }
 
     @media (min-width: 480px) {
       caskfs-page-directory .content {
@@ -76,10 +73,12 @@ return html`
     @dragover=${this._onDragOver}
     @dragleave=${this._onDragLeave}>
     <div><h1 class="page-title">Directory</h1></div>
-    <ol class="breadcrumbs">
+    <!-- <ol class="breadcrumbs">
       <li>Directory</li>
-    </ol>
+    </ol> -->
+    <div style="margin: 1rem; text-align: center;">
     <caskfs-public-badge .directory=${this.ctl.directoryPath.pathname}></caskfs-public-badge>
+    </div>
     <div class="l-container u-space-mt--large">
       <div class='content'>
         <caskfs-directory-controls></caskfs-directory-controls>

@@ -16,6 +16,24 @@ class AclService extends BaseService {
   }
 
   /**
+   * @description Build a `?search=&limit=&offset=` query string for the paginated
+   * roles/users/membership list endpoints, omitting params that weren't provided.
+   * @param {Object} opts
+   * @param {String} [opts.search]
+   * @param {Number} [opts.limit]
+   * @param {Number} [opts.offset]
+   * @returns {String} query string, including a leading '?' if non-empty, else ''
+   */
+  _listQueryString({ search, limit, offset } = {}) {
+    const params = new URLSearchParams();
+    if ( search !== undefined && search !== null && search !== '' ) params.set('search', search);
+    if ( limit !== undefined && limit !== null ) params.set('limit', limit);
+    if ( offset !== undefined && offset !== null ) params.set('offset', offset);
+    const qs = params.toString();
+    return qs ? `?${qs}` : '';
+  }
+
+  /**
    * @description Report the caller's own identity - username, roles, and whether they hold
    * global admin access. No admin required.
    * @param {Object} modelAppStateOptions
@@ -228,12 +246,16 @@ class AclService extends BaseService {
   }
 
   /**
-   * @description List all defined roles.
+   * @description List defined roles, optionally filtered/paginated.
+   * @param {Object} [opts]
+   * @param {String} [opts.search]
+   * @param {Number} [opts.limit]
+   * @param {Number} [opts.offset]
    * @param {Object} modelAppStateOptions
-   * @returns {Promise<Object>}
+   * @returns {Promise<Object>} {total, roles: [{roleId, role, created}]}
    */
-  async getRoles(modelAppStateOptions={}) {
-    const id = 'roles';
+  async getRoles(opts={}, modelAppStateOptions={}) {
+    const id = await digest({...opts});
     const store = this.store.data.roles;
 
     const appStateOptions = serviceUtils.mergeAppStateOptions(
@@ -244,7 +266,7 @@ class AclService extends BaseService {
     await this.checkRequesting(
       id, store,
       () => this.request({
-        url : `${this.baseUrl}/roles`,
+        url : `${this.baseUrl}/roles${this._listQueryString(opts)}`,
         parseResponseJson: true,
         checkCached : () => store.get(id),
         onUpdate : resp => this.store.set(
@@ -328,13 +350,17 @@ class AclService extends BaseService {
   }
 
   /**
-   * @description List all users assigned to a role.
+   * @description List users assigned to a role, optionally filtered/paginated.
    * @param {String} role
+   * @param {Object} [opts]
+   * @param {String} [opts.search]
+   * @param {Number} [opts.limit]
+   * @param {Number} [opts.offset]
    * @param {Object} modelAppStateOptions
-   * @returns {Promise<Object>}
+   * @returns {Promise<Object>} {total, users: [{userId, user}]}
    */
-  async getRoleUsers(role, modelAppStateOptions={}) {
-    const id = await digest({role});
+  async getRoleUsers(role, opts={}, modelAppStateOptions={}) {
+    const id = await digest({role, ...opts});
     const store = this.store.data.roleUsers;
 
     const appStateOptions = serviceUtils.mergeAppStateOptions(
@@ -345,7 +371,7 @@ class AclService extends BaseService {
     await this.checkRequesting(
       id, store,
       () => this.request({
-        url : `${this.baseUrl}/roles/${role}/users`,
+        url : `${this.baseUrl}/roles/${role}/users${this._listQueryString(opts)}`,
         parseResponseJson: true,
         checkCached : () => store.get(id),
         onUpdate : resp => this.store.set(
@@ -361,12 +387,16 @@ class AclService extends BaseService {
   }
 
   /**
-   * @description List all defined users.
+   * @description List defined users, optionally filtered/paginated.
+   * @param {Object} [opts]
+   * @param {String} [opts.search]
+   * @param {Number} [opts.limit]
+   * @param {Number} [opts.offset]
    * @param {Object} modelAppStateOptions
-   * @returns {Promise<Object>}
+   * @returns {Promise<Object>} {total, users: [{userId, user, created}]}
    */
-  async getUsers(modelAppStateOptions={}) {
-    const id = 'users';
+  async getUsers(opts={}, modelAppStateOptions={}) {
+    const id = await digest({...opts});
     const store = this.store.data.users;
 
     const appStateOptions = serviceUtils.mergeAppStateOptions(
@@ -377,7 +407,7 @@ class AclService extends BaseService {
     await this.checkRequesting(
       id, store,
       () => this.request({
-        url : `${this.baseUrl}/users`,
+        url : `${this.baseUrl}/users${this._listQueryString(opts)}`,
         parseResponseJson: true,
         checkCached : () => store.get(id),
         onUpdate : resp => this.store.set(
@@ -461,14 +491,18 @@ class AclService extends BaseService {
   }
 
   /**
-   * @description List all roles assigned to a user. Callers may always look up their own
-   * roles; looking up another user's roles requires the global admin role.
+   * @description List roles assigned to a user, optionally filtered/paginated. Callers may
+   * always look up their own roles; looking up another user's roles requires the global admin role.
    * @param {String} user
+   * @param {Object} [opts]
+   * @param {String} [opts.search]
+   * @param {Number} [opts.limit]
+   * @param {Number} [opts.offset]
    * @param {Object} modelAppStateOptions
-   * @returns {Promise<Object>}
+   * @returns {Promise<Object>} {total, roles: [roleName]}
    */
-  async getUserRoles(user, modelAppStateOptions={}) {
-    const id = await digest({user});
+  async getUserRoles(user, opts={}, modelAppStateOptions={}) {
+    const id = await digest({user, ...opts});
     const store = this.store.data.userRoles;
 
     const appStateOptions = serviceUtils.mergeAppStateOptions(
@@ -479,7 +513,7 @@ class AclService extends BaseService {
     await this.checkRequesting(
       id, store,
       () => this.request({
-        url : `${this.baseUrl}/users/${user}/roles`,
+        url : `${this.baseUrl}/users/${user}/roles${this._listQueryString(opts)}`,
         parseResponseJson: true,
         checkCached : () => store.get(id),
         onUpdate : resp => this.store.set(

@@ -79,6 +79,7 @@ return html`
       </cork-toggle-switch>
     </div>
   </caskfs-section-header>
+  <div><slot name="caskfs-public-badge"></slot></div>
   <div>
     <div ?hidden=${!this.showRaw}><pre><code>${unsafeHTML(this.highlightedData)}</code></pre></div>
     <div ?hidden=${this.showRaw}>

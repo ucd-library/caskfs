@@ -31,12 +31,36 @@ export default class CaskfsPublicBadge extends Mixin(LitElement)
     this.isPublic = false;
 
     this._injectModel('AclModel');
+
+    this._onAclChanged = this._onAclChanged.bind(this);
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    window.addEventListener('caskfs-directory-acl-changed', this._onAclChanged);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    window.removeEventListener('caskfs-directory-acl-changed', this._onAclChanged);
   }
 
   willUpdate(props) {
     if ( props.has('directory') && this.directory ) {
       this._load();
     }
+  }
+
+  /**
+   * @description Re-check this directory's effective ACL whenever any directory's ACL changes
+   * elsewhere on the page (e.g. the Manage Access modal). The change may be to an ancestor
+   * directory this one inherits from, so any change is treated as potentially relevant rather
+   * than filtering by path.
+   * @param {CustomEvent} e - 'caskfs-directory-acl-changed' event
+   */
+  _onAclChanged(e) {
+    if ( !this.directory ) return;
+    this._load();
   }
 
   async _load() {

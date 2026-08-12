@@ -53,7 +53,8 @@ export default class CaskfsFsItem extends Mixin(LitElement)
     this.AppStateModel.showDialogModal({
       title: `Manage Access: ${directory}`,
       content: () => html`<caskfs-acl-form .directory=${directory}></caskfs-acl-form>`,
-      fullWidth: true
+      fullWidth: true,
+      actions: [{text: 'Close', value: 'dismiss', invert: true, color: 'secondary'}]
     });
   }
 

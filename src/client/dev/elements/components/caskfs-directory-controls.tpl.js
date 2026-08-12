@@ -49,9 +49,10 @@ return html`
       @click=${this._onManageAccessClick}
       link-aria-label='Manage Access'>
     </cork-icon-button>
-    <cork-icon-button 
-      icon="fas.folder-plus" 
-      title="Create Empty Folder" 
+    <cork-icon-button
+      icon="fas.folder-plus"
+      title="Create Empty Folder"
+      @click=${this._onCreateFolderClick}
       link-aria-label="Create Empty Folder">
     </cork-icon-button>
     <caskfs-upload-button></caskfs-upload-button>

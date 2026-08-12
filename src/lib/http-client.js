@@ -294,6 +294,19 @@ class HttpCaskFsClient {
   }
 
   /**
+   * @method createDirectory
+   * @description Create a new empty directory, and any missing parent directories, via POST /dir/*.
+   * @param {Object} opts
+   * @param {String} opts.directory
+   * @returns {Promise<Object>}
+   */
+  async createDirectory(opts={}) {
+    const { directory } = this._extract(opts);
+    const res = await this._fetch(`${this.baseUrl}/dir${directory}`, { method: 'POST' });
+    return res.json();
+  }
+
+  /**
    * @method optimisticBatchWrite
    * @description Batch-write file records when CAS content is already present on the server.
    * No stream or buffer data is sent — each file is identified by its sha256 hash.
@@ -700,47 +713,72 @@ class HttpCaskFsClient {
   }
 
   /**
-   * @method getRoles
-   * @description List all defined roles via GET /acl/roles. Global admin only.
-   * @returns {Promise<Array<Object>>} array of {roleId, role, created} objects
+   * @method _listQueryString
+   * @description Build a `?search=&limit=&offset=` query string for the paginated
+   * roles/users/membership list endpoints, omitting params that weren't provided.
+   * @param {Object} opts
+   * @param {String} [opts.search]
+   * @param {Number} [opts.limit]
+   * @param {Number} [opts.offset]
+   * @returns {String} query string, including a leading '?' if non-empty, else ''
    */
-  async getRoles() {
-    const res = await this._fetch(`${this.baseUrl}/acl/roles`);
+  _listQueryString({ search, limit, offset } = {}) {
+    const params = new URLSearchParams();
+    if ( search !== undefined && search !== null ) params.set('search', search);
+    if ( limit !== undefined && limit !== null ) params.set('limit', limit);
+    if ( offset !== undefined && offset !== null ) params.set('offset', offset);
+    const qs = params.toString();
+    return qs ? `?${qs}` : '';
+  }
+
+  /**
+   * @method getRoles
+   * @description List defined roles via GET /acl/roles, optionally filtered/paginated. Global admin only.
+   * @param {Object|CaskFSContext} [context] context or object with search/limit/offset properties
+   * @returns {Promise<Object>} {total, roles: [{roleId, role, created}]}
+   */
+  async getRoles(context={}) {
+    const { search, limit, offset } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/acl/roles${this._listQueryString({ search, limit, offset })}`);
     return res.json();
   }
 
   /**
    * @method getUsers
-   * @description List all defined users via GET /acl/users. Global admin only.
-   * @returns {Promise<Array<Object>>} array of {userId, user, created} objects
+   * @description List defined users via GET /acl/users, optionally filtered/paginated. Global admin only.
+   * @param {Object|CaskFSContext} [context] context or object with search/limit/offset properties
+   * @returns {Promise<Object>} {total, users: [{userId, user, created}]}
    */
-  async getUsers() {
-    const res = await this._fetch(`${this.baseUrl}/acl/users`);
+  async getUsers(context={}) {
+    const { search, limit, offset } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/acl/users${this._listQueryString({ search, limit, offset })}`);
     return res.json();
   }
 
   /**
    * @method getRole
-   * @description List all users assigned to a role via GET /acl/roles/:role/users. Global admin only.
-   * @param {Object|CaskFSContext} context context or object with role property
-   * @returns {Promise<Array<Object>>} array of {user_id, user, role_id, role} rows
+   * @description List users assigned to a role via GET /acl/roles/:role/users, optionally
+   * filtered/paginated. Global admin only.
+   * @param {Object|CaskFSContext} context context or object with role/search/limit/offset properties
+   * @returns {Promise<Object>} {total, users: [{userId, user}]}
    */
   async getRole(context={}) {
-    const { role } = this._extract(context);
-    const res = await this._fetch(`${this.baseUrl}/acl/roles/${encodeURIComponent(role)}/users`);
+    const { role, search, limit, offset } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/acl/roles/${encodeURIComponent(role)}/users${this._listQueryString({ search, limit, offset })}`);
     return res.json();
   }
 
   /**
    * @method getUserRoles
-   * @description List all roles assigned to a user via GET /acl/users/:user/roles. Callers may
-   * always look up their own roles; looking up another user's roles requires the global admin role.
-   * @param {Object|CaskFSContext} context context or object with user property
-   * @returns {Promise<Array<String>>} array of role names
+   * @description List roles assigned to a user via GET /acl/users/:user/roles, optionally
+   * filtered/paginated. Callers may always look up their own roles; looking up another user's
+   * roles requires the global admin role.
+   * @param {Object|CaskFSContext} context context or object with user/search/limit/offset properties
+   * @returns {Promise<Object>} {total, roles: [roleName]}
    */
   async getUserRoles(context={}) {
-    const { user } = this._extract(context);
-    const res = await this._fetch(`${this.baseUrl}/acl/users/${encodeURIComponent(user)}/roles`);
+    const { user, search, limit, offset } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/acl/users/${encodeURIComponent(user)}/roles${this._listQueryString({ search, limit, offset })}`);
     return res.json();
   }
 

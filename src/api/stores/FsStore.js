@@ -8,6 +8,7 @@ class FsStore extends BaseStore {
 
     this.data = {
       delete: new LruStore({name: 'fs.delete'}),
+      createDirectory: new LruStore({name: 'fs.createDirectory'}),
       metadata: new LruStore({name: 'fs.metadata'}),
       partitionKeyDetail: new LruStore({name: 'fs.partitionKeyDetail'}),
       patchPartitionKeys: new LruStore({name: 'fs.patchPartitionKeys'}),

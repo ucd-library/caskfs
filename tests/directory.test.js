@@ -1,5 +1,6 @@
 import assert from 'assert';
 import { setup, teardown } from './helpers/setup.js';
+import aclImpl from '../src/lib/acl.js';
 
 const TEST_USER = 'test-user';
 
@@ -307,6 +308,142 @@ describe('Directory Operations', () => {
       assert.strictEqual(
         result.totalCount,
         result.files.length + result.directories.length
+      );
+    });
+  });
+
+  // ── createDirectory() ─────────────────────────────────────────────────────
+
+  describe('createDirectory()', () => {
+    it('should create a leaf directory', async () => {
+      const result = await caskFs.createDirectory({
+        directory: '/created/leaf',
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+      assert.strictEqual(result.directory, '/created/leaf');
+
+      const dir = await caskFs.dbClient.getDirectory('/created/leaf');
+      assert.ok(dir, '/created/leaf should exist in the database');
+    });
+
+    it('should create missing intermediate parent directories', async () => {
+      await caskFs.createDirectory({
+        directory: '/created/deep/nested/dir',
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+
+      for (const dir of ['/created/deep', '/created/deep/nested', '/created/deep/nested/dir']) {
+        const row = await caskFs.dbClient.getDirectory(dir);
+        assert.ok(row, `${dir} should have been auto-created`);
+      }
+    });
+
+    it('should normalise a trailing slash on the directory path', async () => {
+      const result = await caskFs.createDirectory({
+        directory: '/created/trailing-slash/',
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+      assert.strictEqual(result.directory, '/created/trailing-slash');
+    });
+
+    it('should make the new directory visible via ls()', async () => {
+      await caskFs.createDirectory({
+        directory: '/created/visible-child',
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+
+      const result = await caskFs.ls({
+        directory: '/created',
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+      const dirNames = result.directories.map(d => d.fullname);
+      assert.ok(dirNames.includes('/created/visible-child'));
+    });
+
+    it('should throw DuplicateFileError when the directory already exists', async () => {
+      await caskFs.createDirectory({
+        directory: '/created/already-exists',
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+
+      await assert.rejects(
+        () => caskFs.createDirectory({
+          directory: '/created/already-exists',
+          requestor: TEST_USER,
+          ignoreAcl: true,
+        }),
+        { name: 'DuplicateFileError' }
+      );
+    });
+
+    it('should throw DuplicateFileError when a file already exists at the path', async () => {
+      await caskFs.write({
+        filePath: '/created/a-file',
+        data: Buffer.from('im a file'),
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+
+      await assert.rejects(
+        () => caskFs.createDirectory({
+          directory: '/created/a-file',
+          requestor: TEST_USER,
+          ignoreAcl: true,
+        }),
+        { name: 'DuplicateFileError' }
+      );
+    });
+
+    it('should throw when directory is not provided', async () => {
+      await assert.rejects(
+        () => caskFs.createDirectory({ requestor: TEST_USER, ignoreAcl: true }),
+        /directory is required/
+      );
+    });
+
+    it('should throw when trying to create the root directory', async () => {
+      await assert.rejects(
+        () => caskFs.createDirectory({
+          directory: '/',
+          requestor: TEST_USER,
+          ignoreAcl: true,
+        }),
+        /Cannot create the root directory/
+      );
+    });
+  });
+
+  describe('createDirectory() — permissions', () => {
+    let permCaskFs;
+
+    before(async () => {
+      aclImpl.enabled = true;
+      permCaskFs = caskFs;
+      await permCaskFs.write({
+        filePath: '/locked-dir/file.txt',
+        data: Buffer.from('secret'),
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+    });
+
+    after(async () => {
+      aclImpl.enabled = false;
+    });
+
+    it('should throw AclAccessError when the requestor has no write permission', async () => {
+      await assert.rejects(
+        () => permCaskFs.createDirectory({
+          directory: '/locked-dir/new-child',
+          requestor: 'alice',
+        }),
+        { name: 'AclAccessError' }
       );
     });
   });

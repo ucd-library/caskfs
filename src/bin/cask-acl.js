@@ -28,11 +28,17 @@ program.command('user-remove <username>')
 
 program.command('user-list')
   .description('List all defined users')
+  .option('-s, --search <text>', 'filter by a case-insensitive substring match on username')
+  .option('-l, --limit <n>', 'max users to return', '1000')
+  .option('-o, --offset <n>', 'users to skip', '0')
   .action(async (options={}) => {
     handleGlobalOpts(options);
     const cask = getClient(options);
     let resp = await cask.getUsers(options);
-    console.log(resp.map(u => u.user).join('\n'));
+    console.log(resp.users.map(u => u.user).join('\n'));
+    if( resp.total > resp.users.length + Number(options.offset) ) {
+      console.log(`\n(showing ${resp.users.length} of ${resp.total} - use --offset to page)`);
+    }
     await endClient(cask);
   });
 
@@ -40,8 +46,11 @@ program.command('user-role-get')
   .description('Get a users roles or get users with a role')
   .option('-u, --user <username>', 'username to get roles for')
   .option('-r, --role <role>', 'role to get users for')
+  .option('-s, --search <text>', 'filter by a case-insensitive substring match')
+  .option('-l, --limit <n>', 'max rows to return', '1000')
+  .option('-o, --offset <n>', 'rows to skip', '0')
   .action(async (options) => {
-    const { user: username, role } = options;
+    const { user: username, role, search, limit, offset } = options;
     if( !username && !role ) {
       throw new Error('Must provide either a username or a role');
     }
@@ -53,15 +62,15 @@ program.command('user-role-get')
     const cask = getClient(options);
 
     if( role ) {
-      let resp = await cask.getRole(handleGlobalOpts({ role }));
-      console.log(resp.map(r => r.user).join('\n'));
+      let resp = await cask.getRole(handleGlobalOpts({ role, search, limit, offset }));
+      console.log(resp.users.map(r => r.user).join('\n'));
       await endClient(cask);
       return;
     }
 
     if( username ) {
-      let resp = await cask.getUserRoles(handleGlobalOpts({ user: username }));
-      console.log(resp.join('\n'));
+      let resp = await cask.getUserRoles(handleGlobalOpts({ user: username, search, limit, offset }));
+      console.log(resp.roles.join('\n'));
       await endClient(cask);
       return;
     }
@@ -105,11 +114,17 @@ program.command('role-remove <role>')
 
 program.command('role-list')
   .description('List all defined roles')
+  .option('-s, --search <text>', 'filter by a case-insensitive substring match on role name')
+  .option('-l, --limit <n>', 'max roles to return', '1000')
+  .option('-o, --offset <n>', 'roles to skip', '0')
   .action(async (options={}) => {
     handleGlobalOpts(options);
     const cask = getClient(options);
     let resp = await cask.getRoles(options);
-    console.log(resp.map(r => r.role).join('\n'));
+    console.log(resp.roles.map(r => r.role).join('\n'));
+    if( resp.total > resp.roles.length + Number(options.offset) ) {
+      console.log(`\n(showing ${resp.roles.length} of ${resp.total} - use --offset to page)`);
+    }
     await endClient(cask);
   });
 

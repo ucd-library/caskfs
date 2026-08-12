@@ -250,26 +250,51 @@ class Acl {
 
   /**
    * @method getUserRoles
-   * @description Get roles for a specific user.
+   * @description Get roles for a specific user, optionally filtered by a case-insensitive
+   * substring match on role name and paginated.
    *
    * @param {Object} opts
    * @param {String} opts.user Required. username
    * @param {Object} opts.dbClient Required. database client instance
-   * 
-   * @returns {Promise<Array>} array of role names
+   * @param {String} [opts.search] optional case-insensitive substring filter on role name
+   * @param {Number} [opts.limit=25] max rows to return
+   * @param {Number} [opts.offset=0] rows to skip
+   *
+   * @returns {Promise<Object>} {total, roles: [roleName]}
    */
   async getUserRoles(opts={}) {
-    let { user, dbClient } = opts;
+    let { user, dbClient, search } = opts;
     if( !user || !dbClient ) {
       throw new Error('User and dbClient are required');
     }
+    let limit = opts.limit != null ? Number(opts.limit) : 25;
+    let offset = opts.offset != null ? Number(opts.offset) : 0;
+
+    let params = [user];
+    let searchClause = '';
+    if( search ) {
+      params.push(`%${search}%`);
+      searchClause = `AND r.name ILIKE $${params.length}`;
+    }
+    params.push(limit);
+    const limitIdx = params.length;
+    params.push(offset);
+    const offsetIdx = params.length;
+
     let res = await dbClient.query(`
-      SELECT r.name AS role
+      SELECT r.name AS role, COUNT(*) OVER() AS total
       FROM ${config.database.schema}.acl_role r
       JOIN ${config.database.schema}.acl_role_user ur ON r.role_id = ur.role_id
       JOIN ${config.database.schema}.acl_user u ON ur.user_id = u.user_id
-      WHERE u.name = $1`, [user]);
-    return res.rows.map(r => r.role);
+      WHERE u.name = $1
+      ${searchClause}
+      ORDER BY r.name
+      LIMIT $${limitIdx} OFFSET $${offsetIdx}`, params);
+
+    return {
+      total: res.rows[0] ? parseInt(res.rows[0].total, 10) : 0,
+      roles: res.rows.map(r => r.role)
+    };
   }
 
   /**
@@ -291,54 +316,138 @@ class Acl {
 
   /**
    * @method getRole
-   * @description Get all user role entries for a specific role name.
+   * @description Get the users assigned to a specific role, optionally filtered by a
+   * case-insensitive substring match on username and paginated.
    *
    * @param {Object} opts
    * @param {String} opts.role Required. role name
    * @param {Object} opts.dbClient Required. database client instance
-   * @returns {Promise<Object>} role object or null if it does not exist
+   * @param {String} [opts.search] optional case-insensitive substring filter on username
+   * @param {Number} [opts.limit=25] max rows to return
+   * @param {Number} [opts.offset=0] rows to skip
+   * @returns {Promise<Object>} {total, users: [{userId, user}]}
    */
   async getRole(opts={}) {
-    let { role, dbClient } = opts;
+    let { role, dbClient, search } = opts;
     if( !role || !dbClient ) {
       throw new Error('Role and dbClient are required');
     }
-    let res = await dbClient.query(`SELECT * FROM ${config.database.schema}.acl_user_roles_view WHERE role = $1`, [role]);
-    return res.rows;
+    let limit = opts.limit != null ? Number(opts.limit) : 25;
+    let offset = opts.offset != null ? Number(opts.offset) : 0;
+
+    let params = [role];
+    let searchClause = '';
+    if( search ) {
+      params.push(`%${search}%`);
+      searchClause = `AND u.name ILIKE $${params.length}`;
+    }
+    params.push(limit);
+    const limitIdx = params.length;
+    params.push(offset);
+    const offsetIdx = params.length;
+
+    let res = await dbClient.query(`
+      SELECT u.user_id AS "userId", u.name AS user, COUNT(*) OVER() AS total
+      FROM ${config.database.schema}.acl_user u
+      JOIN ${config.database.schema}.acl_role_user ru ON u.user_id = ru.user_id
+      JOIN ${config.database.schema}.acl_role r ON ru.role_id = r.role_id
+      WHERE r.name = $1
+      ${searchClause}
+      ORDER BY u.name
+      LIMIT $${limitIdx} OFFSET $${offsetIdx}`, params);
+
+    return {
+      total: res.rows[0] ? parseInt(res.rows[0].total, 10) : 0,
+      users: res.rows.map(({total, ...r}) => r)
+    };
   }
 
   /**
    * @method getRoles
-   * @description Get all defined roles.
+   * @description Get defined roles, optionally filtered by a case-insensitive substring match
+   * on role name and paginated.
    *
    * @param {Object} opts
    * @param {Object} opts.dbClient Required. database client instance
-   * @returns {Promise<Array>} array of {roleId, role, created} objects, ordered by name
+   * @param {String} [opts.search] optional case-insensitive substring filter on role name
+   * @param {Number} [opts.limit=25] max rows to return
+   * @param {Number} [opts.offset=0] rows to skip
+   * @returns {Promise<Object>} {total, roles: [{roleId, role, created}]}, ordered by name
    */
   async getRoles(opts={}) {
-    let { dbClient } = opts;
+    let { dbClient, search } = opts;
     if( !dbClient ) {
       throw new Error('dbClient is required');
     }
-    let res = await dbClient.query(`SELECT role_id AS "roleId", name AS role, created FROM ${config.database.schema}.acl_role ORDER BY name`);
-    return res.rows;
+    let limit = opts.limit != null ? Number(opts.limit) : 25;
+    let offset = opts.offset != null ? Number(opts.offset) : 0;
+
+    let params = [];
+    let where = '';
+    if( search ) {
+      params.push(`%${search}%`);
+      where = `WHERE name ILIKE $${params.length}`;
+    }
+    params.push(limit);
+    const limitIdx = params.length;
+    params.push(offset);
+    const offsetIdx = params.length;
+
+    let res = await dbClient.query(`
+      SELECT role_id AS "roleId", name AS role, created, COUNT(*) OVER() AS total
+      FROM ${config.database.schema}.acl_role
+      ${where}
+      ORDER BY name
+      LIMIT $${limitIdx} OFFSET $${offsetIdx}`, params);
+
+    return {
+      total: res.rows[0] ? parseInt(res.rows[0].total, 10) : 0,
+      roles: res.rows.map(({total, ...r}) => r)
+    };
   }
 
   /**
    * @method getUsers
-   * @description Get all defined users.
+   * @description Get defined users, optionally filtered by a case-insensitive substring match
+   * on username and paginated.
    *
    * @param {Object} opts
    * @param {Object} opts.dbClient Required. database client instance
-   * @returns {Promise<Array>} array of {userId, user, created} objects, ordered by name
+   * @param {String} [opts.search] optional case-insensitive substring filter on username
+   * @param {Number} [opts.limit=25] max rows to return
+   * @param {Number} [opts.offset=0] rows to skip
+   * @returns {Promise<Object>} {total, users: [{userId, user, created}]}, ordered by name
    */
   async getUsers(opts={}) {
-    let { dbClient } = opts;
+    let { dbClient, search } = opts;
     if( !dbClient ) {
       throw new Error('dbClient is required');
     }
-    let res = await dbClient.query(`SELECT user_id AS "userId", name AS user, created FROM ${config.database.schema}.acl_user ORDER BY name`);
-    return res.rows;
+    let limit = opts.limit != null ? Number(opts.limit) : 25;
+    let offset = opts.offset != null ? Number(opts.offset) : 0;
+
+    let params = [];
+    let where = '';
+    if( search ) {
+      params.push(`%${search}%`);
+      where = `WHERE name ILIKE $${params.length}`;
+    }
+    params.push(limit);
+    const limitIdx = params.length;
+    params.push(offset);
+    const offsetIdx = params.length;
+
+    let res = await dbClient.query(`
+      SELECT user_id AS "userId", name AS user, created, COUNT(*) OVER() AS total
+      FROM ${config.database.schema}.acl_user
+      ${where}
+      ORDER BY name
+      LIMIT $${limitIdx} OFFSET $${offsetIdx}`, params);
+
+    return {
+      total: res.rows[0] ? parseInt(res.rows[0].total, 10) : 0,
+      users: res.rows.map(({total, ...r}) => r)
+    };
   }
 
   /**

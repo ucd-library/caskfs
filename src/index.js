@@ -817,6 +817,59 @@ class CaskFs {
   }
 
   /**
+   * @method createDirectory
+   * @description Create a new empty directory, and any missing intermediate parent
+   * directories, within CaskFS. Fails if a directory or file already exists at the path.
+   *
+   * @param {Object|CaskFSContext} context context or object with directory property
+   * @param {String} context.directory Required. full path of the directory to create
+   * @param {String} [context.requestor] user name of the requestor
+   * @param {Boolean} [context.ignoreAcl] if true, skip ACL checks
+   * @param {DatabaseClient} [context.dbClient] optional database client to use
+   *
+   * @returns {Promise<Object>} object with the created directory path
+   */
+  async createDirectory(context={}) {
+    context = createContext(context, this.dbClient);
+
+    if( !context.data.directory ) {
+      throw new Error('directory is required');
+    }
+    if( context.data.directory !== '/' && context.data.directory.endsWith('/') ) {
+      context.update({
+        directory: context.data.directory.slice(0, -1)
+      });
+    }
+    const directoryPath = context.data.directory;
+
+    if( directoryPath === '/' ) {
+      throw new Error('Cannot create the root directory');
+    }
+
+    // write permission is required on the nearest existing ancestor directory - canWriteFile
+    // walks up automatically when the target itself does not exist yet, which is exactly
+    // what's needed for a not-yet-created directory.
+    await this.canWriteFile({
+      filePath: directoryPath,
+      requestor: context.data.requestor,
+      ignoreAcl: context.data.ignoreAcl,
+      dbClient: context.data.dbClient
+    });
+
+    if( await context.data.dbClient.pathExists(directoryPath) ) {
+      throw new DuplicateFileError(directoryPath);
+    }
+
+    await this.runInTransaction(async (dbClient) => {
+      await this.directory.mkdir(directoryPath, { dbClient });
+    });
+
+    this.logger.info(`Directory created: ${directoryPath}`, context.logSignal);
+
+    return { directory: directoryPath };
+  }
+
+  /**
    * @method deleteDirectory
    * @description Recursively delete a directory and all its files and subdirectories.
    *
@@ -1616,8 +1669,11 @@ class CaskFs {
    * @param {Object|CaskFSContext} context context or object with user property
    * @param {String} context.user Required. user name
    * @param {String} context.requestor user name of the requestor
+   * @param {String} [context.search] optional case-insensitive substring filter on role name
+   * @param {Number} [context.limit=25] max rows to return
+   * @param {Number} [context.offset=0] rows to skip
    * @param {Object} context.dbClient Optional. database client instance, defaults to instance dbClient
-   * @returns {Promise<Array<String>>} array of role names
+   * @returns {Promise<Object>} {total, roles: [roleName]}
    */
   async getUserRoles(context={}) {
     context = createContext(context, this.dbClient);
@@ -1627,18 +1683,24 @@ class CaskFs {
 
     return acl.getUserRoles({
       user: context.data.user,
+      search: context.data.search,
+      limit: context.data.limit,
+      offset: context.data.offset,
       dbClient: context.data.dbClient || this.dbClient
     });
   }
 
   /**
    * @method getRole
-   * @description Get all users assigned to a role.
+   * @description Get the users assigned to a role.
    *
    * @param {Object|CaskFSContext} context context or object with role property
    * @param {String} context.role Required. role name
+   * @param {String} [context.search] optional case-insensitive substring filter on username
+   * @param {Number} [context.limit=25] max rows to return
+   * @param {Number} [context.offset=0] rows to skip
    * @param {Object} context.dbClient Optional. database client instance, defaults to instance dbClient
-   * @returns {Promise<Array<Object>>} array of {userId, user, roleId, role} rows
+   * @returns {Promise<Object>} {total, users: [{userId, user}]}
    */
   async getRole(context={}) {
     context = createContext(context, this.dbClient);
@@ -1646,40 +1708,55 @@ class CaskFs {
 
     return acl.getRole({
       role: context.data.role,
+      search: context.data.search,
+      limit: context.data.limit,
+      offset: context.data.offset,
       dbClient: context.data.dbClient || this.dbClient
     });
   }
 
   /**
    * @method getRoles
-   * @description Get all defined roles.
+   * @description Get defined roles.
    *
    * @param {Object|CaskFSContext} context
+   * @param {String} [context.search] optional case-insensitive substring filter on role name
+   * @param {Number} [context.limit=25] max rows to return
+   * @param {Number} [context.offset=0] rows to skip
    * @param {Object} context.dbClient Optional. database client instance, defaults to instance dbClient
-   * @returns {Promise<Array<Object>>} array of {roleId, role, created} objects
+   * @returns {Promise<Object>} {total, roles: [{roleId, role, created}]}
    */
   async getRoles(context={}) {
     context = createContext(context, this.dbClient);
     await this.allowAdminAction(context);
 
     return acl.getRoles({
+      search: context.data.search,
+      limit: context.data.limit,
+      offset: context.data.offset,
       dbClient: context.data.dbClient || this.dbClient
     });
   }
 
   /**
    * @method getUsers
-   * @description Get all defined users.
+   * @description Get defined users.
    *
    * @param {Object|CaskFSContext} context
+   * @param {String} [context.search] optional case-insensitive substring filter on username
+   * @param {Number} [context.limit=25] max rows to return
+   * @param {Number} [context.offset=0] rows to skip
    * @param {Object} context.dbClient Optional. database client instance, defaults to instance dbClient
-   * @returns {Promise<Array<Object>>} array of {userId, user, created} objects
+   * @returns {Promise<Object>} {total, users: [{userId, user, created}]}
    */
   async getUsers(context={}) {
     context = createContext(context, this.dbClient);
     await this.allowAdminAction(context);
 
     return acl.getUsers({
+      search: context.data.search,
+      limit: context.data.limit,
+      offset: context.data.offset,
       dbClient: context.data.dbClient || this.dbClient
     });
   }

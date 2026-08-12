@@ -17,6 +17,10 @@ class FsService extends BaseService {
     return `${appUrlUtils.basePath}/api/fs`;
   }
 
+  get dirBaseUrl(){
+    return `${appUrlUtils.basePath}/api/dir`;
+  }
+
   async delete(path, options={}) {
     let ido = { path, ...options };
     let id = payload.getKey(ido);
@@ -126,6 +130,40 @@ class FsService extends BaseService {
     }
     this.store.set(entry, store, null, appStateOptions);
     this.store.emit(this.store.events.FS_DELETE_PROGRESS_UPDATE, entry);
+
+    return store.get(id);
+  }
+
+  /**
+   * @description Create a new empty directory, and any missing parent directories.
+   * @param {string} directory - directory path to create
+   * @param {object} modelAppStateOptions
+   * @returns {Promise<object>} the fs.createDirectory store record
+   */
+  async createDirectory(directory, modelAppStateOptions={}) {
+    let ido = { path: directory };
+    let id = payload.getKey(ido);
+    const store = this.store.data.createDirectory;
+
+    const appStateOptions = serviceUtils.mergeAppStateOptions(
+      { errorSettings: {message: 'Unable to create directory'} },
+      modelAppStateOptions
+    );
+
+    await this.checkRequesting(
+      id, store,
+      () => this.request({
+        url : `${this.dirBaseUrl}${directory}`,
+        fetchOptions: { method: 'POST' },
+        parseResponseJson: true,
+        onUpdate : resp => this.store.set(
+          payload.generate(ido, resp),
+          store,
+          null,
+          appStateOptions
+        )
+      })
+    );
 
     return store.get(id);
   }

@@ -32,6 +32,29 @@ const testQueryValidator = new Validator({
   isFile:     { type: 'boolean' }
 });
 
+const MAX_LIST_LIMIT = 100;
+
+const listQueryValidator = new Validator({
+  search: { type: 'string' },
+  limit:  { type: 'positiveInteger' },
+  offset: { type: 'positiveIntegerOrZero' }
+});
+
+/**
+ * @description Parse+clamp the shared search/limit/offset query params used by the paginated
+ * roles/users/membership list endpoints.
+ * @param {Object} query - req.query
+ * @returns {Object} {search, limit, offset}
+ */
+function parseListQuery(query) {
+  const { search, limit, offset } = listQueryValidator.validate(query || {});
+  return {
+    search,
+    limit: Math.min(limit ?? 25, MAX_LIST_LIMIT),
+    offset: offset ?? 0
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Directory ACL - per-directory 'admin' permission, enforced by
 // caskFs.canUpdateDirAcl() inside each of these caskFs methods.
@@ -145,7 +168,7 @@ router.get('/whoami', async (req, res) => {
       return res.status(200).json({ username: null, roles: [], isAdmin: false });
     }
 
-    const roles = await caskFs.getUserRoles({ user: username, requestor: username });
+    const { roles } = await caskFs.getUserRoles({ user: username, requestor: username, limit: MAX_LIST_LIMIT });
     const isAdmin = !(await acl.aclLookupRequired({ requestor: username, dbClient: caskFs.dbClient }));
     res.status(200).json({ username, roles, isAdmin });
   } catch (e) {
@@ -161,11 +184,14 @@ router.get('/whoami', async (req, res) => {
 
 /**
  * GET /acl/roles
- * @description List all defined roles. Admin-only.
+ * @description List defined roles, optionally filtered by `?search=` (case-insensitive
+ * substring match on role name) and paginated via `?limit=&offset=` (default 25, max 100).
+ * Admin-only.
  */
 router.get('/roles', async (req, res) => {
   try {
-    const resp = await caskFs.getRoles({ requestor: getRequestor(req) });
+    const { search, limit, offset } = parseListQuery(req.query);
+    const resp = await caskFs.getRoles({ search, limit, offset, requestor: getRequestor(req) });
     res.status(200).json(resp);
   } catch (e) {
     return handleError(res, req, e);
@@ -188,11 +214,14 @@ router.post('/roles', silentJson, async (req, res) => {
 
 /**
  * GET /acl/roles/:role/users
- * @description List all users assigned to a role. Admin-only.
+ * @description List users assigned to a role, optionally filtered by `?search=`
+ * (case-insensitive substring match on username) and paginated via `?limit=&offset=`
+ * (default 25, max 100). Admin-only.
  */
 router.get('/roles/:role/users', async (req, res) => {
   try {
-    const resp = await caskFs.getRole({ role: req.params.role, requestor: getRequestor(req) });
+    const { search, limit, offset } = parseListQuery(req.query);
+    const resp = await caskFs.getRole({ role: req.params.role, search, limit, offset, requestor: getRequestor(req) });
     res.status(200).json(resp);
   } catch (e) {
     return handleError(res, req, e);
@@ -214,11 +243,14 @@ router.delete('/roles/:role', async (req, res) => {
 
 /**
  * GET /acl/users
- * @description List all defined users. Admin-only.
+ * @description List defined users, optionally filtered by `?search=` (case-insensitive
+ * substring match on username) and paginated via `?limit=&offset=` (default 25, max 100).
+ * Admin-only.
  */
 router.get('/users', async (req, res) => {
   try {
-    const resp = await caskFs.getUsers({ requestor: getRequestor(req) });
+    const { search, limit, offset } = parseListQuery(req.query);
+    const resp = await caskFs.getUsers({ search, limit, offset, requestor: getRequestor(req) });
     res.status(200).json(resp);
   } catch (e) {
     return handleError(res, req, e);
@@ -254,12 +286,15 @@ router.delete('/users/:user', async (req, res) => {
 
 /**
  * GET /acl/users/:user/roles
- * @description List all roles assigned to a user. A caller may always look up their own
- * roles; looking up another user's roles requires the global admin role.
+ * @description List roles assigned to a user, optionally filtered by `?search=`
+ * (case-insensitive substring match on role name) and paginated via `?limit=&offset=`
+ * (default 25, max 100). A caller may always look up their own roles; looking up another
+ * user's roles requires the global admin role.
  */
 router.get('/users/:user/roles', async (req, res) => {
   try {
-    const resp = await caskFs.getUserRoles({ user: req.params.user, requestor: getRequestor(req) });
+    const { search, limit, offset } = parseListQuery(req.query);
+    const resp = await caskFs.getUserRoles({ user: req.params.user, search, limit, offset, requestor: getRequestor(req) });
     res.status(200).json(resp);
   } catch (e) {
     return handleError(res, req, e);

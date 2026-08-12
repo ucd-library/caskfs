@@ -99,14 +99,15 @@ export default class CaskfsPrincipalTypeahead extends Mixin(LitElement)
   async _ensureLoaded() {
     if ( this._all.length ) return;
     const req = this.type === 'user'
-      ? await this.AclModel.getUsers()
-      : await this.AclModel.getRoles();
+      ? await this.AclModel.getUsers({ limit: 1000 })
+      : await this.AclModel.getRoles({ limit: 1000 });
     if ( req.state === 'error' ) {
       this.fetchError = true;
       return;
     }
     this.fetchError = false;
-    this._all = (req.payload || []).map(x => this.type === 'user' ? x.user : x.role);
+    const items = (this.type === 'user' ? req.payload?.users : req.payload?.roles) || [];
+    this._all = items.map(x => this.type === 'user' ? x.user : x.role);
   }
 
   async _filter() {

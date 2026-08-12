@@ -29,7 +29,9 @@ return html`
   <div class='l-container u-space-mt--large'>
     <div class="l-basic--flipped">
       <div class="l-content">
-        <caskfs-file-metadata class='u-space-mb--large'></caskfs-file-metadata>
+        <caskfs-file-metadata class='u-space-mb--large'>
+          <caskfs-public-badge slot="caskfs-public-badge" class="u-space-mb" .directory=${this.ctl.directoryPath.parentPath || '/'}></caskfs-public-badge>
+        </caskfs-file-metadata>
         <div>
           <caskfs-section-header text='File Contents' icon='fas.file' brand-color='putah-creek'>
           </caskfs-section-header>
@@ -37,7 +39,6 @@ return html`
         </div>
       </div>
       <div class="l-sidebar-second">
-        <caskfs-public-badge class="u-space-mb" .directory=${this.ctl.directoryPath.parentPath || '/'}></caskfs-public-badge>
         <button class="btn btn--alt3 btn--block u-space-mb" @click=${this._onDeleteRequest}>Delete File</button>
         <a class="btn btn--alt3 btn--block u-space-mb" href=${this.FsModel.fileDownloadUrl(this.ctl.directoryPath.pathname)} download>Download File</a>
         <button class="btn btn--alt3 btn--block u-space-mb" @click=${this._onCopyPathClick}>Copy File System Path</button>
