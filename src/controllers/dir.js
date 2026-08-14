@@ -26,7 +26,8 @@ router.get(/(.*)/, async (req, res) => {
       offset: query.offset,
       limit: query.limit,
       query: query.query,
-      checkDirectoryExists: true
+      checkDirectoryExists: true,
+      requestor: getRequestor(req)
     });
     res.status(200).json(resp);
   } catch (e) {
@@ -34,7 +35,7 @@ router.get(/(.*)/, async (req, res) => {
     // If directory does not exist, check if a file exists at that path
     if ( e instanceof MissingResourceError ) {
       try {
-        await caskFs.metadata({filePath: directoryPath});
+        await caskFs.metadata({filePath: directoryPath, requestor: getRequestor(req)});
         const baseUrl = req.baseUrl.split('/').slice(0, -1).join('/') || '';
         const fileUrl = `${req.protocol}://${req.get('host')}${baseUrl}/fs${directoryPath}`;
         res.set('Link', `<${fileUrl}>; rel="describedby"`);

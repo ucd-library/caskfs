@@ -125,6 +125,13 @@ const config = {
     // A string value is promoted to a single-element array automatically.
     rolesPaths : (env.CASKFS_HEADER_AUTH_ROLES_PATHS || 'roles,groups')
       .split(',').map(s => s.trim()).filter(Boolean),
+  },
+
+  impersonation : {
+    // When enabled, any client can set the impersonation cookie below to act as an arbitrary
+    // username, with no verification whatsoever. Only ever enable for local development.
+    enabled    : env.CASKFS_ALLOW_IMPERSONATION === 'true',
+    cookieName : 'caskfs_impersonate_user',
   }
 
 }

@@ -180,6 +180,63 @@ describe('/acl HTTP API — directory routes, ACL enabled', () => {
   });
 });
 
+describe('GET /dir and /fs — public directory, ACL enabled', () => {
+  let caskFs, baseUrl;
+
+  before(async () => {
+    config.headerAuth.enabled = true;
+    ({ caskFs, baseUrl } = await setup());
+    config.acl.enabled = true;
+
+    await caskFs.write({ filePath: '/pub/readme.txt', data: Buffer.from('hello'), requestor: 'setup', ignoreAcl: true });
+    // seeded BEFORE the public flag is set, to prove the flag cascades to existing children
+    await caskFs.write({ filePath: '/pub/sub/nested.txt', data: Buffer.from('deep'), requestor: 'setup', ignoreAcl: true });
+    await caskFs.setDirectoryPublic({ directory: '/pub', permission: true, ignoreAcl: true });
+  });
+
+  after(async () => {
+    config.acl.enabled = false;
+    config.headerAuth.enabled = false;
+    await teardown();
+  });
+
+  it('GET /dir/pub with no auth header lists the file and the child subdirectory', async () => {
+    const res = await fetch(`${baseUrl}/dir/pub`);
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.ok(body.files.some(f => f.filename === 'readme.txt'));
+    assert.ok(body.directories.some(d => d.name === 'sub'));
+  });
+
+  it('GET /dir/pub for an authenticated user unknown to the ACL system still lists children', async () => {
+    // this user has a valid x-user header (authenticated upstream) but was never
+    // provisioned into CaskFS's acl_user table via a role/permission grant
+    const res = await fetch(`${baseUrl}/dir/pub`, { headers: userHeader('never-provisioned-user') });
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.ok(body.files.some(f => f.filename === 'readme.txt'));
+    assert.ok(body.directories.some(d => d.name === 'sub'));
+  });
+
+  it('GET /dir/pub/sub descends into the inherited-public subdirectory', async () => {
+    const res = await fetch(`${baseUrl}/dir/pub/sub`, { headers: userHeader('never-provisioned-user') });
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.ok(body.files.some(f => f.filename === 'nested.txt'));
+  });
+
+  it('GET /fs/pub/readme.txt with no auth header succeeds', async () => {
+    const res = await fetch(`${baseUrl}/fs/pub/readme.txt`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(await res.text(), 'hello');
+  });
+
+  it('POST /fs/pub/new.txt with no auth header is denied — public grants read only, never write', async () => {
+    const res = await fetch(`${baseUrl}/fs/pub/new.txt`, { method: 'POST', body: 'nope' });
+    assert.strictEqual(res.status, 403);
+  });
+});
+
 describe('/acl HTTP API — global roles/users routes', () => {
   let caskFs, baseUrl;
 

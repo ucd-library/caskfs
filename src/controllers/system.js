@@ -2,12 +2,13 @@ import { Router } from 'express';
 import handleError from './handleError.js';
 import caskFs from './caskFs.js';
 import config from '../lib/config.js';
+import { getRequestor } from '../lib/middleware/header-auth.js';
 
 const router = Router();
 
 router.get('/stats', async (req, res) => {
   try {
-    const resp = await caskFs.stats({corkTraceId: req.corkTraceId});
+    const resp = await caskFs.stats({corkTraceId: req.corkTraceId, requestor: getRequestor(req)});
     res.status(200).json(resp);
   } catch (e) {
     return handleError(res, req, e);

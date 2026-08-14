@@ -65,11 +65,11 @@ router.get(/(.*)/, async (req, res) => {
   const filePath = req.params[0] || '/';
   try {
     if ( (req.query?.partitions || '').trim().toLowerCase() === 'true' ) {
-      const detail = await caskFs.partitionKeyDetail({filePath, corkTraceId: req.corkTraceId});
+      const detail = await caskFs.partitionKeyDetail({filePath, requestor: getRequestor(req), corkTraceId: req.corkTraceId});
       return res.json(detail);
     }
 
-    const metadata = await caskFs.metadata({filePath, corkTraceId: req.corkTraceId});
+    const metadata = await caskFs.metadata({filePath, requestor: getRequestor(req), corkTraceId: req.corkTraceId});
 
     if (
       (req.query?.metadata || '').trim().toLowerCase() === 'true' ||
@@ -128,7 +128,7 @@ router.get(/(.*)/, async (req, res) => {
       }
     }
 
-    const readStream = await caskFs.read({filePath, corkTraceId: req.corkTraceId}, readOpts);
+    const readStream = await caskFs.read({filePath, requestor: getRequestor(req), corkTraceId: req.corkTraceId}, readOpts);
 
     // Clean up if the client disconnects mid-transfer
     req.on('aborted', () => {
@@ -142,7 +142,7 @@ router.get(/(.*)/, async (req, res) => {
     // If file does not exist, check if a directory exists at that path
     if ( e instanceof MissingResourceError ) {
       try {
-        const exists = await caskFs.exists({filePath});
+        const exists = await caskFs.exists({filePath, requestor: getRequestor(req)});
         if (exists) {
           const baseUrl = req.baseUrl.split('/').slice(0, -1).join('/') || '';
           const fileUrl = `${req.protocol}://${req.get('host')}${baseUrl}/dir${filePath}`;
@@ -409,6 +409,7 @@ router.delete(/(.*)/, json(), async (req, res) => {
 
   try {
     const options = validator.validate({...req.query, ...(req.body || {}) });
+    options.requestor = getRequestor(req);
 
     if( options.stream ) {
       delete options.stream;

@@ -71,6 +71,10 @@ class Acl {
     return config.acl.enabled !== undefined ? config.acl.enabled : false;
   }
 
+  set enabled(value) {
+    config.acl.enabled = value;
+  }
+
   /**
    * @method aclLookupRequired
    * @description Determine if an ACL lookup is required based on the following conditions:
@@ -537,12 +541,16 @@ class Acl {
 
   /**
    * @method getUserId
-   * @description Get the user ID for a specific user name.
+   * @description Get the user ID for a specific user name. Callers use this to look up a
+   * requestor for ACL/permission checks, where an unrecognized user (e.g. authenticated
+   * upstream but never provisioned into CaskFS because they've never been granted a role or
+   * permission) must degrade to anonymous/public-only access rather than fail the request -
+   * so this returns null instead of throwing when the user does not exist.
    *
    * @param {Object} opts
    * @param {String} opts.user Required. user name
    * @param {Object} opts.dbClient Required. database client instance
-   * @returns {Promise<String>} user ID
+   * @returns {Promise<String|null>} user ID, or null if the user does not exist
    */
   async getUserId(opts={}) {
     let { user, dbClient } = opts;
@@ -551,7 +559,7 @@ class Acl {
     }
     let res = await dbClient.query(`SELECT user_id FROM ${config.database.schema}.acl_user WHERE name = $1`, [user]);
     if( res.rows.length === 0 ) {
-      throw new Error(`User ${user} does not exist`);
+      return null;
     }
     return res.rows[0].user_id;
   }

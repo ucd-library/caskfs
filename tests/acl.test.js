@@ -492,6 +492,15 @@ describe('ACL', () => {
         ignoreAcl: true,
       });
 
+      // pre-existing subdirectory, seeded BEFORE the public flag is set, to prove
+      // the public flag cascades down to already-existing children, not just new ones
+      await caskFs.write({
+        filePath: '/open/sub/nested.txt',
+        data: Buffer.from('nested content'),
+        requestor: 'admin',
+        ignoreAcl: true,
+      });
+
       await caskFs.setDirectoryPublic({
         directory: '/open',
         permission: true,
@@ -506,9 +515,38 @@ describe('ACL', () => {
       assert.ok(result.files.some(f => f.filename === 'readme.txt'));
     });
 
+    it('ls() with no requestor shows a pre-existing child subdirectory', async () => {
+      const result = await caskFs.ls({ directory: '/open' });
+      assert.ok(result.directories.some(d => d.name === 'sub'));
+    });
+
+    it('ls() with no requestor descends into the inherited-public subdirectory', async () => {
+      const result = await caskFs.ls({ directory: '/open/sub' });
+      assert.ok(result.files.some(f => f.filename === 'nested.txt'));
+    });
+
     it('read() succeeds with no requestor on a file in a public directory', async () => {
       const buf = await caskFs.read({ filePath: '/open/readme.txt' });
       assert.strictEqual(buf.toString(), 'public content');
+    });
+
+    it('an authenticated requestor unknown to the ACL system is treated as public, not an error', async () => {
+      // this user was never created via ensureUser/ensureUserRole (e.g. authenticated
+      // upstream via OIDC but never granted an explicit permission) - listing and reading
+      // a public directory must still succeed for them, degrading to public-only access
+      const result = await caskFs.ls({ directory: '/open', requestor: 'never-provisioned-user' });
+      assert.ok(result.files.some(f => f.filename === 'readme.txt'));
+      assert.ok(result.directories.some(d => d.name === 'sub'));
+
+      const buf = await caskFs.read({ filePath: '/open/readme.txt', requestor: 'never-provisioned-user' });
+      assert.strictEqual(buf.toString(), 'public content');
+    });
+
+    it('write() is denied with no requestor on a public directory — public is read-only', async () => {
+      await assert.rejects(
+        () => caskFs.write({ filePath: '/open/hacked.txt', data: Buffer.from('nope') }),
+        { name: 'AclAccessError' }
+      );
     });
 
     it('making a directory private blocks unauthenticated access', async () => {
@@ -520,6 +558,13 @@ describe('ACL', () => {
 
       await assert.rejects(
         () => caskFs.ls({ directory: '/open' }),
+        { name: 'AclAccessError' }
+      );
+    });
+
+    it('making a directory private also blocks unauthenticated file reads', async () => {
+      await assert.rejects(
+        () => caskFs.read({ filePath: '/open/readme.txt' }),
         { name: 'AclAccessError' }
       );
     });

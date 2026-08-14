@@ -10,6 +10,7 @@ spec:
   - tests/transfer.test.js
   - tests/http-fs.test.js
   - tests/header-auth.test.js
+  - tests/impersonation.test.js
   - tests/acl-http.test.js
   - tests/auto-path-http.test.js
   - tests/cli.test.js

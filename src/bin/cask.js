@@ -861,6 +861,7 @@ program
   .option('-p, --port <port>', 'Port to run the web application on')
   .option('-r, --path-prefix <path-prefix>', 'Path prefix to mount the web application at')
   .option('-d, --disable-acl', 'Disable ACL checks for all requests (not recommended)')
+  .option('-I, --allow-impersonation', 'Let the webapp act as any username via a dev-only impersonation control (never use outside local development)')
   .action(async (options) => {
     config.acl.defaultRequestor = null; // webapp requests are always anonymous unless the user logs in
 
@@ -873,6 +874,10 @@ program
 
     if( options.disableAcl ) {
       config.acl.enabled = false;
+    }
+
+    if( options.allowImpersonation ) {
+      config.impersonation.enabled = true;
     }
 
     if ( options.pathPrefix ) {

@@ -32,6 +32,27 @@ export function styles() {
       font-weight: 700;
       text-align: center;
     }
+    .impersonation-banner {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: .75rem;
+      padding: .6rem 1rem;
+      background-color: var(--ucd-double-decker, #9c1913);
+      color: white;
+      font-weight: 700;
+      text-align: center;
+    }
+    .impersonation-banner .impersonate-form {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      font-weight: 400;
+    }
+    .impersonation-banner .impersonate-form input {
+      font-weight: 400;
+    }
     @media (min-width: 768px) {
       .branding-bar {
         flex-direction: row;
@@ -56,6 +77,7 @@ export function render() {
 return html`
   ${renderHeader.call(this)}
   ${renderAclDisabledBanner.call(this)}
+  ${renderImpersonationBanner.call(this)}
   <main>
     <cork-app-loader-bar></cork-app-loader-bar>
     <cork-app-error></cork-app-error>
@@ -83,6 +105,25 @@ function renderAclDisabledBanner(){
     <div class="acl-disabled-banner">
       <cork-icon icon="fas.triangle-exclamation"></cork-icon>
       Access control (ACL) is disabled on this server — all files and directories are unrestricted.
+    </div>
+  `;
+}
+
+function renderImpersonationBanner(){
+  if ( !config.impersonationEnabled ) return '';
+  return html`
+    <div class="impersonation-banner">
+      <cork-icon icon="fas.user-secret"></cork-icon>
+      <span>Impersonation is enabled on this server${this.currentUser?.username ? html` — acting as <strong>${this.currentUser.username}</strong>` : ''}</span>
+      <form class="impersonate-form" @submit=${e => this._onImpersonateSubmit(e)}>
+        <input
+          type="text"
+          placeholder="username"
+          .value=${this.impersonateInput}
+          @input=${e => this._onImpersonateInput(e)}>
+        <button type="submit">Impersonate</button>
+        ${this.currentUser?.username ? html`<button type="button" @click=${() => this._onImpersonateClear()}>Clear</button>` : ''}
+      </form>
     </div>
   `;
 }
