@@ -46,18 +46,20 @@ return html`
     <cork-icon-button
       icon='fas.user-shield'
       title='Manage Access'
+      ?hidden=${!this.showManageAccess}
       @click=${this._onManageAccessClick}
       link-aria-label='Manage Access'>
     </cork-icon-button>
     <cork-icon-button
       icon="fas.folder-plus"
       title="Create Empty Folder"
+      ?hidden=${!this.showWriteControls}
       @click=${this._onCreateFolderClick}
       link-aria-label="Create Empty Folder">
     </cork-icon-button>
-    <caskfs-upload-button></caskfs-upload-button>
-    <caskfs-upload-tracker-toggle></caskfs-upload-tracker-toggle>
-    <!-- <cork-icon-button 
+    <caskfs-upload-button ?hidden=${!this.showWriteControls}></caskfs-upload-button>
+    <caskfs-upload-tracker-toggle ?hidden=${!this.showWriteControls}></caskfs-upload-tracker-toggle>
+    <!-- <cork-icon-button
       icon='fas.sort'
       title='Sort Items'
       @click=${this._onSortClick}
@@ -67,7 +69,7 @@ return html`
       icon='fas.trash'
       color='medium'
       title='Delete Selected Items'
-      ?hidden=${!this.ctl.select.selected.length}
+      ?hidden=${!this.showWriteControls || !this.ctl.select.selected.length}
       @click=${this._onBulkDeleteClick}
       link-aria-label='Delete Selected Items'>
     </cork-icon-button>

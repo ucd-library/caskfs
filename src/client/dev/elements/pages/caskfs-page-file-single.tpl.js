@@ -15,6 +15,9 @@ export function styles() {
     caskfs-page-file-single {
       display: block;
     }
+    caskfs-page-file-single [hidden] {
+      display: none !important;
+    }
     caskfs-page-file-single caskfs-fs-breadcrumbs {
       margin: 1rem 1rem 1.75rem 1rem;
     }
@@ -42,7 +45,7 @@ return html`
         <button class="btn btn--alt3 btn--block u-space-mb" @click=${this._onDeleteRequest}>Delete File</button>
         <a class="btn btn--alt3 btn--block u-space-mb" href=${this.FsModel.fileDownloadUrl(this.ctl.directoryPath.pathname)} download>Download File</a>
         <button class="btn btn--alt3 btn--block u-space-mb" @click=${this._onCopyPathClick}>Copy File System Path</button>
-        <button class="btn btn--alt3 btn--block u-space-mb" @click=${this._onManageAccessClick}>Manage Access</button>
+        <button class="btn btn--alt3 btn--block u-space-mb" ?hidden=${!this.showManageAccess} @click=${this._onManageAccessClick}>Manage Access</button>
         <div class="u-space-mb u-space-mt--large">
           <caskfs-lineage-widget></caskfs-lineage-widget>
         </div>

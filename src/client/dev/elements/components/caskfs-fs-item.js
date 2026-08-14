@@ -2,10 +2,12 @@ import { LitElement, html } from 'lit';
 import {render} from "./caskfs-fs-item.tpl.js";
 import { LitCorkUtils, Mixin } from '@ucd-lib/cork-app-utils';
 import { MainDomElement } from "@ucd-lib/theme-elements/utils/mixins/main-dom-element.js";
+import config from '../../config.js';
 
 import './caskfs-delete-form.js';
 import './caskfs-acl-form.js';
 import DirectoryItemSelectController from '../../controllers/DirectoryItemSelectController.js';
+import DirectoryPermissionController from '../../controllers/DirectoryPermissionController.js';
 import FsDisplayUtils from '../../utils/FsDisplayUtils.js';
 
 export default class CaskfsFsItem extends Mixin(LitElement)
@@ -28,17 +30,30 @@ export default class CaskfsFsItem extends Mixin(LitElement)
     this.hideSelect = false;
     this.showDirectoryLink = false;
     this.hideTypeIcon = false;
-    
+
     this.ctl = {
-      select: new DirectoryItemSelectController(this, {hostDataProperty: 'data'})
+      select: new DirectoryItemSelectController(this, {hostDataProperty: 'data'}),
+      permission: new DirectoryPermissionController(this)
     };
 
     this._injectModel('AppStateModel');
   }
 
+  /**
+   * @description Manage Access is only relevant for directory rows, hidden outright when ACL
+   * is disabled, and otherwise requires the current user to hold admin permission on this row's
+   * directory (the same permission the ACL form itself requires).
+   */
+  get showManageAccess() {
+    return !!this.fsUtils?.isDirectory && !!config.aclEnabled && this.ctl.permission.canAdmin;
+  }
+
   willUpdate(props){
     if ( props.has('data') ) {
       this.fsUtils = new FsDisplayUtils(this.data);
+      if ( this.fsUtils.isDirectory && this.data.fullname ) {
+        this.ctl.permission.check(this.data.fullname);
+      }
     }
   }
 

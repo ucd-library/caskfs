@@ -32,6 +32,10 @@ const testQueryValidator = new Validator({
   isFile:     { type: 'boolean' }
 });
 
+const myPermissionQueryValidator = new Validator({
+  permission: { type: 'string', required: true, inSet: PERMISSIONS }
+});
+
 const MAX_LIST_LIMIT = 100;
 
 const listQueryValidator = new Validator({
@@ -59,6 +63,29 @@ function parseListQuery(query) {
 // Directory ACL - per-directory 'admin' permission, enforced by
 // caskFs.canUpdateDirAcl() inside each of these caskFs methods.
 // ---------------------------------------------------------------------------
+
+/**
+ * GET /acl/directory/*\/my-permission
+ * @description Report whether the calling user has a specific permission on this directory.
+ * Self-check only, like /whoami below - no admin gate, since it only ever evaluates the
+ * caller's own identity (never an arbitrary target user, unlike the admin-only /test
+ * diagnostic). Used by the webapp to decide whether to show write/admin-only directory
+ * controls to the current user. Registered before the plain GET /directory/* route below,
+ * since that route's regex would otherwise greedily match this suffixed path too.
+ */
+router.get(/^\/directory(\/.*)?\/my-permission$/, async (req, res) => {
+  try {
+    const directory = req.params[0] || '/';
+    const { permission } = myPermissionQueryValidator.validate(req.query || {});
+    const hasPermission = await caskFs.hasPermission(
+      { directory, requestor: getRequestor(req) },
+      { permission }
+    );
+    res.status(200).json({ directory, permission, hasPermission });
+  } catch (e) {
+    return handleError(res, req, e);
+  }
+});
 
 /**
  * GET /acl/directory/*

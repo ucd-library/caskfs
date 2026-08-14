@@ -22,7 +22,7 @@ class DirectoryService extends BaseService {
     const store = this.store.data.list;
 
     const appStateOptions = serviceUtils.mergeAppStateOptions(
-      { errorSettings: {message: 'Unable to list directory contents'} },
+      { errorSettings: {suppressError: true} },
       modelAppStateOptions
     );
 

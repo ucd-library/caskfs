@@ -10,6 +10,7 @@ import FsDisplayUtils from '../utils/FsDisplayUtils.js';
  * @propery {Boolean} opts.parent If true, the controller will get the contents of the parent directory of the current path. Default is false.
  * @property {Number} totalPages The total number of pages for the current directory listing
  * @property {Array} contents The contents of the current directory listing
+ * @property {Object} error The error from the last failed listing request, or null if the last request succeeded
  */
 export default class DirectoryListController {
   constructor(host, opts={}){
@@ -22,6 +23,7 @@ export default class DirectoryListController {
 
     this.totalPages = 0;
     this.contents = [];
+    this.error = null;
   }
 
   get directoryPathCtl(){
@@ -66,9 +68,11 @@ export default class DirectoryListController {
     const res = await this.DirectoryModel.list(path, query);
     if ( res.state !== 'loaded' ) {
       this.contents = [];
+      this.error = res.error || {};
       this.host.requestUpdate();
       return;
     }
+    this.error = null;
     let contents = [];
     for ( const dir of res.payload.directories ) {
       if ( opts.asDisplayItems ) {

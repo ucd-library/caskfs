@@ -1,5 +1,6 @@
 import { html, css } from 'lit';
 import appUrlUtils from '../utils/appUrlUtils.js';
+import config from '../config.js';
 
 export function styles() {
   const elementStyles = css`
@@ -19,6 +20,17 @@ export function styles() {
       font-size: .875rem;
       color: var(--ucd-black-60, #666);
       white-space: nowrap;
+    }
+    .acl-disabled-banner {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: .5rem;
+      padding: .6rem 1rem;
+      background-color: var(--ucd-gold, #ffbf00);
+      color: var(--ucd-blue, #022851);
+      font-weight: 700;
+      text-align: center;
     }
     @media (min-width: 768px) {
       .branding-bar {
@@ -40,9 +52,10 @@ export function styles() {
   return [elementStyles];
 }
 
-export function render() { 
+export function render() {
 return html`
   ${renderHeader.call(this)}
+  ${renderAclDisabledBanner.call(this)}
   <main>
     <cork-app-loader-bar></cork-app-loader-bar>
     <cork-app-error></cork-app-error>
@@ -63,6 +76,16 @@ return html`
     </ucdlib-pages>
   </main>
 `;}
+
+function renderAclDisabledBanner(){
+  if ( config.aclEnabled ) return '';
+  return html`
+    <div class="acl-disabled-banner">
+      <cork-icon icon="fas.triangle-exclamation"></cork-icon>
+      Access control (ACL) is disabled on this server — all files and directories are unrestricted.
+    </div>
+  `;
+}
 
 function renderHeader(){
   return html`
@@ -89,7 +112,7 @@ function renderHeader(){
         </ul>
         <ul link-text='Config'>
           <li><a href=${appUrlUtils.fullLocation('/config/partitions')}>Partitions</a></li>
-          <li ?hidden=${!this.currentUser?.isAdmin}>
+          <li ?hidden=${!(config.aclEnabled && this.currentUser?.isAdmin)}>
             <a href=${appUrlUtils.fullLocation('/config/access')}>Access</a>
           </li>
         </ul>

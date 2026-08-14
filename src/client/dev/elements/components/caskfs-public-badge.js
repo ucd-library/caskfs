@@ -1,6 +1,7 @@
 import { LitElement } from 'lit';
 import {render, styles} from "./caskfs-public-badge.tpl.js";
 import { LitCorkUtils, Mixin } from '@ucd-lib/cork-app-utils';
+import config from '../../config.js';
 
 /**
  * @description Small "publicly readable" indicator for a directory or file page, so a user
@@ -64,6 +65,12 @@ export default class CaskfsPublicBadge extends Mixin(LitElement)
   }
 
   async _load() {
+    // no ACL info at all when ACL enforcement is disabled - skip the request entirely
+    if ( !config.aclEnabled ) {
+      this.isPublic = false;
+      return;
+    }
+
     const directory = this.directory;
     const res = await this.AclModel.getDirectoryAcl(directory, { errorSettings: { suppressError: true } });
     if ( directory !== this.directory ) return;

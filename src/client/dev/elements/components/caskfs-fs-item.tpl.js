@@ -75,7 +75,7 @@ function renderDesktopView(){
 }
 
 function renderManageAccessIcon(){
-  if ( !this.fsUtils.isDirectory ) return '';
+  if ( !this.showManageAccess ) return '';
   return html`
     <cork-icon-button
       @click=${this._onManageAccessClick}

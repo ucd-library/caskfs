@@ -122,7 +122,7 @@ describe('/acl HTTP API — directory routes, ACL enabled', () => {
   before(async () => {
     config.headerAuth.enabled = true;
     ({ caskFs, baseUrl } = await setup());
-    aclImpl.enabled = true;
+    config.acl.enabled = true;
 
     await caskFs.write({ filePath: '/dir-a/file.txt', data: Buffer.from('a'), requestor: 'setup', ignoreAcl: true });
     await caskFs.write({ filePath: '/dir-b/file.txt', data: Buffer.from('b'), requestor: 'setup', ignoreAcl: true });
@@ -136,7 +136,7 @@ describe('/acl HTTP API — directory routes, ACL enabled', () => {
   });
 
   after(async () => {
-    aclImpl.enabled = false;
+    config.acl.enabled = false;
     config.headerAuth.enabled = false;
     await teardown();
   });
@@ -186,7 +186,7 @@ describe('/acl HTTP API — global roles/users routes', () => {
   before(async () => {
     config.headerAuth.enabled = true;
     ({ caskFs, baseUrl } = await setup());
-    aclImpl.enabled = true;
+    config.acl.enabled = true;
 
     await caskFs.write({ filePath: '/global-acl-test/file.txt', data: Buffer.from('x'), requestor: 'setup', ignoreAcl: true });
     await caskFs.setDirectoryPermission({ directory: '/global-acl-test', principal: 'local-managers', permission: 'admin', ignoreAcl: true });
@@ -196,7 +196,7 @@ describe('/acl HTTP API — global roles/users routes', () => {
   });
 
   after(async () => {
-    aclImpl.enabled = false;
+    config.acl.enabled = false;
     config.headerAuth.enabled = false;
     await teardown();
   });
@@ -352,7 +352,7 @@ describe('GET /acl/test', () => {
   before(async () => {
     config.headerAuth.enabled = true;
     ({ caskFs, baseUrl } = await setup());
-    aclImpl.enabled = true;
+    config.acl.enabled = true;
 
     await caskFs.write({ filePath: '/test-endpoint/file.txt', data: Buffer.from('x'), requestor: 'setup', ignoreAcl: true });
     await caskFs.setDirectoryPermission({ directory: '/test-endpoint', principal: 'readers', permission: 'read', ignoreAcl: true });
@@ -361,7 +361,7 @@ describe('GET /acl/test', () => {
   });
 
   after(async () => {
-    aclImpl.enabled = false;
+    config.acl.enabled = false;
     config.headerAuth.enabled = false;
     await teardown();
   });
@@ -394,20 +394,96 @@ describe('GET /acl/test', () => {
   });
 });
 
+describe('GET /acl/directory/*/my-permission', () => {
+  let caskFs, baseUrl;
+
+  before(async () => {
+    config.headerAuth.enabled = true;
+    ({ caskFs, baseUrl } = await setup());
+    config.acl.enabled = true;
+
+    await caskFs.write({ filePath: '/my-permission-test/file.txt', data: Buffer.from('x'), requestor: 'setup', ignoreAcl: true });
+    await caskFs.setDirectoryPermission({ directory: '/my-permission-test', principal: 'mp-writers', permission: 'write', ignoreAcl: true });
+    await aclImpl.ensureUserRole({ user: 'mp-writer', role: 'mp-writers', dbClient: caskFs.dbClient });
+    await aclImpl.ensureUserRole({ user: 'mp-admin', role: 'admin', dbClient: caskFs.dbClient });
+  });
+
+  after(async () => {
+    config.acl.enabled = false;
+    config.headerAuth.enabled = false;
+    await teardown();
+  });
+
+  it('does not require the caller to be an admin, unlike /acl/test', async () => {
+    const url = new URL(`${baseUrl}/acl/directory/my-permission-test/my-permission`);
+    url.searchParams.set('permission', 'write');
+    const res = await fetch(url, { headers: userHeader('mp-writer') });
+    assert.strictEqual(res.status, 200);
+  });
+
+  it('reports true for a permission the caller has', async () => {
+    const url = new URL(`${baseUrl}/acl/directory/my-permission-test/my-permission`);
+    url.searchParams.set('permission', 'write');
+    const res = await fetch(url, { headers: userHeader('mp-writer') });
+    assert.deepStrictEqual(await res.json(), {
+      directory: '/my-permission-test', permission: 'write', hasPermission: true
+    });
+  });
+
+  it('reports false (not an error) for a permission the caller lacks', async () => {
+    const url = new URL(`${baseUrl}/acl/directory/my-permission-test/my-permission`);
+    url.searchParams.set('permission', 'admin');
+    const res = await fetch(url, { headers: userHeader('mp-writer') });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual((await res.json()).hasPermission, false);
+  });
+
+  it('reports true for a global admin', async () => {
+    const url = new URL(`${baseUrl}/acl/directory/my-permission-test/my-permission`);
+    url.searchParams.set('permission', 'admin');
+    const res = await fetch(url, { headers: userHeader('mp-admin') });
+    assert.strictEqual((await res.json()).hasPermission, true);
+  });
+
+  it('reports false for an unauthenticated caller checking write', async () => {
+    const url = new URL(`${baseUrl}/acl/directory/my-permission-test/my-permission`);
+    url.searchParams.set('permission', 'write');
+    const res = await fetch(url);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual((await res.json()).hasPermission, false);
+  });
+
+  it('rejects an invalid permission value with 400', async () => {
+    const url = new URL(`${baseUrl}/acl/directory/my-permission-test/my-permission`);
+    url.searchParams.set('permission', 'nope');
+    const res = await fetch(url, { headers: userHeader('mp-writer') });
+    assert.strictEqual(res.status, 400);
+  });
+
+  it('reports true for anyone when ACL is disabled', async () => {
+    config.acl.enabled = false;
+    const url = new URL(`${baseUrl}/acl/directory/my-permission-test/my-permission`);
+    url.searchParams.set('permission', 'admin');
+    const res = await fetch(url);
+    assert.strictEqual((await res.json()).hasPermission, true);
+    config.acl.enabled = true;
+  });
+});
+
 describe('GET /acl/whoami', () => {
   let caskFs, baseUrl;
 
   before(async () => {
     config.headerAuth.enabled = true;
     ({ caskFs, baseUrl } = await setup());
-    aclImpl.enabled = true;
+    config.acl.enabled = true;
 
     await aclImpl.ensureUserRole({ user: 'whoami-viewer', role: 'viewer', dbClient: caskFs.dbClient });
     await aclImpl.ensureUserRole({ user: 'whoami-admin', role: 'admin', dbClient: caskFs.dbClient });
   });
 
   after(async () => {
-    aclImpl.enabled = false;
+    config.acl.enabled = false;
     config.headerAuth.enabled = false;
     await teardown();
   });

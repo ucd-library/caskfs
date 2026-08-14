@@ -19,7 +19,8 @@ export default class CaskfsFileMetadata extends Mixin(LitElement)
       data: { type: Object },
       highlightedData: { state: true },
       fsUtils: { state: true },
-      showRaw: { type: Boolean, attribute: 'show-raw' }
+      showRaw: { type: Boolean, attribute: 'show-raw' },
+      error: { state: true }
     }
   }
 
@@ -34,6 +35,7 @@ export default class CaskfsFileMetadata extends Mixin(LitElement)
     this.data = {};
     this.highlightedData = '';
     this.showRaw = false;
+    this.error = null;
 
     this.ctl = {
       appComponent: new AppComponentController(this),
@@ -68,7 +70,22 @@ export default class CaskfsFileMetadata extends Mixin(LitElement)
     const res = await this.FsModel.getMetadata(this.ctl.directoryPath.pathname);
     if ( res.state === 'loaded' ) {
       this.data = res.payload;
+      this.error = null;
+    } else {
+      this.error = res.error || {};
     }
+  }
+
+  /**
+   * @description Message to show in place of the metadata grid when the last metadata request failed
+   * @returns {String}
+   */
+  get errorMessage() {
+    const status = this.error?.response?.status;
+    if ( status === 403 || status === 404 ) {
+      return 'This file does not exist or you do not have access';
+    }
+    return 'Unable to load file metadata. Please try again.';
   }
 
   _onEditPartitionsClick(){

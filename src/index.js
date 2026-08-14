@@ -1899,6 +1899,34 @@ class CaskFs {
   }
 
   /**
+   * @method hasPermission
+   * @description Non-throwing self-check: does context.data.requestor have a specific
+   * permission on a directory (or file)? Unlike testPermission (an admin-only diagnostic for
+   * evaluating an arbitrary target user), this never requires the caller to already be an
+   * admin - it only ever evaluates the caller's own identity, so it's safe to expose to any
+   * logged-in user. Intended for the webapp to decide whether to show write/admin-only UI
+   * controls for the current user.
+   *
+   * @param {Object|CaskFSContext} context
+   * @param {String} context.directory or context.filePath - path to check
+   * @param {String} context.requestor - user name to check (the caller's own identity)
+   * @param {Object} opts
+   * @param {String} opts.permission Required. one of 'read', 'write', 'admin'
+   * @param {Boolean} [opts.isFile=false] whether the path is a file (vs. a directory)
+   * @returns {Promise<Boolean>} true if the requestor has the permission
+   */
+  async hasPermission(context={}, opts={}) {
+    context = createContext(context, this.dbClient);
+    try {
+      await this.checkPermissions(context, { permission: opts.permission, isFile: opts.isFile, noContextUpdate: true });
+      return true;
+    } catch(e) {
+      if( e instanceof AclAccessError ) return false;
+      throw e;
+    }
+  }
+
+  /**
    * @method testPermission
    * @description Test whether a given user would have a specific permission on a file or
    * directory. A global admin-only diagnostic: context.requestor is the caller performing the

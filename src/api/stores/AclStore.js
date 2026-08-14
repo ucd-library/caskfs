@@ -9,6 +9,7 @@ class AclStore extends BaseStore {
     this.data = {
       whoami: new LruStore({name: 'acl.whoami'}),
       directoryAcl: new LruStore({name: 'acl.directoryAcl'}),
+      directoryPermission: new LruStore({name: 'acl.directoryPermission'}),
       setDirectoryPublic: new LruStore({name: 'acl.setDirectoryPublic'}),
       setDirectoryPermission: new LruStore({name: 'acl.setDirectoryPermission'}),
       removeDirectoryPermission: new LruStore({name: 'acl.removeDirectoryPermission'}),

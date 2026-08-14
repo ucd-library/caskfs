@@ -72,9 +72,17 @@ function startServer(opts = {}) {
 
   app.listen(port, () => {
     logger.info(`CaskFs web application running on port ${port}`);
-    logger.info(`Mounted at basepath: ${basepath}`);
-    logger.info(`Web application ${disableWebApp ? 'disabled' : 'enabled'}`);
-    logger.info(`Request logging ${logRequests ? 'enabled' : 'disabled'}`);
+    logger.info(`Mounted at basepath : ${basepath}`);
+    logger.info(`Web application     : ${disableWebApp ? 'disabled' : 'enabled'}`);
+    logger.info(`Request logging     : ${logRequests ? 'enabled' : 'disabled'}`);
+    logger.info(`Header auth         : ${config.headerAuth.enabled ? 'enabled' : 'disabled'}`);
+    if( config.headerAuth.enabled ) {
+      logger.info(`Header auth header  : ${config.headerAuth.header}`);
+      logger.info(`Header auth user    : ${config.headerAuth.userPaths.join(', ')}`);
+      logger.info(`Header auth roles   : ${config.headerAuth.rolesPaths.join(', ')}`);
+    }
+    logger.info(`ACL                 : ${config.acl.enabled ? 'enabled' : 'disabled'}`);
+
   });
 }
 

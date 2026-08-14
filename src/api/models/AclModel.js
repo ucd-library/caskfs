@@ -22,6 +22,10 @@ class AclModel extends BaseModel {
     return this.service.getDirectoryAcl(directory, appStateOptions);
   }
 
+  checkDirectoryPermission(directory, permission, appStateOptions={}) {
+    return this.service.checkDirectoryPermission(directory, permission, appStateOptions);
+  }
+
   async setDirectoryPublic(directory, isPublic, appStateOptions={}) {
     const res = await this.service.setDirectoryPublic(directory, isPublic, appStateOptions);
     if ( res.state === 'loaded' ) { clearCache(); this._emitDirectoryAclChanged(directory); }

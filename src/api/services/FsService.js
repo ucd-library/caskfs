@@ -174,7 +174,7 @@ class FsService extends BaseService {
     const store = this.store.data.metadata;
 
     const appStateOptions = serviceUtils.mergeAppStateOptions(
-      { errorSettings: {message: 'Unable to get file metadata'} },
+      { errorSettings: {suppressError: true} },
       modelAppStateOptions
     );
 

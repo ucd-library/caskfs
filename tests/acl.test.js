@@ -1,6 +1,7 @@
 import assert from 'assert';
 import { setup, teardown } from './helpers/setup.js';
 import aclImpl from '../src/lib/acl.js';
+import config from '../src/lib/config.js';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -16,7 +17,7 @@ import aclImpl from '../src/lib/acl.js';
  * @param {Array}   [opts.seedFiles]     - [{filePath, data}] written with ignoreAcl:true
  */
 async function aclSetup(opts={}) {
-  aclImpl.enabled = true;
+  config.acl.enabled = true;
 
   const caskFs = await setup();
 
@@ -57,7 +58,7 @@ async function aclSetup(opts={}) {
 }
 
 async function aclTeardown() {
-  aclImpl.enabled = false;
+  config.acl.enabled = false;
   await teardown();
 }
 
@@ -71,7 +72,7 @@ describe('ACL', () => {
     let caskFs;
 
     before(async () => {
-      aclImpl.enabled = true;
+      config.acl.enabled = true;
       caskFs = await setup();
       // Write a file without ACL, but set NO permissions on the directory
       await caskFs.write({
@@ -481,7 +482,7 @@ describe('ACL', () => {
     let caskFs;
 
     before(async () => {
-      aclImpl.enabled = true;
+      config.acl.enabled = true;
       caskFs = await setup();
 
       await caskFs.write({
@@ -530,7 +531,7 @@ describe('ACL', () => {
     let caskFs;
 
     before(async () => {
-      aclImpl.enabled = true;
+      config.acl.enabled = true;
       caskFs = await setup();
 
       await caskFs.write({
@@ -599,7 +600,7 @@ describe('ACL', () => {
     let caskFs;
 
     before(async () => {
-      aclImpl.enabled = true;
+      config.acl.enabled = true;
       caskFs = await setup();
 
       await caskFs.write({
@@ -653,7 +654,7 @@ describe('ACL', () => {
     let caskFs;
 
     before(async () => {
-      aclImpl.enabled = true;
+      config.acl.enabled = true;
       caskFs = await setup();
       await caskFs.write({
         filePath: '/cascade-test/file.txt',
@@ -708,6 +709,73 @@ describe('ACL', () => {
         () => caskFs.ls({ directory: '/cascade-test', requestor: 'erin' }),
         { name: 'AclAccessError' }
       );
+    });
+  });
+
+  // ── 10. hasPermission() — non-throwing self-check ──────────────────────────
+
+  describe('hasPermission() — non-throwing self-check', () => {
+    let caskFs;
+
+    before(async () => {
+      config.acl.enabled = true;
+      caskFs = await setup();
+
+      await caskFs.write({
+        filePath: '/self-check/file.txt',
+        data: Buffer.from('x'),
+        requestor: 'setup',
+        ignoreAcl: true,
+      });
+      await caskFs.setDirectoryPermission({
+        directory: '/self-check', principal: 'self-check-writers', permission: 'write', ignoreAcl: true
+      });
+      await aclImpl.ensureUserRole({ user: 'writer', role: 'self-check-writers', dbClient: caskFs.dbClient });
+      await aclImpl.ensureUserRole({ user: 'self-check-admin', role: 'admin', dbClient: caskFs.dbClient });
+    });
+
+    after(aclTeardown);
+
+    it('returns true for a permission the requestor has', async () => {
+      const result = await caskFs.hasPermission(
+        { directory: '/self-check', requestor: 'writer' },
+        { permission: 'write' }
+      );
+      assert.strictEqual(result, true);
+    });
+
+    it('returns false (does not throw) for a permission the requestor lacks', async () => {
+      const result = await caskFs.hasPermission(
+        { directory: '/self-check', requestor: 'writer' },
+        { permission: 'admin' }
+      );
+      assert.strictEqual(result, false);
+    });
+
+    it('returns false for an anonymous requestor checking write', async () => {
+      const result = await caskFs.hasPermission(
+        { directory: '/self-check' },
+        { permission: 'write' }
+      );
+      assert.strictEqual(result, false);
+    });
+
+    it('returns true for a global admin regardless of directory-specific grants', async () => {
+      const result = await caskFs.hasPermission(
+        { directory: '/self-check', requestor: 'self-check-admin' },
+        { permission: 'admin' }
+      );
+      assert.strictEqual(result, true);
+    });
+
+    it('returns true for any permission when ACL is disabled', async () => {
+      config.acl.enabled = false;
+      const result = await caskFs.hasPermission(
+        { directory: '/self-check', requestor: 'random-nobody' },
+        { permission: 'admin' }
+      );
+      assert.strictEqual(result, true);
+      config.acl.enabled = true;
     });
   });
 

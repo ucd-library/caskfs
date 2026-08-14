@@ -63,9 +63,12 @@ class Acl {
 
   constructor() {
     this.logger = getLogger('acl');
-    this.enabled = config.acl.enabled !== undefined ? config.acl.enabled : false;
     this.cache = new AclCache();
     this.ALLOWED_PERMISSIONS = new Set(['read', 'write', 'admin']);
+  }
+
+  get enabled() {
+    return config.acl.enabled !== undefined ? config.acl.enabled : false;
   }
 
   /**

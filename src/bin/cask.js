@@ -860,12 +860,19 @@ program
   .description('Start the CaskFs web application')
   .option('-p, --port <port>', 'Port to run the web application on')
   .option('-r, --path-prefix <path-prefix>', 'Path prefix to mount the web application at')
+  .option('-d, --disable-acl', 'Disable ACL checks for all requests (not recommended)')
   .action(async (options) => {
+    config.acl.defaultRequestor = null; // webapp requests are always anonymous unless the user logs in
+
     handleGlobalOpts(options);
 
     if( options.environment && options.environment?.config?.clientEnv === 'dev' ) {
       console.log('Starting CaskFs web application in development mode');
       config.webapp.isDevEnv = true;
+    }
+
+    if( options.disableAcl ) {
+      config.acl.enabled = false;
     }
 
     if ( options.pathPrefix ) {

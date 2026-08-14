@@ -1,5 +1,6 @@
 import { html, css } from 'lit';
 import appUrlUtils from '../../utils/appUrlUtils.js';
+import config from '../../config.js';
 
 export function styles() {
   const elementStyles = css`
@@ -54,6 +55,10 @@ export function styles() {
       flex: 1;
       min-width: 0;
     }
+    .access-restricted {
+      margin-top: 1.5rem;
+      color: var(--ucd-black-70, #4c4c4c);
+    }
   `;
 
   return [elementStyles];
@@ -68,36 +73,52 @@ export function render() {
         <li>Access</li>
       </ol>
       <div class="l-container u-space-mt--large">
-        <div class="access-layout">
-          <nav class="access-nav">
-            <button
-              class="nav-item ${this.activeTab === 'roles' ? 'active' : ''}"
-              @click=${() => this._onTabClick('roles')}>
-              Roles
-            </button>
-            <button
-              class="nav-item ${this.activeTab === 'users' ? 'active' : ''}"
-              @click=${() => this._onTabClick('users')}>
-              Users
-            </button>
-          </nav>
-          <div class="access-content">
-            ${this.selected
-              ? html`
-                <caskfs-principal-relations
-                  mode=${this.activeTab === 'roles' ? 'role-members' : 'user-roles'}
-                  .name=${this.selected}
-                  @caskfs-principal-relations-back=${this._onRelationsBack}>
-                </caskfs-principal-relations>
-              `
-              : html`
-                <caskfs-principal-list
-                  type=${this.activeTab === 'roles' ? 'role' : 'user'}
-                  @caskfs-principal-list-select=${this._onListSelect}>
-                </caskfs-principal-list>
-              `}
-          </div>
-        </div>
+        ${this.isAuthorized ? renderAccessAdmin.call(this) : renderRestricted.call(this)}
+      </div>
+    </div>
+  `;
+}
+
+function renderRestricted() {
+  return html`
+    <div class="access-restricted">
+      ${!config.aclEnabled
+        ? html`<p>Access control is not enabled on this server.</p>`
+        : html`<p>You do not have permission to manage users and roles.</p>`}
+    </div>
+  `;
+}
+
+function renderAccessAdmin() {
+  return html`
+    <div class="access-layout">
+      <nav class="access-nav">
+        <button
+          class="nav-item ${this.activeTab === 'roles' ? 'active' : ''}"
+          @click=${() => this._onTabClick('roles')}>
+          Roles
+        </button>
+        <button
+          class="nav-item ${this.activeTab === 'users' ? 'active' : ''}"
+          @click=${() => this._onTabClick('users')}>
+          Users
+        </button>
+      </nav>
+      <div class="access-content">
+        ${this.selected
+          ? html`
+            <caskfs-principal-relations
+              mode=${this.activeTab === 'roles' ? 'role-members' : 'user-roles'}
+              .name=${this.selected}
+              @caskfs-principal-relations-back=${this._onRelationsBack}>
+            </caskfs-principal-relations>
+          `
+          : html`
+            <caskfs-principal-list
+              type=${this.activeTab === 'roles' ? 'role' : 'user'}
+              @caskfs-principal-list-select=${this._onListSelect}>
+            </caskfs-principal-list>
+          `}
       </div>
     </div>
   `;

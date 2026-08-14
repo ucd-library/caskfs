@@ -100,6 +100,42 @@ class AclService extends BaseService {
   }
 
   /**
+   * @description Check whether the current user has a specific permission on a directory.
+   * Self-check only, not admin-gated - mirrors getWhoAmI's "tell me about myself" pattern.
+   * @param {String} directory
+   * @param {String} permission - 'read' | 'write' | 'admin'
+   * @param {Object} modelAppStateOptions
+   * @returns {Promise<Object>} store record; payload is {directory, permission, hasPermission}
+   */
+  async checkDirectoryPermission(directory, permission, modelAppStateOptions={}) {
+    const id = await digest({directory, permission});
+    const store = this.store.data.directoryPermission;
+
+    const appStateOptions = serviceUtils.mergeAppStateOptions(
+      { errorSettings: {suppressError: true} },
+      modelAppStateOptions
+    );
+
+    await this.checkRequesting(
+      id, store,
+      () => this.request({
+        url : `${this.baseUrl}/directory${directory}/my-permission`,
+        qs: { permission },
+        parseResponseJson: true,
+        checkCached : () => store.get(id),
+        onUpdate : resp => this.store.set(
+          {...resp, id},
+          store,
+          null,
+          appStateOptions
+        )
+      })
+    );
+
+    return store.get(id);
+  }
+
+  /**
    * @description Set or clear the public-read flag for a directory.
    * @param {String} directory
    * @param {Boolean} isPublic
