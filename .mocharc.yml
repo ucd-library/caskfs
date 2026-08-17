@@ -6,6 +6,7 @@ spec:
   - tests/cas.test.js
   - tests/partitions.test.js
   - tests/ld-operations.test.js
+  - tests/ld-harvesting.test.js
   - tests/sync.test.js
   - tests/transfer.test.js
   - tests/http-fs.test.js

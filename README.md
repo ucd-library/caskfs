@@ -374,6 +374,10 @@ CaskFS is configured via environment variables. All variables are optional and f
 | `CASKFS_CLOUD_STORAGE_PROJECT` | _(none)_ | GCP project ID |
 | `CASKFS_ENABLE_POWERWASH` | `false` | Allow the `init-pg --powerwash` command to drop and recreate the schema |
 | `CASKFS_HTTP_TOKEN` | _(none)_ | Client-side: overrides the bearer token configured on `HttpCaskFsClient` (CLI `http` environments, or services embedding the client). Useful for swapping the token at deploy time without touching stored config |
+| `CASKFS_FILTER_URIS` | _(none)_ | Exact URIs opted into search filtering (types, subjects, predicates, objects, graphs) — see [Linked Data Harvesting Configuration](docs/ld.md#linked-data-harvesting-configuration) |
+| `CASKFS_FILTER_URI_MATCHES` | _(none)_ | Regex patterns opted into search filtering |
+| `CASKFS_LINK_PREDICATES` | _(none)_ | Exact predicate URIs opted into inter-file link harvesting |
+| `CASKFS_LINK_PREDICATE_MATCHES` | _(none)_ | Regex patterns opted into inter-file link harvesting |
 
 
 # Deployment

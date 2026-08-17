@@ -18,6 +18,32 @@ const stringDataTypes = (env.CASKFS_STRING_DATA_TYPES ?
   'http://www.w3.org/1999/02/22-rdf-syntax-ns#langString, http://www.w3.org/2001/XMLSchema#string')
   .split(',').map(s => s.trim()).filter(s => s.length > 0);
 
+const filterUris = (env.CASKFS_FILTER_URIS ?
+  env.CASKFS_FILTER_URIS :
+  '')
+  .split(',').map(s => s.trim()).filter(s => s.length > 0);
+
+const filterUriMatches = (env.CASKFS_FILTER_URI_MATCHES ?
+  env.CASKFS_FILTER_URI_MATCHES :
+  '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(s => s.length > 0)
+  .map(s => new RegExp(s));
+
+const linkPredicates = (env.CASKFS_LINK_PREDICATES ?
+  env.CASKFS_LINK_PREDICATES :
+  '')
+  .split(',').map(s => s.trim()).filter(s => s.length > 0);
+
+const linkPredicateMatches = (env.CASKFS_LINK_PREDICATE_MATCHES ?
+  env.CASKFS_LINK_PREDICATE_MATCHES :
+  '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(s => s.length > 0)
+  .map(s => new RegExp(s));
+
 const config = {
 
   rootDir : env.CASKFS_ROOT_DIR || '/opt/caskfs',
@@ -42,6 +68,10 @@ const config = {
     literalPredicates,
     literalPredicateMatches,
     stringDataTypes,
+    filterUris,
+    filterUriMatches,
+    linkPredicates,
+    linkPredicateMatches,
     typePredicate: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
   },
 
