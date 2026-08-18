@@ -3,6 +3,7 @@ import handleError from './handleError.js';
 import caskFs from './caskFs.js';
 import { Validator } from './validate.js';
 import { MissingResourceError } from '../lib/errors.js';
+import { getRequestor } from '../lib/middleware/header-auth.js';
 
 const router = Router();
 
@@ -25,7 +26,8 @@ router.get(/(.*)/, async (req, res) => {
       offset: query.offset,
       limit: query.limit,
       query: query.query,
-      checkDirectoryExists: true
+      checkDirectoryExists: true,
+      requestor: getRequestor(req)
     });
     res.status(200).json(resp);
   } catch (e) {
@@ -33,7 +35,7 @@ router.get(/(.*)/, async (req, res) => {
     // If directory does not exist, check if a file exists at that path
     if ( e instanceof MissingResourceError ) {
       try {
-        await caskFs.metadata({filePath: directoryPath});
+        await caskFs.metadata({filePath: directoryPath, requestor: getRequestor(req)});
         const baseUrl = req.baseUrl.split('/').slice(0, -1).join('/') || '';
         const fileUrl = `${req.protocol}://${req.get('host')}${baseUrl}/fs${directoryPath}`;
         res.set('Link', `<${fileUrl}>; rel="describedby"`);
@@ -54,5 +56,20 @@ router.get(/(.*)/, async (req, res) => {
   }
 });
 
+
+// create a new empty directory, and any missing parent directories
+router.post(/(.*)/, async (req, res) => {
+  const directoryPath = req.params[0] || '/';
+  try {
+    const result = await caskFs.createDirectory({
+      directory: directoryPath,
+      requestor: getRequestor(req) || 'http',
+      corkTraceId: req.corkTraceId
+    });
+    res.status(201).json(result);
+  } catch (e) {
+    return handleError(res, req, e);
+  }
+});
 
 export default router;

@@ -156,6 +156,20 @@ class FsModel extends BaseModel {
     return res;
   }
 
+  /**
+   * @description Create a new empty directory, and any missing parent directories.
+   * @param {string} directory - directory path to create
+   * @param {object} appStateOptions
+   * @returns {Promise<object>}
+   */
+  async createDirectory(directory, appStateOptions={}) {
+    const res = await this.service.createDirectory(directory, appStateOptions);
+    if ( res.state === 'loaded' ) {
+      clearCache();
+    }
+    return res;
+  }
+
   getMetadata(path, appStateOptions={}) {
     return this.service.getMetadata(path, appStateOptions);
   }

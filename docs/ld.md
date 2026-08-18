@@ -10,6 +10,7 @@ Contents:
 - [Linked Data - CLI Methods](#linked-data-cli-methods)
 - [Reference Binary File](#reference-binary-file)
 - [File Relationships](#file-relationships)
+- [Linked Data Harvesting Configuration](#linked-data-harvesting-configuration)
 
 ## Key Features
 
@@ -181,3 +182,66 @@ a relationship request for `/path/to/file1` will return the following:
   "inbound": {}
 }
 ```
+
+# Linked Data Harvesting Configuration
+
+Not every URI or literal in an RDF file is useful to index — a large graph can carry thousands of
+incidental triples that would otherwise bloat the search and relationship tables. CaskFS lets you opt
+specific predicates or URIs into three independent harvesting behaviors. Each is controlled by a pair
+of settings: an exact-match list and a regex-match list. A triple is harvested by a given mechanism if
+it matches *either* list; anything that matches neither is silently skipped.
+
+All matching happens against fully-expanded, absolute URIs — never against a compact term, prefix, or
+CURIE from the source document's `@context`. JSON-LD expansion resolves those before CaskFS ever sees
+the triple. The one CaskFS-specific exception is the `cask:/` shorthand described in
+[Reference Binary File](#reference-binary-file) (e.g. `cask:/../file.jpg`) — subject, object, and graph
+URIs written that way are resolved to their full `cask://path/to/file` form before matching, so allowlist
+entries for those should use the full resolved form, not the shorthand as it appears in the source file.
+
+## Literal Harvesting
+
+Controls which predicates get their literal (text) value stored for retrieval via `literal()`.
+
+- `CASKFS_LITERAL_PREDICATES` — comma-separated list of exact predicate URIs.
+- `CASKFS_LITERAL_PREDICATE_MATCHES` — comma-separated list of regex patterns tested against the predicate URI.
+- Default: `http://schema.org/name` and `(#|/)name$` — so any `...#name` or `.../name` predicate is
+  harvested as a literal out of the box.
+
+## Filter Harvesting
+
+Controls which URIs become searchable via `find()` — this covers `rdf:type` values, subjects, predicates,
+objects, and graph URIs alike. A URI must match the allowlist to be written to `file_ld_filter`;
+everything else is ignored for search purposes (it's still present in the underlying RDF, it's just not
+a queryable facet).
+
+- `CASKFS_FILTER_URIS` — comma-separated list of exact URIs.
+- `CASKFS_FILTER_URI_MATCHES` — comma-separated list of regex patterns.
+- Default: none. Filter harvesting is opt-in — set at least one of these if you want `find()` to return
+  anything.
+
+Example: to make `schema.org` types and your own app's entity subjects searchable:
+```
+CASKFS_FILTER_URI_MATCHES=^http://schema\.org/,^https://library\.ucdavis\.edu/app/
+```
+
+## Link Harvesting
+
+Controls which predicate/object pairs become inter-file links, used by `relationships()` to compute
+inbound/outbound edges between files. The match is checked against the **predicate** URI only — if a
+predicate is opted in, every NamedNode object it points to becomes a link.
+
+- `CASKFS_LINK_PREDICATES` — comma-separated list of exact predicate URIs.
+- `CASKFS_LINK_PREDICATE_MATCHES` — comma-separated list of regex patterns.
+- Default: none. Link harvesting is opt-in — set at least one of these if you want `relationships()` to
+  return anything.
+
+Example: to track `schema:image` and any custom `worksWith`-style relation:
+```
+CASKFS_LINK_PREDICATES=http://schema.org/image
+CASKFS_LINK_PREDICATE_MATCHES=worksWith$
+```
+
+> **Upgrade note:** prior to this feature, all types/subjects/predicates/objects/graphs were filterable
+> and every predicate/object link was harvested unconditionally. Filter and link harvesting are now
+> opt-in — existing deployments that rely on `find()` or `relationships()` need to set the env vars
+> above after upgrading, or those queries will start returning empty results.

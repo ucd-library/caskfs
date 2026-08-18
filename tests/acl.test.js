@@ -1,6 +1,7 @@
 import assert from 'assert';
 import { setup, teardown } from './helpers/setup.js';
 import aclImpl from '../src/lib/acl.js';
+import config from '../src/lib/config.js';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -16,7 +17,7 @@ import aclImpl from '../src/lib/acl.js';
  * @param {Array}   [opts.seedFiles]     - [{filePath, data}] written with ignoreAcl:true
  */
 async function aclSetup(opts={}) {
-  aclImpl.enabled = true;
+  config.acl.enabled = true;
 
   const caskFs = await setup();
 
@@ -47,7 +48,7 @@ async function aclSetup(opts={}) {
   if (opts.directory && opts.role && opts.permission) {
     await caskFs.setDirectoryPermission({
       directory: opts.directory,
-      role: opts.role,
+      principal: opts.role,
       permission: opts.permission,
       ignoreAcl: true,
     });
@@ -57,7 +58,7 @@ async function aclSetup(opts={}) {
 }
 
 async function aclTeardown() {
-  aclImpl.enabled = false;
+  config.acl.enabled = false;
   await teardown();
 }
 
@@ -71,7 +72,7 @@ describe('ACL', () => {
     let caskFs;
 
     before(async () => {
-      aclImpl.enabled = true;
+      config.acl.enabled = true;
       caskFs = await setup();
       // Write a file without ACL, but set NO permissions on the directory
       await caskFs.write({
@@ -190,7 +191,7 @@ describe('ACL', () => {
       // call metadata() internally — grant alice read too.
       await caskFs.setDirectoryPermission({
         directory: '/writable',
-        role: 'writers',
+        principal: 'writers',
         permission: 'read',
         ignoreAcl: true,
       });
@@ -203,7 +204,7 @@ describe('ACL', () => {
       });
       await caskFs.setDirectoryPermission({
         directory: '/writable',
-        role: 'readers',
+        principal: 'readers',
         permission: 'read',
         ignoreAcl: true,
       });
@@ -308,6 +309,54 @@ describe('ACL', () => {
     });
   });
 
+  // ── 4b. Inheritance for directories created after the ACL was already set ──
+
+  describe('ACL inheritance — directory created after the ancestor ACL already exists', () => {
+    let caskFs;
+
+    before(async () => {
+      // /created-later exists (via a seed file) and gets its own ACL BEFORE
+      // /created-later/newchild is ever created - unlike aclSetup's usual order
+      // (seed files first, then permission), this reproduces mkdir() having to
+      // link a brand new directory to an ACL that predates it.
+      caskFs = await aclSetup({
+        directory: '/created-later',
+        role: 'family',
+        user: 'alice',
+        permission: 'read',
+        seedFiles: [
+          { filePath: '/created-later/top.txt', data: 'top' },
+        ],
+      });
+
+      await caskFs.write({
+        filePath: '/created-later/newchild/later.txt',
+        data: Buffer.from('later'),
+        requestor: 'admin',
+        ignoreAcl: true,
+      });
+    });
+
+    after(aclTeardown);
+
+    it('user can ls() the directory created after the ACL was set', async () => {
+      const result = await caskFs.ls({ directory: '/created-later/newchild', requestor: 'alice' });
+      assert.ok(result.files.some(f => f.filename === 'later.txt'));
+    });
+
+    it('user can read() a file in that directory via inherited permission', async () => {
+      const buf = await caskFs.read({ filePath: '/created-later/newchild/later.txt', requestor: 'alice' });
+      assert.strictEqual(buf.toString(), 'later');
+    });
+
+    it('a user NOT in the role is denied on the newly created child', async () => {
+      await assert.rejects(
+        () => caskFs.ls({ directory: '/created-later/newchild', requestor: 'bob' }),
+        { name: 'AclAccessError' }
+      );
+    });
+  });
+
   // ── 5. Override ────────────────────────────────────────────────────────────
 
   describe('ACL override — child ACL replaces parent ACL entirely', () => {
@@ -331,7 +380,7 @@ describe('ACL', () => {
       // she can read /vault.
       await caskFs.setDirectoryPermission({
         directory: '/vault/secret',
-        role: 'admins',
+        principal: 'admins',
         permission: 'read',
         ignoreAcl: true,
       });
@@ -390,7 +439,7 @@ describe('ACL', () => {
       // child gets its own ACL — blocks everyone
       await caskFs.setDirectoryPermission({
         directory: '/grandparent/child',
-        role: 'nobody',
+        principal: 'nobody',
         permission: 'read',
         ignoreAcl: true,
       });
@@ -433,12 +482,21 @@ describe('ACL', () => {
     let caskFs;
 
     before(async () => {
-      aclImpl.enabled = true;
+      config.acl.enabled = true;
       caskFs = await setup();
 
       await caskFs.write({
         filePath: '/open/readme.txt',
         data: Buffer.from('public content'),
+        requestor: 'admin',
+        ignoreAcl: true,
+      });
+
+      // pre-existing subdirectory, seeded BEFORE the public flag is set, to prove
+      // the public flag cascades down to already-existing children, not just new ones
+      await caskFs.write({
+        filePath: '/open/sub/nested.txt',
+        data: Buffer.from('nested content'),
         requestor: 'admin',
         ignoreAcl: true,
       });
@@ -457,9 +515,38 @@ describe('ACL', () => {
       assert.ok(result.files.some(f => f.filename === 'readme.txt'));
     });
 
+    it('ls() with no requestor shows a pre-existing child subdirectory', async () => {
+      const result = await caskFs.ls({ directory: '/open' });
+      assert.ok(result.directories.some(d => d.name === 'sub'));
+    });
+
+    it('ls() with no requestor descends into the inherited-public subdirectory', async () => {
+      const result = await caskFs.ls({ directory: '/open/sub' });
+      assert.ok(result.files.some(f => f.filename === 'nested.txt'));
+    });
+
     it('read() succeeds with no requestor on a file in a public directory', async () => {
       const buf = await caskFs.read({ filePath: '/open/readme.txt' });
       assert.strictEqual(buf.toString(), 'public content');
+    });
+
+    it('an authenticated requestor unknown to the ACL system is treated as public, not an error', async () => {
+      // this user was never created via ensureUser/ensureUserRole (e.g. authenticated
+      // upstream via OIDC but never granted an explicit permission) - listing and reading
+      // a public directory must still succeed for them, degrading to public-only access
+      const result = await caskFs.ls({ directory: '/open', requestor: 'never-provisioned-user' });
+      assert.ok(result.files.some(f => f.filename === 'readme.txt'));
+      assert.ok(result.directories.some(d => d.name === 'sub'));
+
+      const buf = await caskFs.read({ filePath: '/open/readme.txt', requestor: 'never-provisioned-user' });
+      assert.strictEqual(buf.toString(), 'public content');
+    });
+
+    it('write() is denied with no requestor on a public directory — public is read-only', async () => {
+      await assert.rejects(
+        () => caskFs.write({ filePath: '/open/hacked.txt', data: Buffer.from('nope') }),
+        { name: 'AclAccessError' }
+      );
     });
 
     it('making a directory private blocks unauthenticated access', async () => {
@@ -474,6 +561,13 @@ describe('ACL', () => {
         { name: 'AclAccessError' }
       );
     });
+
+    it('making a directory private also blocks unauthenticated file reads', async () => {
+      await assert.rejects(
+        () => caskFs.read({ filePath: '/open/readme.txt' }),
+        { name: 'AclAccessError' }
+      );
+    });
   });
 
   // ── 8. Admin bypasses ACL ─────────────────────────────────────────────────
@@ -482,7 +576,7 @@ describe('ACL', () => {
     let caskFs;
 
     before(async () => {
-      aclImpl.enabled = true;
+      config.acl.enabled = true;
       caskFs = await setup();
 
       await caskFs.write({
@@ -495,7 +589,7 @@ describe('ACL', () => {
       // Set a permission that only 'other-role' has — admin should bypass this
       await caskFs.setDirectoryPermission({
         directory: '/restricted',
-        role: 'other-role',
+        principal: 'other-role',
         permission: 'read',
         ignoreAcl: true,
       });
@@ -542,6 +636,191 @@ describe('ACL', () => {
         () => caskFs.ls({ directory: '/restricted', requestor: 'bob' }),
         { name: 'AclAccessError' }
       );
+    });
+  });
+
+  // ── 9. Principal abstraction — direct user grants (no role involved) ──────
+
+  describe('direct user grant — permission on a user, bypassing roles entirely', () => {
+    let caskFs;
+
+    before(async () => {
+      config.acl.enabled = true;
+      caskFs = await setup();
+
+      await caskFs.write({
+        filePath: '/direct-readable/doc.txt',
+        data: Buffer.from('hello'),
+        requestor: 'admin',
+        ignoreAcl: true,
+      });
+
+      await caskFs.setDirectoryPermission({
+        directory: '/direct-readable',
+        principal: 'alice',
+        principalType: 'user',
+        permission: 'read',
+        ignoreAcl: true,
+      });
+    });
+
+    after(aclTeardown);
+
+    it('ls() should succeed for a user with a direct read grant', async () => {
+      const result = await caskFs.ls({ directory: '/direct-readable', requestor: 'alice' });
+      assert.ok(result.files.some(f => f.filename === 'doc.txt'));
+    });
+
+    it('read() should succeed for a user with a direct read grant', async () => {
+      const buf = await caskFs.read({ filePath: '/direct-readable/doc.txt', requestor: 'alice' });
+      assert.strictEqual(buf.toString(), 'hello');
+    });
+
+    it('ls() should throw for a different user with no grant', async () => {
+      await assert.rejects(
+        () => caskFs.ls({ directory: '/direct-readable', requestor: 'bob' }),
+        { name: 'AclAccessError' }
+      );
+    });
+
+    it('direct grant alone should NOT allow write', async () => {
+      await assert.rejects(
+        () => caskFs.write({
+          filePath: '/direct-readable/new.txt',
+          data: Buffer.from('nope'),
+          requestor: 'alice',
+        }),
+        { name: 'AclAccessError' }
+      );
+    });
+  });
+
+  describe('principal validation and cascade-delete triggers', () => {
+    let caskFs;
+
+    before(async () => {
+      config.acl.enabled = true;
+      caskFs = await setup();
+      await caskFs.write({
+        filePath: '/cascade-test/file.txt',
+        data: Buffer.from('x'),
+        requestor: 'admin',
+        ignoreAcl: true,
+      });
+    });
+
+    after(aclTeardown);
+
+    it('rejects a grant to a principalType with no matching principal (no FK, so this is enforced by trigger)', async () => {
+      // setDirectoryPermission always creates the principal first (ensureUser/ensureRole), so
+      // exercise the trigger directly the way a raw/manual insert would hit it.
+      const { rootDirectoryAclId } = await aclImpl.ensureRootDirectoryAcl({
+        directory: '/cascade-test', dbClient: caskFs.dbClient, isPublic: false
+      });
+      await assert.rejects(
+        () => caskFs.dbClient.query(
+          `INSERT INTO ${caskFs.schema}.acl_permission (root_directory_acl_id, permission, principal_type, principal_id)
+           VALUES ($1, 'read', 'user', gen_random_uuid())`,
+          [rootDirectoryAclId]
+        ),
+        /does not reference an existing user/
+      );
+    });
+
+    it('deleting a role cascades to remove its directory permissions', async () => {
+      await caskFs.setDirectoryPermission({
+        directory: '/cascade-test', principal: 'temp-role', permission: 'read', ignoreAcl: true
+      });
+      await aclImpl.ensureUserRole({ user: 'dave', role: 'temp-role', dbClient: caskFs.dbClient });
+      await caskFs.ls({ directory: '/cascade-test', requestor: 'dave' }); // sanity: works before delete
+
+      await aclImpl.removeRole({ role: 'temp-role', dbClient: caskFs.dbClient });
+
+      await assert.rejects(
+        () => caskFs.ls({ directory: '/cascade-test', requestor: 'dave' }),
+        { name: 'AclAccessError' }
+      );
+    });
+
+    it('deleting a user cascades to remove their direct grants', async () => {
+      await caskFs.setDirectoryPermission({
+        directory: '/cascade-test', principal: 'erin', principalType: 'user', permission: 'read', ignoreAcl: true
+      });
+      await caskFs.ls({ directory: '/cascade-test', requestor: 'erin' }); // sanity: works before delete
+
+      await aclImpl.removeUser({ user: 'erin', dbClient: caskFs.dbClient });
+
+      await assert.rejects(
+        () => caskFs.ls({ directory: '/cascade-test', requestor: 'erin' }),
+        { name: 'AclAccessError' }
+      );
+    });
+  });
+
+  // ── 10. hasPermission() — non-throwing self-check ──────────────────────────
+
+  describe('hasPermission() — non-throwing self-check', () => {
+    let caskFs;
+
+    before(async () => {
+      config.acl.enabled = true;
+      caskFs = await setup();
+
+      await caskFs.write({
+        filePath: '/self-check/file.txt',
+        data: Buffer.from('x'),
+        requestor: 'setup',
+        ignoreAcl: true,
+      });
+      await caskFs.setDirectoryPermission({
+        directory: '/self-check', principal: 'self-check-writers', permission: 'write', ignoreAcl: true
+      });
+      await aclImpl.ensureUserRole({ user: 'writer', role: 'self-check-writers', dbClient: caskFs.dbClient });
+      await aclImpl.ensureUserRole({ user: 'self-check-admin', role: 'admin', dbClient: caskFs.dbClient });
+    });
+
+    after(aclTeardown);
+
+    it('returns true for a permission the requestor has', async () => {
+      const result = await caskFs.hasPermission(
+        { directory: '/self-check', requestor: 'writer' },
+        { permission: 'write' }
+      );
+      assert.strictEqual(result, true);
+    });
+
+    it('returns false (does not throw) for a permission the requestor lacks', async () => {
+      const result = await caskFs.hasPermission(
+        { directory: '/self-check', requestor: 'writer' },
+        { permission: 'admin' }
+      );
+      assert.strictEqual(result, false);
+    });
+
+    it('returns false for an anonymous requestor checking write', async () => {
+      const result = await caskFs.hasPermission(
+        { directory: '/self-check' },
+        { permission: 'write' }
+      );
+      assert.strictEqual(result, false);
+    });
+
+    it('returns true for a global admin regardless of directory-specific grants', async () => {
+      const result = await caskFs.hasPermission(
+        { directory: '/self-check', requestor: 'self-check-admin' },
+        { permission: 'admin' }
+      );
+      assert.strictEqual(result, true);
+    });
+
+    it('returns true for any permission when ACL is disabled', async () => {
+      config.acl.enabled = false;
+      const result = await caskFs.hasPermission(
+        { directory: '/self-check', requestor: 'random-nobody' },
+        { permission: 'admin' }
+      );
+      assert.strictEqual(result, true);
+      config.acl.enabled = true;
     });
   });
 

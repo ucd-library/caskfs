@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import acl from './acl.js';
 import autoPath from './auto-path.js';
 import dir from './dir.js';
 import fs from './fs.js';
@@ -11,6 +12,7 @@ import lineage from './lineage.js';
 
 const router = Router();
 
+router.use('/acl', acl);
 router.use('/auto-path', autoPath);
 router.use('/dir', dir);
 router.use('/fs', fs);

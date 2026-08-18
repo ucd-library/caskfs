@@ -59,6 +59,22 @@ export default class CaskfsDirectoryList extends Mixin(LitElement)
     }
   }
 
+  /**
+   * @description Message to show in the listing panel when there are no contents to display,
+   * either because the directory is empty or the last listing request failed
+   * @returns {String}
+   */
+  get noContentsMessage() {
+    const status = this.ctl.directoryList.error?.response?.status;
+    if ( status === 403 || status === 404 ) {
+      return 'This directory does not exist or you do not have access';
+    }
+    if ( this.ctl.directoryList.error ) {
+      return 'Unable to load directory contents. Please try again.';
+    }
+    return 'This directory is empty';
+  }
+
   _onPageChange(e){
     this.ctl.qs.setParam('page', e.detail.page);
     this.ctl.qs.setLocation();

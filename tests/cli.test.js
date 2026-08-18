@@ -42,6 +42,97 @@ function runCask(args, opts={}) {
   });
 }
 
+/**
+ * @function runAclCliFlow
+ * @description Exercise the full `cask acl` command surface end-to-end (both direct-pg and
+ * http modes run this same flow). ACL enforcement is disabled for these CLI tests (see env()
+ * in each mode below), so every command should succeed unconditionally - this flow proves the
+ * commands are wired correctly, not that admin-gating works (that's covered at the
+ * library/HTTP-controller level in tests/acl-admin.test.js and tests/acl-http.test.js).
+ *
+ * @param {Object} env - env vars for the CLI subprocess (from the caller's env() helper)
+ * @param {String} dataFile - local file path to write as the fixture file
+ * @returns {Promise<void>}
+ */
+async function runAclCliFlow(env, dataFile) {
+  const role = 'cli-test-role';
+  const user = 'cli-test-user';
+  const dir  = '/acl-cli-test';
+
+  let r = await runCask(['write', `${dir}/fixture.txt`, '-d', dataFile], { env });
+  assert.strictEqual(r.code, 0, `fixture write failed: ${r.stderr}`);
+
+  r = await runCask(['acl', 'role-add', role], { env });
+  assert.strictEqual(r.code, 0, `role-add failed: ${r.stderr}`);
+
+  r = await runCask(['acl', 'role-list'], { env });
+  assert.strictEqual(r.code, 0, `role-list failed: ${r.stderr}`);
+  assert.ok(r.stdout.includes(role), `expected ${role} in role-list output:\n${r.stdout}`);
+
+  r = await runCask(['acl', 'user-add', user], { env });
+  assert.strictEqual(r.code, 0, `user-add failed: ${r.stderr}`);
+
+  r = await runCask(['acl', 'user-list'], { env });
+  assert.strictEqual(r.code, 0, `user-list failed: ${r.stderr}`);
+  assert.ok(r.stdout.includes(user), `expected ${user} in user-list output:\n${r.stdout}`);
+
+  r = await runCask(['acl', 'user-role-set', user, role], { env });
+  assert.strictEqual(r.code, 0, `user-role-set failed: ${r.stderr}`);
+
+  r = await runCask(['acl', 'user-role-get', '--user', user], { env });
+  assert.strictEqual(r.code, 0, `user-role-get --user failed: ${r.stderr}`);
+  assert.ok(r.stdout.includes(role), `expected ${role} in user-role-get output:\n${r.stdout}`);
+
+  r = await runCask(['acl', 'user-role-get', '--role', role], { env });
+  assert.strictEqual(r.code, 0, `user-role-get --role failed: ${r.stderr}`);
+  assert.ok(r.stdout.includes(user), `expected ${user} in user-role-get output:\n${r.stdout}`);
+
+  r = await runCask(['acl', 'permission-set', dir, role, 'read'], { env });
+  assert.strictEqual(r.code, 0, `permission-set failed: ${r.stderr}`);
+
+  r = await runCask(['acl', 'get', dir], { env });
+  assert.strictEqual(r.code, 0, `get failed: ${r.stderr}`);
+  assert.ok(r.stdout.includes(role), `expected ${role} in get output:\n${r.stdout}`);
+
+  r = await runCask(['acl', 'public-set', dir, 'true'], { env });
+  assert.strictEqual(r.code, 0, `public-set failed: ${r.stderr}`);
+
+  r = await runCask(['acl', 'test', dir, user, 'read'], { env });
+  assert.strictEqual(r.code, 0, `test failed: ${r.stderr}`);
+  assert.strictEqual(r.stdout.trim(), 'true', `expected 'true' from acl test:\n${r.stdout}`);
+
+  r = await runCask(['acl', 'test', dir, user, 'write'], { env });
+  assert.strictEqual(r.code, 0, `test (write) failed: ${r.stderr}`);
+  assert.strictEqual(r.stdout.trim(), 'false', `expected 'false' from acl test (write):\n${r.stdout}`);
+
+  r = await runCask(['acl', 'permission-remove', dir, role, 'read'], { env });
+  assert.strictEqual(r.code, 0, `permission-remove failed: ${r.stderr}`);
+
+  // Direct user grant (--type user), bypassing roles entirely - the role-based read
+  // permission was just removed above, so this proves the direct grant works on its own.
+  r = await runCask(['acl', 'permission-set', dir, user, 'read', '--type', 'user'], { env });
+  assert.strictEqual(r.code, 0, `permission-set --type user failed: ${r.stderr}`);
+
+  r = await runCask(['acl', 'test', dir, user, 'read'], { env });
+  assert.strictEqual(r.code, 0, `test (direct user grant) failed: ${r.stderr}`);
+  assert.strictEqual(r.stdout.trim(), 'true', `expected 'true' from acl test after direct user grant:\n${r.stdout}`);
+
+  r = await runCask(['acl', 'permission-remove', dir, user, 'read', '--type', 'user'], { env });
+  assert.strictEqual(r.code, 0, `permission-remove --type user failed: ${r.stderr}`);
+
+  r = await runCask(['acl', 'remove', dir], { env });
+  assert.strictEqual(r.code, 0, `remove failed: ${r.stderr}`);
+
+  r = await runCask(['acl', 'user-role-remove', user, role], { env });
+  assert.strictEqual(r.code, 0, `user-role-remove failed: ${r.stderr}`);
+
+  r = await runCask(['acl', 'user-remove', user], { env });
+  assert.strictEqual(r.code, 0, `user-remove failed: ${r.stderr}`);
+
+  r = await runCask(['acl', 'role-remove', role], { env });
+  assert.strictEqual(r.code, 0, `role-remove failed: ${r.stderr}`);
+}
+
 // ---------------------------------------------------------------------------
 // Direct-PG mode CLI tests
 // ---------------------------------------------------------------------------
@@ -230,6 +321,12 @@ describe('CLI – direct-pg mode', () => {
       );
     });
   });
+
+  describe('acl commands (direct-pg)', () => {
+    it('should run the full acl CLI flow', async () => {
+      await runAclCliFlow(env(), dataFile);
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -408,6 +505,12 @@ describe('CLI – http mode', () => {
         stdout.includes('files processed') || stdout.includes('files inserted'),
         `expected summary in output:\n${stdout}`
       );
+    });
+  });
+
+  describe('acl commands (http)', () => {
+    it('should run the full acl CLI flow', async () => {
+      await runAclCliFlow(env(), dataFile);
     });
   });
 });

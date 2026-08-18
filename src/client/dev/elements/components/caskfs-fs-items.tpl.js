@@ -34,10 +34,10 @@ export function styles() {
       grid-template-columns: 1fr 30px;
     }
     .view--full .desktop-view .row-grid {
-      grid-template-columns: minmax(0, 3fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr) 30px;
+      grid-template-columns: minmax(0, 3fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr) 80px;
     }
     .view--simple .desktop-view .row-grid {
-      grid-template-columns: minmax(0, 3fr) minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr) 30px;
+      grid-template-columns: minmax(0, 3fr) minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr) 80px;
     }
     .table-header .name-container {
       display: flex;
@@ -102,7 +102,7 @@ export function styles() {
       margin-top: .25rem;
     }
 
-    caskfs-fs-item .delete-icon {
+    caskfs-fs-item .delete-icon, caskfs-fs-item .manage-access-icon {
       --cork-icon-button-size: 1.25rem;
       margin-top: 2px;
     }

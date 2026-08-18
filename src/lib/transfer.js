@@ -287,14 +287,15 @@ class Transfer {
         rda.public,
         COALESCE(
           json_agg(
-            jsonb_build_object('role', r.name, 'permission', p.permission)
+            jsonb_build_object('principalType', p.principal_type, 'principal', COALESCE(r.name, u.name), 'permission', p.permission)
           ) FILTER (WHERE p.acl_permission_id IS NOT NULL),
           '[]'::json
         ) AS permissions
       FROM ${this.schema}.root_directory_acl rda
       JOIN ${this.schema}.directory d ON rda.directory_id = d.directory_id
       LEFT JOIN ${this.schema}.acl_permission p ON rda.root_directory_acl_id = p.root_directory_acl_id
-      LEFT JOIN ${this.schema}.acl_role r ON p.role_id = r.role_id
+      LEFT JOIN ${this.schema}.acl_role r ON p.principal_type = 'role' AND p.principal_id = r.role_id
+      LEFT JOIN ${this.schema}.acl_user u ON p.principal_type = 'user' AND p.principal_id = u.user_id
       GROUP BY d.fullname, rda.public
       ORDER BY d.fullname
     `);

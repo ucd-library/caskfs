@@ -12,11 +12,12 @@ const pipelineAsync = promisify(pipeline);
  * directly to PostgreSQL and the filesystem.
  *
  * This client covers methods that have corresponding HTTP endpoints.
- * Operations without endpoints (ACL management, admin, individual auto-path rule
- * set/remove/list, archive) throw a descriptive error directing the user to use
- * direct-pg mode. Bulk auto-path rule loading (loadAutoPathRules/loadAutoPathRulesFromFile)
- * and auto-path testing (autoPath[type].getFromPath) are supported over HTTP via
- * admin-only endpoints.
+ * Operations without endpoints (admin, individual auto-path rule set/remove/list, archive)
+ * throw a descriptive error directing the user to use direct-pg mode. Bulk auto-path rule
+ * loading (loadAutoPathRules/loadAutoPathRulesFromFile) and auto-path testing
+ * (autoPath[type].getFromPath) are supported over HTTP via admin-only endpoints. ACL
+ * management (users, roles, directory permissions) is fully supported over HTTP via the
+ * /acl endpoints - see the ACL methods section below.
  */
 class HttpCaskFsClient {
 
@@ -41,7 +42,6 @@ class HttpCaskFsClient {
 
     // Namespace sub-objects wired in constructor
     this.rdf = this._buildRdf();
-    this.acl = this._buildAcl();
     this.autoPath = this._buildAutoPath();
     this.transfer = this._buildTransfer();
     this.cas = this._buildCas();
@@ -294,6 +294,19 @@ class HttpCaskFsClient {
   }
 
   /**
+   * @method createDirectory
+   * @description Create a new empty directory, and any missing parent directories, via POST /dir/*.
+   * @param {Object} opts
+   * @param {String} opts.directory
+   * @returns {Promise<Object>}
+   */
+  async createDirectory(opts={}) {
+    const { directory } = this._extract(opts);
+    const res = await this._fetch(`${this.baseUrl}/dir${directory}`, { method: 'POST' });
+    return res.json();
+  }
+
+  /**
    * @method optimisticBatchWrite
    * @description Batch-write file records when CAS content is already present on the server.
    * No stream or buffer data is sent — each file is identified by its sha256 hash.
@@ -531,6 +544,300 @@ class HttpCaskFsClient {
   }
 
   // ---------------------------------------------------------------------------
+  // ACL methods
+  // ---------------------------------------------------------------------------
+
+  /**
+   * @method getWhoAmI
+   * @description Report the caller's own identity via GET /acl/whoami - no admin required.
+   * @returns {Promise<{username: String|null, roles: Array<String>, isAdmin: Boolean}>}
+   */
+  async getWhoAmI() {
+    const res = await this._fetch(`${this.baseUrl}/acl/whoami`);
+    return res.json();
+  }
+
+  /**
+   * @method getDirectoryAcl
+   * @description Get the ACL for a directory, including inherited permissions, via
+   * GET /acl/directory/*. Wraps the result in a single-element array (or returns null for a
+   * nonexistent directory) to match CaskFs#getDirectoryAcl's direct-pg return shape.
+   *
+   * @param {Object|CaskFSContext} context context or object with filePath property
+   * @param {String} context.filePath directory path to get the ACL for
+   * @returns {Promise<Array<Object>|null>}
+   */
+  async getDirectoryAcl(context={}) {
+    const { filePath } = this._extract(context);
+    try {
+      const res = await this._fetch(`${this.baseUrl}/acl/directory${filePath}`);
+      return [await res.json()];
+    } catch(e) {
+      if (e.status === 404) return null;
+      throw e;
+    }
+  }
+
+  /**
+   * @method setDirectoryPublic
+   * @description Set or clear the public-read flag for a directory via PUT /acl/directory/*\/public.
+   * Directory-scoped admin only (or global admin).
+   *
+   * @param {Object|CaskFSContext} context context or object with directory/permission properties
+   * @param {String} context.directory directory path
+   * @param {Boolean|String} context.permission true/false or 'true'/'false'
+   * @returns {Promise<Object>}
+   */
+  async setDirectoryPublic(context={}) {
+    const { directory, permission } = this._extract(context);
+    const isPublic = permission === true || permission === 'true';
+    const res = await this._fetch(`${this.baseUrl}/acl/directory${directory}/public`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ public: isPublic }),
+    });
+    return res.json();
+  }
+
+  /**
+   * @method setDirectoryPermission
+   * @description Grant a principal (a role or a user) a permission on a directory via
+   * POST /acl/directory/*\/permissions. Directory-scoped admin only (or global admin).
+   *
+   * @param {Object|CaskFSContext} context context or object with directory/principal/permission properties
+   * @param {String} context.directory directory path
+   * @param {String} context.principal role name or username, per context.principalType
+   * @param {String} [context.principalType='role'] 'role' or 'user'
+   * @param {String} context.permission 'read' | 'write' | 'admin'
+   * @returns {Promise<Object>}
+   */
+  async setDirectoryPermission(context={}) {
+    const { directory, principal, principalType, permission } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/acl/directory${directory}/permissions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ principal, principalType, permission }),
+    });
+    return res.json();
+  }
+
+  /**
+   * @method removeDirectoryPermission
+   * @description Revoke a principal's (a role's or a user's) permission on a directory via
+   * DELETE /acl/directory/*\/permissions. Directory-scoped admin only (or global admin).
+   *
+   * @param {Object|CaskFSContext} context context or object with directory/principal/permission properties
+   * @returns {Promise<Object>}
+   */
+  async removeDirectoryPermission(context={}) {
+    const { directory, principal, principalType, permission } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/acl/directory${directory}/permissions`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ principal, principalType, permission }),
+    });
+    return res.json();
+  }
+
+  /**
+   * @method removeDirectoryAcl
+   * @description Remove a directory's own ACL entirely via DELETE /acl/directory/*; it (and any
+   * children without their own explicit ACL) will inherit from the nearest ancestor that has one.
+   * Directory-scoped admin only (or global admin).
+   *
+   * @param {Object|CaskFSContext} context context or object with directory property
+   * @returns {Promise<Object>}
+   */
+  async removeDirectoryAcl(context={}) {
+    const { directory } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/acl/directory${directory}`, { method: 'DELETE' });
+    return res.json();
+  }
+
+  /**
+   * @method ensureUser
+   * @description Ensure a user exists via POST /acl/users, creating it if needed. Global admin only.
+   * @param {Object|CaskFSContext} context context or object with user property
+   * @returns {Promise<Object>}
+   */
+  async ensureUser(context={}) {
+    const { user } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/acl/users`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user }),
+    });
+    return res.json();
+  }
+
+  /**
+   * @method removeUser
+   * @description Remove a user and all of their role assignments via DELETE /acl/users/:user.
+   * Global admin only.
+   * @param {Object|CaskFSContext} context context or object with user property
+   * @returns {Promise<Object>}
+   */
+  async removeUser(context={}) {
+    const { user } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/acl/users/${encodeURIComponent(user)}`, { method: 'DELETE' });
+    return res.json();
+  }
+
+  /**
+   * @method ensureRole
+   * @description Ensure a role exists via POST /acl/roles, creating it if needed. Global admin only.
+   * @param {Object|CaskFSContext} context context or object with role property
+   * @returns {Promise<Object>}
+   */
+  async ensureRole(context={}) {
+    const { role } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/acl/roles`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role }),
+    });
+    return res.json();
+  }
+
+  /**
+   * @method removeRole
+   * @description Remove a role and all of its user assignments and directory permissions via
+   * DELETE /acl/roles/:role. Global admin only.
+   * @param {Object|CaskFSContext} context context or object with role property
+   * @returns {Promise<Object>}
+   */
+  async removeRole(context={}) {
+    const { role } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/acl/roles/${encodeURIComponent(role)}`, { method: 'DELETE' });
+    return res.json();
+  }
+
+  /**
+   * @method _listQueryString
+   * @description Build a `?search=&limit=&offset=` query string for the paginated
+   * roles/users/membership list endpoints, omitting params that weren't provided.
+   * @param {Object} opts
+   * @param {String} [opts.search]
+   * @param {Number} [opts.limit]
+   * @param {Number} [opts.offset]
+   * @returns {String} query string, including a leading '?' if non-empty, else ''
+   */
+  _listQueryString({ search, limit, offset } = {}) {
+    const params = new URLSearchParams();
+    if ( search !== undefined && search !== null ) params.set('search', search);
+    if ( limit !== undefined && limit !== null ) params.set('limit', limit);
+    if ( offset !== undefined && offset !== null ) params.set('offset', offset);
+    const qs = params.toString();
+    return qs ? `?${qs}` : '';
+  }
+
+  /**
+   * @method getRoles
+   * @description List defined roles via GET /acl/roles, optionally filtered/paginated. Global admin only.
+   * @param {Object|CaskFSContext} [context] context or object with search/limit/offset properties
+   * @returns {Promise<Object>} {total, roles: [{roleId, role, created}]}
+   */
+  async getRoles(context={}) {
+    const { search, limit, offset } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/acl/roles${this._listQueryString({ search, limit, offset })}`);
+    return res.json();
+  }
+
+  /**
+   * @method getUsers
+   * @description List defined users via GET /acl/users, optionally filtered/paginated. Global admin only.
+   * @param {Object|CaskFSContext} [context] context or object with search/limit/offset properties
+   * @returns {Promise<Object>} {total, users: [{userId, user, created}]}
+   */
+  async getUsers(context={}) {
+    const { search, limit, offset } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/acl/users${this._listQueryString({ search, limit, offset })}`);
+    return res.json();
+  }
+
+  /**
+   * @method getRole
+   * @description List users assigned to a role via GET /acl/roles/:role/users, optionally
+   * filtered/paginated. Global admin only.
+   * @param {Object|CaskFSContext} context context or object with role/search/limit/offset properties
+   * @returns {Promise<Object>} {total, users: [{userId, user}]}
+   */
+  async getRole(context={}) {
+    const { role, search, limit, offset } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/acl/roles/${encodeURIComponent(role)}/users${this._listQueryString({ search, limit, offset })}`);
+    return res.json();
+  }
+
+  /**
+   * @method getUserRoles
+   * @description List roles assigned to a user via GET /acl/users/:user/roles, optionally
+   * filtered/paginated. Callers may always look up their own roles; looking up another user's
+   * roles requires the global admin role.
+   * @param {Object|CaskFSContext} context context or object with user/search/limit/offset properties
+   * @returns {Promise<Object>} {total, roles: [roleName]}
+   */
+  async getUserRoles(context={}) {
+    const { user, search, limit, offset } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/acl/users/${encodeURIComponent(user)}/roles${this._listQueryString({ search, limit, offset })}`);
+    return res.json();
+  }
+
+  /**
+   * @method setUserRole
+   * @description Assign a role to a user via POST /acl/users/:user/roles, creating either if
+   * needed. Global admin only.
+   * @param {Object|CaskFSContext} context context or object with user/role properties
+   * @returns {Promise<Object>}
+   */
+  async setUserRole(context={}) {
+    const { user, role } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/acl/users/${encodeURIComponent(user)}/roles`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role }),
+    });
+    return res.json();
+  }
+
+  /**
+   * @method removeUserRole
+   * @description Remove a role from a user via DELETE /acl/users/:user/roles/:role. Global admin only.
+   * @param {Object|CaskFSContext} context context or object with user/role properties
+   * @returns {Promise<Object>}
+   */
+  async removeUserRole(context={}) {
+    const { user, role } = this._extract(context);
+    const res = await this._fetch(
+      `${this.baseUrl}/acl/users/${encodeURIComponent(user)}/roles/${encodeURIComponent(role)}`,
+      { method: 'DELETE' }
+    );
+    return res.json();
+  }
+
+  /**
+   * @method testPermission
+   * @description Test whether a user (or the public, if omitted) would have a specific
+   * permission on a file or directory, via GET /acl/test. Global admin only.
+   *
+   * @param {Object|CaskFSContext} context
+   * @param {String} context.filePath
+   * @param {String} context.permission 'read' | 'write' | 'admin'
+   * @param {String} [context.user] target user to evaluate; omit to test public access
+   * @param {Boolean} [context.isFile=false]
+   * @returns {Promise<Boolean>}
+   */
+  async testPermission(context={}) {
+    const { filePath, permission, user, isFile } = this._extract(context);
+    const url = new URL(`${this.baseUrl}/acl/test`);
+    url.searchParams.set('filePath', filePath);
+    url.searchParams.set('permission', permission);
+    if (user) url.searchParams.set('user', user);
+    if (isFile) url.searchParams.set('isFile', 'true');
+    const res = await this._fetch(url.toString());
+    return (await res.json()).hasPermission;
+  }
+
+  // ---------------------------------------------------------------------------
   // Namespace builders
   // ---------------------------------------------------------------------------
 
@@ -562,27 +869,6 @@ class HttpCaskFsClient {
 
       read()    { self._notSupported('ld (rdf read)'); },
       literal() { self._notSupported('literal'); },
-    };
-  }
-
-  _buildAcl() {
-    const self = this;
-    const ns = (name) => () => self._notSupported(`acl ${name}`);
-    return {
-      addUser:              ns('user-add'),
-      removeUser:           ns('user-remove'),
-      getUserRoles:         ns('user-role-get'),
-      setUserRole:          ns('user-role-set'),
-      removeUserRole:       ns('user-role-remove'),
-      addRole:              ns('role-add'),
-      removeRole:           ns('role-remove'),
-      setPublic:            ns('public-set'),
-      setPermission:        ns('permission-set'),
-      removePermission:     ns('permission-remove'),
-      remove:               ns('acl remove'),
-      get:                  ns('acl get'),
-      test:                 ns('acl test'),
-      hasPermission:        ns('acl hasPermission'),
     };
   }
 

@@ -5,6 +5,7 @@ import loaderHtml from '../html/loader.html.js';
 import preloadedIcons from '../html/icons.html.js';
 import logger from '../logger.js';
 import config from '../../lib/config.js';
+import acl from '../../lib/acl.js';
 import fs from 'fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -45,7 +46,12 @@ export default (app) => {
         basePath,
         previewThresholdImage : config.webapp.previewThresholdImage,
         previewThresholdText : config.webapp.previewThresholdText,
-        previewRangeSize : config.webapp.previewRangeSize
+        previewRangeSize : config.webapp.previewRangeSize,
+        // reads the live acl singleton rather than config.acl.enabled directly, since it can be
+        // overridden at runtime (e.g. controllers/caskFs.js forcing it off in local dev)
+        aclEnabled : acl.enabled,
+        impersonationEnabled : config.impersonation.enabled,
+        impersonationCookieName : config.impersonation.cookieName
       });
     },
 

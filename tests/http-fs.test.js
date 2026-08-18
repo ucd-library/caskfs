@@ -304,6 +304,56 @@ describe('POST /fs/mv', () => {
   });
 });
 
+describe('POST /dir', () => {
+  let caskFs, baseUrl;
+
+  before(async () => {
+    ({ caskFs, baseUrl } = await setup());
+    await caskFs.write({
+      filePath: '/mkdir-api-test/existing-file.txt',
+      data: Buffer.from('already here'),
+      requestor: 'test-user',
+      ignoreAcl: true,
+    });
+  });
+
+  after(async () => {
+    await teardown();
+  });
+
+  it('should create a directory and return 201', async () => {
+    const res = await fetch(`${baseUrl}/dir/mkdir-api-test/new-folder`, { method: 'POST' });
+    assert.strictEqual(res.status, 201);
+    const body = await res.json();
+    assert.strictEqual(body.directory, '/mkdir-api-test/new-folder');
+
+    const lsRes = await fetch(`${baseUrl}/dir/mkdir-api-test`);
+    const ls = await lsRes.json();
+    assert.ok(ls.directories.map(d => d.fullname).includes('/mkdir-api-test/new-folder'));
+  });
+
+  it('should create missing intermediate parent directories', async () => {
+    const res = await fetch(`${baseUrl}/dir/mkdir-api-test/deep/nested/folder`, { method: 'POST' });
+    assert.strictEqual(res.status, 201);
+
+    for (const dir of ['/mkdir-api-test/deep', '/mkdir-api-test/deep/nested', '/mkdir-api-test/deep/nested/folder']) {
+      const row = await caskFs.dbClient.getDirectory(dir);
+      assert.ok(row, `${dir} should have been auto-created`);
+    }
+  });
+
+  it('should return 409 when the directory already exists', async () => {
+    await fetch(`${baseUrl}/dir/mkdir-api-test/dupe-folder`, { method: 'POST' });
+    const res = await fetch(`${baseUrl}/dir/mkdir-api-test/dupe-folder`, { method: 'POST' });
+    assert.strictEqual(res.status, 409);
+  });
+
+  it('should return 409 when a file already exists at the path', async () => {
+    const res = await fetch(`${baseUrl}/dir/mkdir-api-test/existing-file.txt`, { method: 'POST' });
+    assert.strictEqual(res.status, 409);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // /lineage endpoint tests
 // ---------------------------------------------------------------------------

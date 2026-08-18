@@ -51,6 +51,15 @@ export function styles() {
       grid-template-columns: repeat(1, minmax(0, 1fr));
       gap: 1rem 2rem;
     }
+    .no-contents {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      padding: 2rem 0;
+    }
+    .no-contents cork-icon {
+      color: var(--ucd-blue, #022851);
+    }
     @container (min-width: 400px) {
       .metadata-details {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -79,7 +88,12 @@ return html`
       </cork-toggle-switch>
     </div>
   </caskfs-section-header>
-  <div>
+  <div><slot name="caskfs-public-badge"></slot></div>
+  <div ?hidden=${!this.error} class='no-contents'>
+    <cork-icon icon="fas.circle-exclamation"></cork-icon>
+    <div>${this.errorMessage}</div>
+  </div>
+  <div ?hidden=${this.error}>
     <div ?hidden=${!this.showRaw}><pre><code>${unsafeHTML(this.highlightedData)}</code></pre></div>
     <div ?hidden=${this.showRaw}>
       <div class='metadata-details'>

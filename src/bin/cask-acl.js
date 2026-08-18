@@ -1,19 +1,18 @@
 import { Command } from 'commander';
 import { stringify as stringifyYaml } from 'yaml'
 import {optsWrapper, handleGlobalOpts} from './opts-wrapper.js';
-import { getClient, endClient, assertDirectPg } from './lib/client.js';
+import { getClient, endClient } from './lib/client.js';
 
 const program = new Command();
 optsWrapper(program);
 
-const PERMISSIONS = ['public', 'read', 'write', 'admin'];
+const PERMISSIONS = ['read', 'write', 'admin'];
 
 program.command('user-add <username>')
   .description('Add a new user')
   .action(async (username) => {
     const opts = handleGlobalOpts({ user: username });
     const cask = getClient(opts);
-    assertDirectPg(cask, 'acl user-add');
     await cask.ensureUser(opts);
     await endClient(cask);
   });
@@ -23,8 +22,23 @@ program.command('user-remove <username>')
   .action(async (username) => {
     const opts = handleGlobalOpts({ user: username });
     const cask = getClient(opts);
-    assertDirectPg(cask, 'acl user-remove');
     await cask.removeUser(opts);
+    await endClient(cask);
+  });
+
+program.command('user-list')
+  .description('List all defined users')
+  .option('-s, --search <text>', 'filter by a case-insensitive substring match on username')
+  .option('-l, --limit <n>', 'max users to return', '1000')
+  .option('-o, --offset <n>', 'users to skip', '0')
+  .action(async (options={}) => {
+    handleGlobalOpts(options);
+    const cask = getClient(options);
+    let resp = await cask.getUsers(options);
+    console.log(resp.users.map(u => u.user).join('\n'));
+    if( resp.total > resp.users.length + Number(options.offset) ) {
+      console.log(`\n(showing ${resp.users.length} of ${resp.total} - use --offset to page)`);
+    }
     await endClient(cask);
   });
 
@@ -32,8 +46,11 @@ program.command('user-role-get')
   .description('Get a users roles or get users with a role')
   .option('-u, --user <username>', 'username to get roles for')
   .option('-r, --role <role>', 'role to get users for')
+  .option('-s, --search <text>', 'filter by a case-insensitive substring match')
+  .option('-l, --limit <n>', 'max rows to return', '1000')
+  .option('-o, --offset <n>', 'rows to skip', '0')
   .action(async (options) => {
-    const { user: username, role } = options;
+    const { user: username, role, search, limit, offset } = options;
     if( !username && !role ) {
       throw new Error('Must provide either a username or a role');
     }
@@ -43,21 +60,17 @@ program.command('user-role-get')
 
     handleGlobalOpts(options);
     const cask = getClient(options);
-    assertDirectPg(cask, 'acl user-role-get');
-
-    const roleOpts = handleGlobalOpts({ role, dbClient: cask.dbClient });
-    const userOpts = handleGlobalOpts({ user: username, dbClient: cask.dbClient });
 
     if( role ) {
-      let resp = await cask.acl.getRole(roleOpts);
-      console.log(resp.map(r => r.user).join('\n'));
+      let resp = await cask.getRole(handleGlobalOpts({ role, search, limit, offset }));
+      console.log(resp.users.map(r => r.user).join('\n'));
       await endClient(cask);
       return;
     }
 
     if( username ) {
-      let resp = await cask.acl.getUserRoles(userOpts);
-      console.log(resp.join('\n'));
+      let resp = await cask.getUserRoles(handleGlobalOpts({ user: username, search, limit, offset }));
+      console.log(resp.roles.join('\n'));
       await endClient(cask);
       return;
     }
@@ -68,7 +81,6 @@ program.command('user-role-set <username> <role>')
   .action(async (username, role) => {
     const opts = handleGlobalOpts({ user: username, role });
     const cask = getClient(opts);
-    assertDirectPg(cask, 'acl user-role-set');
     await cask.setUserRole(opts);
     await endClient(cask);
   });
@@ -78,7 +90,6 @@ program.command('user-role-remove <username> <role>')
   .action(async (username, role) => {
     const opts = handleGlobalOpts({ user: username, role });
     const cask = getClient(opts);
-    assertDirectPg(cask, 'acl user-role-remove');
     await cask.removeUserRole(opts);
     await endClient(cask);
   });
@@ -88,7 +99,6 @@ program.command('role-add <role>')
   .action(async (role) => {
     const opts = handleGlobalOpts({ role });
     const cask = getClient(opts);
-    assertDirectPg(cask, 'acl role-add');
     await cask.ensureRole(opts);
     await endClient(cask);
   });
@@ -98,8 +108,23 @@ program.command('role-remove <role>')
   .action(async (role) => {
     const opts = handleGlobalOpts({ role });
     const cask = getClient(opts);
-    assertDirectPg(cask, 'acl role-remove');
     await cask.removeRole(opts);
+    await endClient(cask);
+  });
+
+program.command('role-list')
+  .description('List all defined roles')
+  .option('-s, --search <text>', 'filter by a case-insensitive substring match on role name')
+  .option('-l, --limit <n>', 'max roles to return', '1000')
+  .option('-o, --offset <n>', 'roles to skip', '0')
+  .action(async (options={}) => {
+    handleGlobalOpts(options);
+    const cask = getClient(options);
+    let resp = await cask.getRoles(options);
+    console.log(resp.roles.map(r => r.role).join('\n'));
+    if( resp.total > resp.roles.length + Number(options.offset) ) {
+      console.log(`\n(showing ${resp.roles.length} of ${resp.total} - use --offset to page)`);
+    }
     await endClient(cask);
   });
 
@@ -108,7 +133,6 @@ program.command('public-set <directory> <permission>')
   .action(async (directory, permission, options={}) => {
     handleGlobalOpts(options);
     const cask = getClient(options);
-    assertDirectPg(cask, 'acl public-set');
 
     if( !['true', 'false'].includes(permission) ) {
       throw new Error(`Invalid permission: ${permission}.  Must be one of: true, false`);
@@ -121,22 +145,30 @@ program.command('public-set <directory> <permission>')
     await endClient(cask);
   });
 
-program.command('permission-set <directory> <role> <permission>')
-  .description('Set a permission for a role on a directory')
-  .action(async (directory, role, permission) => {
-    const opts = handleGlobalOpts({ directory, role, permission });
+program.command('permission-set <directory> <principal> <permission>')
+  .description('Grant a permission to a role or user on a directory')
+  .option('-t, --type <role|user>', 'principal type: role or user', 'role')
+  .action(async (directory, principal, permission, options={}) => {
+    if( !['role', 'user'].includes(options.type) ) {
+      throw new Error(`Invalid type: ${options.type}.  Must be one of: role, user`);
+    }
+
+    const opts = handleGlobalOpts({ directory, principal, principalType: options.type, permission });
     const cask = getClient(opts);
-    assertDirectPg(cask, 'acl permission-set');
     await cask.setDirectoryPermission(opts);
     await endClient(cask);
   });
 
-program.command('permission-remove <directory> <role> <permission>')
-  .description('Remove a permission for a role on a directory')
-  .action(async (directory, role, permission) => {
-    const opts = handleGlobalOpts({ directory, role, permission });
+program.command('permission-remove <directory> <principal> <permission>')
+  .description('Remove a permission for a role or user on a directory')
+  .option('-t, --type <role|user>', 'principal type: role or user', 'role')
+  .action(async (directory, principal, permission, options={}) => {
+    if( !['role', 'user'].includes(options.type) ) {
+      throw new Error(`Invalid type: ${options.type}.  Must be one of: role, user`);
+    }
+
+    const opts = handleGlobalOpts({ directory, principal, principalType: options.type, permission });
     const cask = getClient(opts);
-    assertDirectPg(cask, 'acl permission-remove');
     await cask.removeDirectoryPermission(opts);
     await endClient(cask);
   });
@@ -146,7 +178,6 @@ program.command('remove <directory>')
   .action(async (directory) => {
     const opts = handleGlobalOpts({ directory });
     const cask = getClient(opts);
-    assertDirectPg(cask, 'acl remove');
     await cask.removeDirectoryAcl(opts);
     await endClient(cask);
   });
@@ -156,7 +187,6 @@ program.command('get <path>')
   .action(async (path, options={}) => {
     handleGlobalOpts(options);
     const cask = getClient(options);
-    assertDirectPg(cask, 'acl get');
 
     let resp = await cask.getDirectoryAcl({
       filePath: path,
@@ -174,12 +204,12 @@ program.command('get <path>')
     }
     resp = resp[0];
 
-    resp.permissions = resp.permissions.filter(p => p.role !== null && p.user !== null);
+    resp.permissions = resp.permissions.filter(p => p.principalName !== null && p.permission !== null);
 
     let pObj = {
       'ACL Directory': resp.root_acl_directory,
       'Public Read Access': resp.public ? 'Yes' : 'No',
-      'Role Permissions': resp.permissions
+      'Permissions': resp.permissions
     }
 
     console.log(stringifyYaml(pObj));
@@ -189,12 +219,9 @@ program.command('get <path>')
 program.command('test <path> <username> <permission>')
   .description('Test a user\'s access to a file or directory')
   .option('-f, --is-file', 'Indicate that the path is a file', false)
-  .option('-x, --no-cache', 'Disable caching for this check', false)
-  .option('-b, --no-admin-bypass', 'Do not allow admin users to bypass checks', false)
   .action(async (path, username, permission, options) => {
     handleGlobalOpts(options);
     const cask = getClient(options);
-    assertDirectPg(cask, 'acl test');
 
     if( !PERMISSIONS.includes(permission) ) {
       throw new Error(`Invalid permission: ${permission}.  Must be one of: ${PERMISSIONS.join(', ')}`);
@@ -206,10 +233,9 @@ program.command('test <path> <username> <permission>')
       username = null;
     }
 
-    await cask.dbClient.connect();
-    let hasPermission = await cask.acl.hasPermission({
-      dbClient: cask.dbClient,
-      requestor: username,
+    let hasPermission = await cask.testPermission({
+      requestor: options.requestor,
+      user: username,
       filePath: path,
       permission,
       isFile: options.isFile

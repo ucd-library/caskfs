@@ -1,5 +1,6 @@
 import { LitElement } from 'lit';
 import {render, styles} from "./caskfs-app.tpl.js";
+import config from '../config.js';
 
 // theme elements
 import '@ucd-lib/theme-elements/brand/ucd-theme-primary-nav/ucd-theme-primary-nav.js';
@@ -19,6 +20,7 @@ import './pages/caskfs-page-partitions.js';
 import './pages/caskfs-page-file-single.js';
 import './pages/caskfs-page-relationships.js';
 import './pages/caskfs-page-statistics.js';
+import './pages/caskfs-page-access.js';
 
 // app global components
 import './components/cork-app-error.js';
@@ -34,6 +36,7 @@ import './components/caskfs-upload-tracker.js';
 import '@ucd-lib/cork-icon';
 
 // cork models
+import '../../../api/models/AclModel.js';
 import '../../../api/models/AppStateModel.js';
 import '../../../api/models/AutoPathModel.js';
 import '../../../api/models/DirectoryModel.js';
@@ -55,6 +58,8 @@ export default class CaskfsApp extends Mixin(LitElement)
   static get properties() {
     return {
       page: {type: String},
+      currentUser: { state: true },
+      impersonateInput: { state: true },
       _firstAppStateUpdate : { state: true }
     }
   }
@@ -68,15 +73,56 @@ export default class CaskfsApp extends Mixin(LitElement)
     this.render = render.bind(this);
 
     this.page = '';
+    this.currentUser = { username: null, roles: [], isAdmin: false };
+    this.impersonateInput = '';
     this._firstAppStateUpdate = false;
 
-    this._injectModel('AppStateModel');
+    this._injectModel('AppStateModel', 'AclModel');
 
     this.scrollCtl = new ScrollController(this, {attachListener: true});
   }
 
   firstUpdated(){
     this.AppStateModel.refresh();
+    this.getWhoAmI();
+  }
+
+  async getWhoAmI(){
+    const res = await this.AclModel.getWhoAmI();
+    if ( res.state === 'loaded' ) {
+      this.currentUser = res.payload;
+    }
+  }
+
+  /**
+   * @description Track the impersonation username input as it's typed.
+   * @param {InputEvent} e
+   */
+  _onImpersonateInput(e) {
+    this.impersonateInput = e.target.value;
+  }
+
+  /**
+   * @description Set the impersonation cookie to the entered username and reload, so every
+   * subsequent request (including the whoami lookup this shell already makes) is re-evaluated
+   * as that user. Dev-only - only reachable when config.impersonationEnabled is true.
+   * @param {SubmitEvent} e
+   */
+  _onImpersonateSubmit(e) {
+    e.preventDefault();
+    const username = this.impersonateInput.trim();
+    if ( !username ) return;
+    document.cookie = `${config.impersonationCookieName}=${encodeURIComponent(username)}; path=/; max-age=${60 * 60 * 24 * 30}`;
+    location.reload();
+  }
+
+  /**
+   * @description Clear the impersonation cookie and reload, returning to the server's real
+   * (anonymous, or upstream-header-provided) identity.
+   */
+  _onImpersonateClear() {
+    document.cookie = `${config.impersonationCookieName}=; path=/; max-age=0`;
+    location.reload();
   }
 
   async _onAppStateUpdate(e) {

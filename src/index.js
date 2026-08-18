@@ -817,6 +817,59 @@ class CaskFs {
   }
 
   /**
+   * @method createDirectory
+   * @description Create a new empty directory, and any missing intermediate parent
+   * directories, within CaskFS. Fails if a directory or file already exists at the path.
+   *
+   * @param {Object|CaskFSContext} context context or object with directory property
+   * @param {String} context.directory Required. full path of the directory to create
+   * @param {String} [context.requestor] user name of the requestor
+   * @param {Boolean} [context.ignoreAcl] if true, skip ACL checks
+   * @param {DatabaseClient} [context.dbClient] optional database client to use
+   *
+   * @returns {Promise<Object>} object with the created directory path
+   */
+  async createDirectory(context={}) {
+    context = createContext(context, this.dbClient);
+
+    if( !context.data.directory ) {
+      throw new Error('directory is required');
+    }
+    if( context.data.directory !== '/' && context.data.directory.endsWith('/') ) {
+      context.update({
+        directory: context.data.directory.slice(0, -1)
+      });
+    }
+    const directoryPath = context.data.directory;
+
+    if( directoryPath === '/' ) {
+      throw new Error('Cannot create the root directory');
+    }
+
+    // write permission is required on the nearest existing ancestor directory - canWriteFile
+    // walks up automatically when the target itself does not exist yet, which is exactly
+    // what's needed for a not-yet-created directory.
+    await this.canWriteFile({
+      filePath: directoryPath,
+      requestor: context.data.requestor,
+      ignoreAcl: context.data.ignoreAcl,
+      dbClient: context.data.dbClient
+    });
+
+    if( await context.data.dbClient.pathExists(directoryPath) ) {
+      throw new DuplicateFileError(directoryPath);
+    }
+
+    await this.runInTransaction(async (dbClient) => {
+      await this.directory.mkdir(directoryPath, { dbClient });
+    });
+
+    this.logger.info(`Directory created: ${directoryPath}`, context.logSignal);
+
+    return { directory: directoryPath };
+  }
+
+  /**
    * @method deleteDirectory
    * @description Recursively delete a directory and all its files and subdirectories.
    *
@@ -1504,6 +1557,26 @@ class CaskFs {
   }
 
   /**
+   * @method removeUser
+   * @description Remove a user. Also removes all of that user's role associations
+   * (via foreign key cascade).
+   *
+   * @param {Object|CaskFSContext} context context or object with user property
+   * @param {String} context.user Required. user name
+   * @param {Object} context.dbClient Optional. database client instance, defaults to instance dbClient
+   * @returns {Promise<Object>} result of the delete query
+   */
+  async removeUser(context={}) {
+    context = createContext(context, this.dbClient);
+    await this.allowAdminAction(context);
+
+    return acl.removeUser({
+      user: context.data.user,
+      dbClient: context.data.dbClient || this.dbClient
+    });
+  }
+
+  /**
    * @method ensureUserRoles
    * @description Ensure that a set of user/role associations exist, 
    * creating users and roles as needed. userRoles should have the format:
@@ -1578,10 +1651,113 @@ class CaskFs {
 
     await this.allowAdminAction(context);
 
-    await this.runInTransaction(async (dbClient) => {
-      await acl.removeUserRole({
-        user: context.user,
+    return this.runInTransaction(async (dbClient) => {
+      return acl.removeUserRole({
+        user: context.data.user,
+        role: context.data.role,
+        dbClient
       });
+    });
+  }
+
+  /**
+   * @method getUserRoles
+   * @description Get all roles assigned to a user. A requestor may always look up their own
+   * roles (e.g. for a "whoami"/"my permissions" feature); looking up another user's roles
+   * requires the global admin role.
+   *
+   * @param {Object|CaskFSContext} context context or object with user property
+   * @param {String} context.user Required. user name
+   * @param {String} context.requestor user name of the requestor
+   * @param {String} [context.search] optional case-insensitive substring filter on role name
+   * @param {Number} [context.limit=25] max rows to return
+   * @param {Number} [context.offset=0] rows to skip
+   * @param {Object} context.dbClient Optional. database client instance, defaults to instance dbClient
+   * @returns {Promise<Object>} {total, roles: [roleName]}
+   */
+  async getUserRoles(context={}) {
+    context = createContext(context, this.dbClient);
+    if( context.data.user !== context.data.requestor ) {
+      await this.allowAdminAction(context);
+    }
+
+    return acl.getUserRoles({
+      user: context.data.user,
+      search: context.data.search,
+      limit: context.data.limit,
+      offset: context.data.offset,
+      dbClient: context.data.dbClient || this.dbClient
+    });
+  }
+
+  /**
+   * @method getRole
+   * @description Get the users assigned to a role.
+   *
+   * @param {Object|CaskFSContext} context context or object with role property
+   * @param {String} context.role Required. role name
+   * @param {String} [context.search] optional case-insensitive substring filter on username
+   * @param {Number} [context.limit=25] max rows to return
+   * @param {Number} [context.offset=0] rows to skip
+   * @param {Object} context.dbClient Optional. database client instance, defaults to instance dbClient
+   * @returns {Promise<Object>} {total, users: [{userId, user}]}
+   */
+  async getRole(context={}) {
+    context = createContext(context, this.dbClient);
+    await this.allowAdminAction(context);
+
+    return acl.getRole({
+      role: context.data.role,
+      search: context.data.search,
+      limit: context.data.limit,
+      offset: context.data.offset,
+      dbClient: context.data.dbClient || this.dbClient
+    });
+  }
+
+  /**
+   * @method getRoles
+   * @description Get defined roles.
+   *
+   * @param {Object|CaskFSContext} context
+   * @param {String} [context.search] optional case-insensitive substring filter on role name
+   * @param {Number} [context.limit=25] max rows to return
+   * @param {Number} [context.offset=0] rows to skip
+   * @param {Object} context.dbClient Optional. database client instance, defaults to instance dbClient
+   * @returns {Promise<Object>} {total, roles: [{roleId, role, created}]}
+   */
+  async getRoles(context={}) {
+    context = createContext(context, this.dbClient);
+    await this.allowAdminAction(context);
+
+    return acl.getRoles({
+      search: context.data.search,
+      limit: context.data.limit,
+      offset: context.data.offset,
+      dbClient: context.data.dbClient || this.dbClient
+    });
+  }
+
+  /**
+   * @method getUsers
+   * @description Get defined users.
+   *
+   * @param {Object|CaskFSContext} context
+   * @param {String} [context.search] optional case-insensitive substring filter on username
+   * @param {Number} [context.limit=25] max rows to return
+   * @param {Number} [context.offset=0] rows to skip
+   * @param {Object} context.dbClient Optional. database client instance, defaults to instance dbClient
+   * @returns {Promise<Object>} {total, users: [{userId, user, created}]}
+   */
+  async getUsers(context={}) {
+    context = createContext(context, this.dbClient);
+    await this.allowAdminAction(context);
+
+    return acl.getUsers({
+      search: context.data.search,
+      limit: context.data.limit,
+      offset: context.data.offset,
+      dbClient: context.data.dbClient || this.dbClient
     });
   }
 
@@ -1618,11 +1794,13 @@ class CaskFs {
 
   /**
    * @method setDirectoryPermission
-   * @description Set a permission for a role on a directory.  Will create the root directory ACL if needed.
-   * Note, all child directories will inherit the permission unless explicitly overridden.
+   * @description Grant a permission to a principal (a role or a user) on a directory. Will
+   * create the root directory ACL if needed. Note, all child directories will inherit the
+   * permission unless explicitly overridden.
    *
    * @param {Object|CaskFSContext} context
-   * @param {String} context.role Required. role name
+   * @param {String} context.principal Required. role name or username, per context.principalType
+   * @param {String} [context.principalType='role'] 'role' or 'user'
    * @param {String} context.directory Required. directory path
    * @param {String} context.permission Required. permission to set, one of 'read', 'write', 'admin'
    * @param {String} context.requestor user name of the requestor
@@ -1636,7 +1814,8 @@ class CaskFs {
     await this.runInTransaction(async (dbClient) => {
       let {rootDirectoryAclId, directoryId} = await acl.setDirectoryPermission({
         dbClient,
-        role: context.data.role,
+        principal: context.data.principal,
+        principalType: context.data.principalType,
         directory: context.data.directory,
         permission: context.data.permission
       });
@@ -1652,10 +1831,11 @@ class CaskFs {
 
   /**
    * @method removeDirectoryPermission
-   * @description Remove a permission for a role on a directory.
+   * @description Remove a permission for a principal (a role or a user) on a directory.
    *
    * @param {Object|CaskFSContext} context context or object with directory property
-   * @param {String} context.role Required. role name
+   * @param {String} context.principal Required. role name or username, per context.principalType
+   * @param {String} [context.principalType='role'] 'role' or 'user'
    * @param {String} context.directory Required. directory path
    * @param {Object} context.dbClient Optional. database client instance, defaults to instance dbClient
    */
@@ -1667,7 +1847,8 @@ class CaskFs {
     await this.runInTransaction(async (dbClient) => {
       await acl.removeDirectoryPermission({
         dbClient,
-        role: context.data.role,
+        principal: context.data.principal,
+        principalType: context.data.principalType,
         directory: context.data.directory,
         permission: context.data.permission
       });
@@ -1714,6 +1895,63 @@ class CaskFs {
     return acl.getDirectoryAcl({
       dbClient: context.data.dbClient || this.dbClient,
       directory: context.data.filePath
+    });
+  }
+
+  /**
+   * @method hasPermission
+   * @description Non-throwing self-check: does context.data.requestor have a specific
+   * permission on a directory (or file)? Unlike testPermission (an admin-only diagnostic for
+   * evaluating an arbitrary target user), this never requires the caller to already be an
+   * admin - it only ever evaluates the caller's own identity, so it's safe to expose to any
+   * logged-in user. Intended for the webapp to decide whether to show write/admin-only UI
+   * controls for the current user.
+   *
+   * @param {Object|CaskFSContext} context
+   * @param {String} context.directory or context.filePath - path to check
+   * @param {String} context.requestor - user name to check (the caller's own identity)
+   * @param {Object} opts
+   * @param {String} opts.permission Required. one of 'read', 'write', 'admin'
+   * @param {Boolean} [opts.isFile=false] whether the path is a file (vs. a directory)
+   * @returns {Promise<Boolean>} true if the requestor has the permission
+   */
+  async hasPermission(context={}, opts={}) {
+    context = createContext(context, this.dbClient);
+    try {
+      await this.checkPermissions(context, { permission: opts.permission, isFile: opts.isFile, noContextUpdate: true });
+      return true;
+    } catch(e) {
+      if( e instanceof AclAccessError ) return false;
+      throw e;
+    }
+  }
+
+  /**
+   * @method testPermission
+   * @description Test whether a given user would have a specific permission on a file or
+   * directory. A global admin-only diagnostic: context.requestor is the caller performing the
+   * test (must be an admin), and context.user is the (distinct) target being evaluated -
+   * null/undefined evaluates public access.
+   *
+   * @param {Object|CaskFSContext} context
+   * @param {String} context.requestor Required. user name of the caller performing the test (must be an admin)
+   * @param {String} [context.user] target user name to evaluate; omit to test public access
+   * @param {String} context.filePath Required. file or directory path to test
+   * @param {String} context.permission Required. one of 'read', 'write', 'admin'
+   * @param {Boolean} [context.isFile=false] whether filePath is a file (vs. a directory)
+   * @param {Object} context.dbClient Optional. database client instance, defaults to instance dbClient
+   * @returns {Promise<Boolean>} true if the target user would have the permission
+   */
+  async testPermission(context={}) {
+    context = createContext(context, this.dbClient);
+    await this.allowAdminAction(context);
+
+    return acl.hasPermission({
+      dbClient: context.data.dbClient || this.dbClient,
+      requestor: context.data.user || null,
+      filePath: context.data.filePath,
+      permission: context.data.permission,
+      isFile: context.data.isFile || false
     });
   }
 
@@ -1853,14 +2091,16 @@ class CaskFs {
 
   /**
    * @method allowAdminAction
-   * @description Check if the requestor has admin permissions.  Returns true if ACLs are disabled,
-   * the ignoreAcl flag is set, or the user has an admin role.  Otherwise returns false.
-   * 
-   * @param {Object|CaskFSContext} context 
+   * @description Assert that the requestor has global admin permissions. Returns true if ACLs are
+   * disabled, the ignoreAcl flag is set, or the user has an admin role. Otherwise throws
+   * AclAccessError. Used to gate system-wide user/role management (not scoped to any directory).
+   *
+   * @param {Object|CaskFSContext} context
    * @param {String} context.requestor requestor user name
    * @param {Boolean} context.ignoreAcl if true, skip ACL checks and always return true
    * @param {DatabaseClient} context.dbClient optional database client to use
-   * @returns 
+   * @throws {AclAccessError} if the requestor is not an admin and ACL enforcement is active
+   * @returns {Promise<Boolean>} true if the action is allowed
    */
   async allowAdminAction(context) {
     context.setDbClientIfNotSet(this.dbClient);
@@ -1869,11 +2109,15 @@ class CaskFs {
     // 1. ACLs are enabled
     // 2. if the ignoreAcl flag is set
     // 3. if the user has an admin role
-    return (! await acl.aclLookupRequired({
+    const lookupRequired = await acl.aclLookupRequired({
       requestor: context.data.requestor,
       dbClient: context.data.dbClient,
       ignoreAcl: context.data.ignoreAcl || false
-    }));
+    });
+    if( lookupRequired ) {
+      throw new AclAccessError('Admin access required', context.data.requestor, null, 'admin');
+    }
+    return true;
   }
 
   /**

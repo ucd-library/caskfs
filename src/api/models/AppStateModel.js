@@ -112,11 +112,13 @@ class AppStateModelImpl extends AppStateModel {
   addErrorRequest(req) {
     if ( req.errorSettings?.suppressError ) return;
 
-    // If the error is a 409 with a link to the opposite resource type, redirect to that page instead of showing an error
+    // If the error is a 409 with a link to the opposite resource type, redirect to that page instead of showing an error.
+    // Other 409s (e.g. DuplicateFileError from create/write endpoints) don't carry this payload shape and should
+    // fall through to the normal error toast/dialog instead of navigating to a path-less page.
     const page = this.store.data.page;
     const statusCode = req.payload?.error?.response?.status;
     const payload = req.payload?.error?.payload;
-    if ( statusCode == 409 && ['file', 'directory'].includes(page) ) {
+    if ( statusCode == 409 && payload?.details?.wrongResourceType && ['file', 'directory'].includes(page) ) {
       const loc = `${payload?.details?.requestedResourceType === 'file' ? 'directory' : 'file'}${payload?.details?.path || ''}`;
       this.setLocation(appUrlUtils.fullLocation(loc));
       return;

@@ -90,7 +90,7 @@ export function render() {
         </div>
         <div ?hidden=${this.ctl.directoryList.contents.length} class='no-contents'>
           <cork-icon icon="fas.circle-exclamation" class='primary'></cork-icon>
-          <div>This directory is empty</div>
+          <div>${this.noContentsMessage}</div>
         </div>
       </div>
     </div>

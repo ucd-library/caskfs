@@ -1,6 +1,7 @@
 import { html, css } from 'lit';
 import '../components/caskfs-directory-controls.js';
 import '../components/caskfs-directory-list.js';
+import '../components/caskfs-public-badge.js';
 
 import appUrlUtils from '../../utils/appUrlUtils.js';
 
@@ -72,9 +73,12 @@ return html`
     @dragover=${this._onDragOver}
     @dragleave=${this._onDragLeave}>
     <div><h1 class="page-title">Directory</h1></div>
-    <ol class="breadcrumbs">
+    <!-- <ol class="breadcrumbs">
       <li>Directory</li>
-    </ol>
+    </ol> -->
+    <div style="margin: 1rem; text-align: center;">
+    <caskfs-public-badge .directory=${this.ctl.directoryPath.pathname}></caskfs-public-badge>
+    </div>
     <div class="l-container u-space-mt--large">
       <div class='content'>
         <caskfs-directory-controls></caskfs-directory-controls>

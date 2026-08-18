@@ -1,7 +1,7 @@
 import { Router, json } from 'express';
 import handleError from './handleError.js';
 import caskFs from './caskFs.js';
-import config from '../lib/config.js';
+import { getRequestor } from '../lib/middleware/header-auth.js';
 
 const router = Router();
 
@@ -25,7 +25,7 @@ router.post('/add', silentJson, async (req, res) => {
     if (!sourcePath) return res.status(400).json({ error: 'sourcePath is required' });
 
     const result = await caskFs.addDerivativeLink(
-      { filePath: fromPath, requestor: req.user?.username || req.user || config.acl.defaultRequestor },
+      { filePath: fromPath, requestor: getRequestor(req) },
       { sourcePath, relation, metadata }
     );
 
@@ -46,7 +46,7 @@ router.post('/remove', silentJson, async (req, res) => {
     if (!sourcePath) return res.status(400).json({ error: 'sourcePath is required' });
 
     const result = await caskFs.removeDerivativeLink(
-      { filePath: fromPath, requestor: req.user || config.acl.defaultRequestor },
+      { filePath: fromPath, requestor: getRequestor(req) },
       { sourcePath, relation }
     );
 
@@ -64,7 +64,7 @@ router.get(/^\/derivatives(\/.*)?$/, async (req, res) => {
   try {
     const filePath = req.params[0] || '/';
     const result = await caskFs.getDerivatives(
-      { filePath, requestor: req.user || config.acl.defaultRequestor },
+      { filePath, requestor: getRequestor(req) },
       { relation: req.query.relation }
     );
     res.status(200).json(result);
@@ -81,7 +81,7 @@ router.get(/^\/sources(\/.*)?$/, async (req, res) => {
   try {
     const filePath = req.params[0] || '/';
     const result = await caskFs.getSources(
-      { filePath, requestor: req.user || config.acl.defaultRequestor },
+      { filePath, requestor: getRequestor(req) },
       { relation: req.query.relation }
     );
     res.status(200).json(result);

@@ -5,6 +5,7 @@ import staticRoutes from './controllers/static.js';
 import logger from './logger.js';
 import {logReqMiddleware} from '@ucd-lib/logger';
 import headerAuthMiddleware from '../lib/middleware/header-auth.js';
+import impersonationMiddleware from '../lib/middleware/impersonation.js';
 
 /**
  * @function caskRouter
@@ -33,6 +34,10 @@ function caskRouter(opts = {}) {
   if ( config.headerAuth.enabled ) {
     router.use(headerAuthMiddleware);
   }
+
+  // Always mounted; the middleware itself no-ops unless config.impersonation.enabled is true.
+  // Runs after headerAuthMiddleware so an active impersonation cookie takes precedence.
+  router.use(impersonationMiddleware);
 
   router.use('/api', apiRoutes);
 
@@ -70,11 +75,26 @@ function startServer(opts = {}) {
       + 'Only use this behind a trusted reverse proxy or API gateway.');
   }
 
+  if ( config.impersonation.enabled ) {
+    logger.warn('User impersonation is ENABLED — any client can act as any username by setting the '
+      + `"${config.impersonation.cookieName}" cookie, with no verification whatsoever. `
+      + 'Never enable this outside of local development.');
+  }
+
   app.listen(port, () => {
     logger.info(`CaskFs web application running on port ${port}`);
-    logger.info(`Mounted at basepath: ${basepath}`);
-    logger.info(`Web application ${disableWebApp ? 'disabled' : 'enabled'}`);
-    logger.info(`Request logging ${logRequests ? 'enabled' : 'disabled'}`);
+    logger.info(`Mounted at basepath : ${basepath}`);
+    logger.info(`Web application     : ${disableWebApp ? 'disabled' : 'enabled'}`);
+    logger.info(`Request logging     : ${logRequests ? 'enabled' : 'disabled'}`);
+    logger.info(`Header auth         : ${config.headerAuth.enabled ? 'enabled' : 'disabled'}`);
+    if( config.headerAuth.enabled ) {
+      logger.info(`Header auth header  : ${config.headerAuth.header}`);
+      logger.info(`Header auth user    : ${config.headerAuth.userPaths.join(', ')}`);
+      logger.info(`Header auth roles   : ${config.headerAuth.rolesPaths.join(', ')}`);
+    }
+    logger.info(`ACL                 : ${config.acl.enabled ? 'enabled' : 'disabled'}`);
+    logger.info(`Impersonation       : ${config.impersonation.enabled ? 'enabled' : 'disabled'}`);
+
   });
 }
 

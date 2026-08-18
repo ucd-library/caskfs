@@ -41,6 +41,10 @@ class Rdf {
     this.literalPredicates = new Set(config.ld.literalPredicates);
     this.literalPredicateMatches = config.ld.literalPredicateMatches;
     this.stringDataTypes = new Set(config.ld.stringDataTypes);
+    this.filterUris = new Set(config.ld.filterUris);
+    this.filterUriMatches = config.ld.filterUriMatches;
+    this.linkPredicates = new Set(config.ld.linkPredicates);
+    this.linkPredicateMatches = config.ld.linkPredicateMatches;
 
     this.TYPE_PREDICATE = config.ld.typePredicate;
   }
@@ -418,7 +422,8 @@ class Rdf {
       
       // extract types from the file quads
       types = new Set(fileQuads.filter(q => q.predicate.value === this.TYPE_PREDICATE)
-        .map(q => q.object.value));
+        .map(q => q.object.value)
+        .filter(uri => this._isFilterableUri(uri)));
       types = Array.from(types);
     } else {
       allQuads = caskQuads;
@@ -443,16 +448,22 @@ class Rdf {
       for( let fk of filterKeys ) {
         if( q[fk].termType !== 'NamedNode' ) continue;
 
+        let value;
         if( fk === 'subject' || fk === 'object' ) {
-          filters[fk].add(this._resolveIdPath(q[fk].value, filepath));
+          value = this._resolveIdPath(q[fk].value, filepath);
         } else if( fk === 'predicate' ) {
-          filters[fk].add(q[fk].value);
+          value = q[fk].value;
         } else if( fk === 'graph' ) {
-          filters[fk].add(this._resolveIdPath(q.graph.value));
+          value = this._resolveIdPath(q.graph.value);
         }
+
+        if( !this._isFilterableUri(value) ) continue;
+        filters[fk].add(value);
       }
 
-      if( q.predicate.termType === 'NamedNode' && q.object.termType === 'NamedNode' ) {
+      if( q.predicate.termType === 'NamedNode' && 
+          q.object.termType === 'NamedNode' && 
+          this._isLinkPredicate(q.predicate.value) ) {
         let lkey = `${q.predicate.value}|${q.object.value}`;
         if( !linkMap.has(lkey) ) {
           linkMap.set(lkey, {predicate: q.predicate.value, object: q.object.value});
@@ -884,6 +895,40 @@ class Rdf {
     if( this.literalPredicateMatches.some(regex => regex.test(quad.predicate.value)) ) {
       return true;
     }
+    return false;
+  }
+
+  /**
+   * @method _isFilterableUri
+   * @description Check if a URI has been opted into filter harvesting via
+   * config.ld.filterUris (exact match) or config.ld.filterUriMatches (regex match).
+   * Used to gate which type/subject/predicate/object/graph URIs become searchable
+   * facets in the file_ld_filter table. See Linked Data Harvesting Configuration in docs/ld.md.
+   *
+   * @param {String} uri
+   *
+   * @returns {Boolean}
+   */
+  _isFilterableUri(uri) {
+    if( this.filterUris.has(uri) ) return true;
+    if( this.filterUriMatches.some(regex => regex.test(uri)) ) return true;
+    return false;
+  }
+
+  /**
+   * @method _isLinkPredicate
+   * @description Check if a predicate URI has been opted into link harvesting via
+   * config.ld.linkPredicates (exact match) or config.ld.linkPredicateMatches (regex match).
+   * Used to gate which predicate/object NamedNode pairs become inter-file links in the
+   * file_ld_link table. See Linked Data Harvesting Configuration in docs/ld.md.
+   *
+   * @param {String} predicateUri
+   *
+   * @returns {Boolean}
+   */
+  _isLinkPredicate(predicateUri) {
+    if( this.linkPredicates.has(predicateUri) ) return true;
+    if( this.linkPredicateMatches.some(regex => regex.test(predicateUri)) ) return true;
     return false;
   }
 

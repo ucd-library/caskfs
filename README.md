@@ -283,9 +283,14 @@ curl "$BASE/find?type=http://schema.org/Person" \
 # Fetch linked data for a file
 curl "$BASE/ld?file=/people/alice.jsonld.json" \
   -H "Authorization: Bearer $TOKEN"
+
+# Grant a role read access to a directory (requires admin permission on that directory)
+curl -X POST "$BASE/acl/directory/research/papers/permissions" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"principal": "researchers", "permission": "read"}'
 ```
 
-For the full REST API reference see [FS REST API](docs/fs-rest-api.md) and [LD REST API](docs/ld-rest-api.md).
+For the full REST API reference see [FS REST API](docs/fs-rest-api.md), [LD REST API](docs/ld-rest-api.md), and [ACL REST API](docs/acl-rest-api.md).
 
 
 # Linked Data Example
@@ -369,6 +374,10 @@ CaskFS is configured via environment variables. All variables are optional and f
 | `CASKFS_CLOUD_STORAGE_PROJECT` | _(none)_ | GCP project ID |
 | `CASKFS_ENABLE_POWERWASH` | `false` | Allow the `init-pg --powerwash` command to drop and recreate the schema |
 | `CASKFS_HTTP_TOKEN` | _(none)_ | Client-side: overrides the bearer token configured on `HttpCaskFsClient` (CLI `http` environments, or services embedding the client). Useful for swapping the token at deploy time without touching stored config |
+| `CASKFS_FILTER_URIS` | _(none)_ | Exact URIs opted into search filtering (types, subjects, predicates, objects, graphs) — see [Linked Data Harvesting Configuration](docs/ld.md#linked-data-harvesting-configuration) |
+| `CASKFS_FILTER_URI_MATCHES` | _(none)_ | Regex patterns opted into search filtering |
+| `CASKFS_LINK_PREDICATES` | _(none)_ | Exact predicate URIs opted into inter-file link harvesting |
+| `CASKFS_LINK_PREDICATE_MATCHES` | _(none)_ | Regex patterns opted into inter-file link harvesting |
 
 
 # Deployment
@@ -406,4 +415,5 @@ The [RBAC system](docs/rbac.md) integrates with an external OIDC provider (e.g. 
 | Linked Data REST API | [docs/ld-rest-api.md](docs/ld-rest-api.md) |
 | Structural Metadata (hierarchy, partitions, lineage) | [docs/structural-metadata.md](docs/structural-metadata.md) |
 | Role-Based Access Control | [docs/rbac.md](docs/rbac.md) |
+| Role-Based Access Control REST API | [docs/acl-rest-api.md](docs/acl-rest-api.md) |
 | Auto Path / Partition Rules | [docs/auto-path.md](docs/auto-path.md) |

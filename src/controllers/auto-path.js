@@ -5,7 +5,7 @@ import { Validator } from './validate.js';
 import { silentJson } from './fs.js';
 import acl from '../lib/acl.js';
 import { AclAccessError } from '../lib/errors.js';
-import config from '../lib/config.js';
+import { getRequestor } from '../lib/middleware/header-auth.js';
 
 const router = Router();
 
@@ -33,7 +33,7 @@ const parseArgs = ( query ) => {
  * @throws {AclAccessError} if the requestor is not an admin and ACL enforcement is active
  */
 async function assertAdmin(req) {
-  const requestor = req.user?.username || config.acl.defaultRequestor || null;
+  const requestor = getRequestor(req);
   const lookupRequired = await acl.aclLookupRequired({ requestor, dbClient: caskFs.dbClient });
   if( lookupRequired ) {
     throw new AclAccessError('Admin access required to manage auto-path rules', requestor, null, 'admin');
