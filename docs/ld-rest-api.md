@@ -6,6 +6,7 @@ Overview:
  - [File Search: /cask/find](#file-search-caskfind)
  - [Relationship Search: /cask/rel](#relationship-search-caskrel)
  - [Fetch Linked Data: /cask/rdf](#fetch-linked-data-caskrdf)
+ - [Harvest Test: /cask/harvest-test](#harvest-test-caskharvest-test)
 
 # File Search: /cask/find
 
@@ -85,3 +86,17 @@ Overview:
      - 200 OK: Returns the fetched RDF data in the requested format.
      - 400 Bad Request: Invalid parameters.
      - 404 Not Found: The specified URL could not be reached or does not contain RDF data.
+
+# Harvest Test: /cask/harvest-test
+
+- GET /cask/harvest-test
+
+   - Description: Test a single URI against the [Linked Data Harvesting Configuration](../docs/ld.md#linked-data-harvesting-configuration) and report which mechanisms -- literal, filter, link -- would harvest it, and which specific exact-match or regex entry matched. Pure config check; does not query the database. Admin-only.
+   - Query Parameters:
+     - uri (string, required): The URI to test.
+   - Headers:
+     - Authorization (string, required): Bearer token for authentication. Requestor must be a global admin (or ACL must be disabled).
+   - Responses:
+     - 200 OK: `{ uri, literal, filter, link }` where each of `literal`/`filter`/`link` is `{ matches: boolean, matchedBy: "exact"|"regex"|null, pattern: string|null }`.
+     - 400 Bad Request: Missing `uri` parameter.
+     - 403 Forbidden: Requestor is not an admin.

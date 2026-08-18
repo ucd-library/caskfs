@@ -15,7 +15,8 @@ const pipelineAsync = promisify(pipeline);
  * Operations without endpoints (admin, individual auto-path rule set/remove/list, archive)
  * throw a descriptive error directing the user to use direct-pg mode. Bulk auto-path rule
  * loading (loadAutoPathRules/loadAutoPathRulesFromFile) and auto-path testing
- * (autoPath[type].getFromPath) are supported over HTTP via admin-only endpoints. ACL
+ * (autoPath[type].getFromPath) are supported over HTTP via admin-only endpoints. Testing a URI
+ * against the Linked Data Harvesting Configuration (rdf.testHarvest) is also admin-only. ACL
  * management (users, roles, directory permissions) is fully supported over HTTP via the
  * /acl endpoints - see the ACL methods section below.
  */
@@ -869,6 +870,20 @@ class HttpCaskFsClient {
 
       read()    { self._notSupported('ld (rdf read)'); },
       literal() { self._notSupported('literal'); },
+
+      /**
+       * @method rdf.testHarvest
+       * @description Test a single URI against the server's Linked Data Harvesting
+       * Configuration via the admin-only /harvest-test endpoint.
+       * @param {String} uri
+       * @returns {Promise<Object>} { uri, literal, filter, link }
+       */
+      async testHarvest(uri) {
+        const url = new URL(`${self.baseUrl}/harvest-test`);
+        url.searchParams.set('uri', uri);
+        const res = await self._fetch(url.toString());
+        return res.json();
+      },
     };
   }
 

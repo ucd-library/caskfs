@@ -932,6 +932,50 @@ class Rdf {
     return false;
   }
 
+  /**
+   * @method testHarvest
+   * @description Test a single URI against the configured Linked Data Harvesting Configuration
+   * (see docs/ld.md) and report which mechanisms -- literal, filter, link -- would harvest it,
+   * and which specific exact-match or regex entry matched. Pure config check against the
+   * currently loaded rules; does not touch the database or resolve cask:/ shorthand, so pass
+   * the fully-expanded URI you'd expect to see in a stored quad.
+   *
+   * @param {String} uri URI to test
+   *
+   * @returns {Object} { uri, literal, filter, link } where each of literal/filter/link is
+   * { matches: Boolean, matchedBy: 'exact'|'regex'|null, pattern: String|null }
+   */
+  testHarvest(uri) {
+    return {
+      uri,
+      literal: this._describeUriMatch(uri, this.literalPredicates, this.literalPredicateMatches),
+      filter: this._describeUriMatch(uri, this.filterUris, this.filterUriMatches),
+      link: this._describeUriMatch(uri, this.linkPredicates, this.linkPredicateMatches)
+    };
+  }
+
+  /**
+   * @method _describeUriMatch
+   * @description Check a URI against an exact-match set and a list of regex patterns, reporting
+   * which specific entry matched, if any. Used by testHarvest() for harvesting-config diagnostics.
+   *
+   * @param {String} uri
+   * @param {Set<String>} exactSet
+   * @param {Array<RegExp>} regexList
+   *
+   * @returns {Object} { matches, matchedBy, pattern }
+   */
+  _describeUriMatch(uri, exactSet, regexList) {
+    if( exactSet.has(uri) ) {
+      return { matches: true, matchedBy: 'exact', pattern: uri };
+    }
+    const regex = regexList.find(regex => regex.test(uri));
+    if( regex ) {
+      return { matches: true, matchedBy: 'regex', pattern: regex.source };
+    }
+    return { matches: false, matchedBy: null, pattern: null };
+  }
+
   _setEmptyIds(data) {
     if( Array.isArray(data) ) {
       data.forEach(d => this._setEmptyIds(d));

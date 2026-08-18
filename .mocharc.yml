@@ -14,6 +14,7 @@ spec:
   - tests/impersonation.test.js
   - tests/acl-http.test.js
   - tests/auto-path-http.test.js
+  - tests/harvest-test-http.test.js
   - tests/cli.test.js
   - tests/cp.test.js
   - tests/copy.test.js

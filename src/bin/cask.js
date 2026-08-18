@@ -687,6 +687,16 @@ program
   });
 
 program
+  .command('harvest-test <uri>')
+  .description('Test a URI against the Linked Data Harvesting Configuration and report which mechanisms (literal, filter, link) would harvest it. Works in both direct-pg and http mode (http requires admin access).')
+  .action(async (uri, options) => {
+    handleGlobalOpts(options);
+    const cask = getClient(options);
+    console.log(JSON.stringify(await cask.rdf.testHarvest(uri), null, 2));
+    await endClient(cask);
+  });
+
+program
   .command('rm <file-path>')
   .description('Remove a file from the filesystem layer and the underlying storage')
   .option('-d, --directory', 'Indicates that the file-path is a directory and all files in the directory should be deleted recursively', false)

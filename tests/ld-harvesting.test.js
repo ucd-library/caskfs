@@ -380,4 +380,49 @@ describe('Linked Data Harvesting Configuration', () => {
       assert.strictEqual(rel.outbound[UNLINKED_PREDICATE], undefined);
     });
   });
+
+  describe('testHarvest()', () => {
+    const EXACT_URI = 'https://example.org/harvest/test-harvest/exact';
+    const REGEX_URI = 'https://example.org/harvest/test-harvest/regex-match';
+    const NO_MATCH_URI = 'https://example.org/harvest/test-harvest/no-match';
+
+    before(() => {
+      // pure config check -- no writes needed, just point all three mechanisms at the
+      // same exact/regex entries so a single pair of URIs exercises every code path
+      caskFs.rdf.filterUris = new Set([EXACT_URI]);
+      caskFs.rdf.filterUriMatches = [/regex-match$/];
+      caskFs.rdf.linkPredicates = new Set([EXACT_URI]);
+      caskFs.rdf.linkPredicateMatches = [/regex-match$/];
+      caskFs.rdf.literalPredicates = new Set([EXACT_URI]);
+      caskFs.rdf.literalPredicateMatches = [/regex-match$/];
+    });
+
+    it('reports an exact match for all three mechanisms', () => {
+      const result = caskFs.rdf.testHarvest(EXACT_URI);
+      assert.strictEqual(result.uri, EXACT_URI);
+      for (const key of ['literal', 'filter', 'link']) {
+        assert.strictEqual(result[key].matches, true, `${key} should match`);
+        assert.strictEqual(result[key].matchedBy, 'exact', `${key} should match by exact`);
+        assert.strictEqual(result[key].pattern, EXACT_URI);
+      }
+    });
+
+    it('reports a regex match for all three mechanisms', () => {
+      const result = caskFs.rdf.testHarvest(REGEX_URI);
+      for (const key of ['literal', 'filter', 'link']) {
+        assert.strictEqual(result[key].matches, true, `${key} should match`);
+        assert.strictEqual(result[key].matchedBy, 'regex', `${key} should match by regex`);
+        assert.strictEqual(result[key].pattern, 'regex-match$');
+      }
+    });
+
+    it('reports no match for all three mechanisms on an unrelated uri', () => {
+      const result = caskFs.rdf.testHarvest(NO_MATCH_URI);
+      for (const key of ['literal', 'filter', 'link']) {
+        assert.strictEqual(result[key].matches, false, `${key} should not match`);
+        assert.strictEqual(result[key].matchedBy, null);
+        assert.strictEqual(result[key].pattern, null);
+      }
+    });
+  });
 });

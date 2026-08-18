@@ -37,6 +37,11 @@ RDF is the main method for fetching RDF data from a file in CaskFS.
 
 CLI: `cask rdf [options]`
 
+### Harvest Test
+Harvest Test checks a single URI against the [Linked Data Harvesting Configuration](#linked-data-harvesting-configuration) and reports which mechanisms -- literal, filter, link -- would harvest it, and which specific exact-match or regex entry matched. It's a pure config check (no database access), useful for verifying an allowlist/regex is set up the way you expect before writing files that depend on it.
+
+CLI: `cask harvest-test <uri>` (works in both direct-pg and http mode; http mode requires admin access)
+
 # Reference Binary File
 
 Every file in the [Layer 2 File System](fs.md) is represented as a node in the RDF graph (Layer 3).  This includes both JSON-LD files and binary/non-RDF files.  The files are place in the `cask://file` graph and given an id of `cask://path/to/file`.  CaskFS provides helpers to allow JSON-LD files to reference binary/non-RDF files without needing to reference via full `cask://path/to/file` URIs.
@@ -245,3 +250,21 @@ CASKFS_LINK_PREDICATE_MATCHES=worksWith$
 > and every predicate/object link was harvested unconditionally. Filter and link harvesting are now
 > opt-in — existing deployments that rely on `find()` or `relationships()` need to set the env vars
 > above after upgrading, or those queries will start returning empty results.
+
+## Testing Your Configuration
+
+Given how easy it is for a regex or exact-match entry to silently miss (a case mismatch, an
+un-expanded prefix, an un-resolved `cask:/` shorthand), CaskFS provides a diagnostic tool: `cask
+harvest-test <uri>` (or `GET /cask/harvest-test?uri=...` over HTTP, admin-only — see
+[ld-rest-api.md](ld-rest-api.md)) reports which of the three mechanisms above would harvest a given
+URI, and which specific exact entry or regex pattern matched:
+
+```bash
+$ cask harvest-test http://schema.org/name
+{
+  "uri": "http://schema.org/name",
+  "literal": { "matches": true, "matchedBy": "exact", "pattern": "http://schema.org/name" },
+  "filter": { "matches": false, "matchedBy": null, "pattern": null },
+  "link": { "matches": false, "matchedBy": null, "pattern": null }
+}
+```
