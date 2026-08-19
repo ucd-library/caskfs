@@ -7,7 +7,7 @@ const literalPredicates = (env.CASKFS_LITERAL_PREDICATES ?
 
 const literalPredicateMatches = (env.CASKFS_LITERAL_PREDICATE_MATCHES ?
   env.CASKFS_LITERAL_PREDICATE_MATCHES :
-  '(#|\/)name$')
+  '')
   .split(',')
   .map(s => s.trim())
   .filter(s => s.length > 0)
