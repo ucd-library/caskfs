@@ -209,8 +209,7 @@ Controls which predicates get their literal (text) value stored for retrieval vi
 
 - `CASKFS_LITERAL_PREDICATES` — comma-separated list of exact predicate URIs.
 - `CASKFS_LITERAL_PREDICATE_MATCHES` — comma-separated list of regex patterns tested against the predicate URI.
-- Default: `http://schema.org/name` and `(#|/)name$` — so any `...#name` or `.../name` predicate is
-  harvested as a literal out of the box.
+- Default: `http://schema.org/name`.
 
 ## Filter Harvesting
 
