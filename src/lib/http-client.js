@@ -370,6 +370,8 @@ class HttpCaskFsClient {
    * @param {String} context.filePath - source path
    * @param {Object} opts
    * @param {String} opts.destPath - destination path
+   * @param {Boolean} [opts.recheckMimeType=false] - for a single-file move that changes the
+   *   extension, re-detect mimeType from the new extension
    * @returns {Promise<Object>}
    */
   async move(context, opts={}) {
@@ -380,7 +382,28 @@ class HttpCaskFsClient {
       body: JSON.stringify({
         srcPath:  filePath,
         destPath: opts.destPath,
+        recheckMimeType: opts.recheckMimeType || false,
       }),
+    });
+    return res.json();
+  }
+
+  /**
+   * @method reharvest
+   * @description Re-parse and re-store RDF triples for a file, or every rdf-resourceType file
+   * under a directory (recursively), via the HTTP server.
+   *
+   * @param {Object} context - CaskFSContext or plain opts object
+   * @param {String} context.filePath - path to reharvest, file or directory
+   * @param {Object} [opts]
+   * @returns {Promise<Object>} { reharvested, skipped, errors }
+   */
+  async reharvest(context, opts={}) {
+    const { filePath } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/ld/reharvest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: filePath }),
     });
     return res.json();
   }

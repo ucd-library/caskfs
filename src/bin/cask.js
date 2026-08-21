@@ -510,7 +510,8 @@ program
 
 program
   .command('mv <source-path> <dest-path>')
-  .description('Rename or move a file or directory within CaskFS (cask: → cask: only). Preserves file_id/directory_id — only the path changes.')
+  .description('Rename or move a file or directory within CaskFS (cask: → cask: only). Preserves file_id/directory_id — only the path changes. Automatically reharvests any affected RDF files so relative cask:/ references stay correct.')
+  .option('--recheck-mime-type', 'For a single-file move that changes the extension, re-detect mimeType from the new extension. Off by default since mimeType may have been set manually; resourceType is always rechecked from the new extension regardless of this flag.', false)
   .action(async (sourcePath, destPath, options) => {
     handleGlobalOpts(options);
 
@@ -526,10 +527,39 @@ program
 
     await cask.move(
       { filePath: caskSrc, requestor: options.requestor },
-      { destPath: caskDest }
+      { destPath: caskDest, recheckMimeType: options.recheckMimeType }
     );
 
     console.log(`Moved cask:${caskSrc} → cask:${caskDest}`);
+    await endClient(cask);
+  });
+
+program
+  .command('reharvest <path>')
+  .description('Re-parse and re-store RDF triples for a file, or every RDF-resourceType file under a directory (recursively). Files whose resourceType is not rdf are skipped.')
+  .action(async (targetPath, options) => {
+    handleGlobalOpts(options);
+
+    if (!targetPath.startsWith('cask:')) {
+      console.error('reharvest only supports cask: paths.');
+      process.exit(1);
+    }
+
+    const caskPath = targetPath.slice('cask:'.length);
+    const cask = getClient(options);
+
+    const result = await cask.reharvest({ filePath: caskPath, requestor: options.requestor });
+
+    console.log(`Reharvested cask:${caskPath}`);
+    console.log(`  reharvested : ${result.reharvested.length}`);
+    console.log(`  skipped     : ${result.skipped.length}`);
+    if (result.errors.length > 0) {
+      console.log(`  errors      : ${result.errors.length}`);
+      for (const { filePath, error } of result.errors) {
+        console.log(`    ${filePath}: ${error}`);
+      }
+    }
+
     await endClient(cask);
   });
 

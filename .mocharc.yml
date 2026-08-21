@@ -19,6 +19,7 @@ spec:
   - tests/cp.test.js
   - tests/copy.test.js
   - tests/move.test.js
+  - tests/reharvest.test.js
   - tests/lineage.test.js
   - tests/http-client-auth.test.js
 
