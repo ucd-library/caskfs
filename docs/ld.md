@@ -8,6 +8,7 @@ Contents:
 - [Key Features](#key-features)
 - [Linked Data - Rest API](ld-rest-api.md)
 - [Linked Data - CLI Methods](#linked-data-cli-methods)
+- [Reharvest](#reharvest)
 - [Reference Binary File](#reference-binary-file)
 - [File Relationships](#file-relationships)
 - [Linked Data Harvesting Configuration](#linked-data-harvesting-configuration)
@@ -41,6 +42,19 @@ CLI: `cask rdf [options]`
 Harvest Test checks a single URI against the [Linked Data Harvesting Configuration](#linked-data-harvesting-configuration) and reports which mechanisms -- literal, filter, link -- would harvest it, and which specific exact-match or regex entry matched. It's a pure config check (no database access), useful for verifying an allowlist/regex is set up the way you expect before writing files that depend on it.
 
 CLI: `cask harvest-test <uri>` (works in both direct-pg and http mode; http mode requires admin access)
+
+### Reharvest
+Reharvest re-parses a file's JSON-LD content and re-stores its RDF triples — the delete-then-insert
+sequence a normal write does, run again against a file that's already stored. This re-resolves any
+[relative `cask:/` references](#reference-binary-file) the file contains against its *current* path,
+which is what makes it useful after a move (see [the known boundary](structural-metadata.md#a-known-boundary)
+this closes, and its limits). Given a directory, reharvest recurses and reharvests every descendant
+file whose `resourceType` is `rdf`, silently skipping the rest — not an error, just a no-op for that
+file. [`cask mv`](fs.md#move) calls this automatically after a move completes; run it by hand after
+RDF content or `resourceType` changed some other way (a bulk backend move, a harvesting config change
+you want reflected retroactively).
+
+CLI: `cask reharvest <path>`
 
 # Reference Binary File
 
@@ -209,8 +223,7 @@ Controls which predicates get their literal (text) value stored for retrieval vi
 
 - `CASKFS_LITERAL_PREDICATES` — comma-separated list of exact predicate URIs.
 - `CASKFS_LITERAL_PREDICATE_MATCHES` — comma-separated list of regex patterns tested against the predicate URI.
-- Default: `http://schema.org/name` and `(#|/)name$` — so any `...#name` or `.../name` predicate is
-  harvested as a literal out of the box.
+- Default: `http://schema.org/name`.
 
 ## Filter Harvesting
 

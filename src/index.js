@@ -2,7 +2,6 @@ import Database from "./lib/database/index.js";
 import path from "path";
 import fs from "fs/promises";
 import config from "./lib/config.js";
-import mime from "mime";
 import crypto from "crypto"
 import Cas from "./lib/cas.js";
 import Rdf from "./lib/ld.js";
@@ -47,13 +46,6 @@ class CaskFs {
     this.schemaPrefix = config.schemaPrefix;
 
     this.logger = getLogger('caskfs');
-
-    this.jsonldExt = '.jsonld.json';
-    this.jsonLdMimeType = 'application/ld+json';
-    this.nquadsMimeType = 'application/n-quads';
-    this.nTriplesMimeType = 'application/n-triples';
-    this.n3MimeType = 'text/n3';
-    this.turtleMimeType = 'text/turtle';
 
     this.CaskFSContext = CaskFSContext;
 
@@ -207,36 +199,16 @@ class CaskFs {
       metadata.mimeType = metadata.mimeType || context.data.mimeType || context.data.contentType;
       if( !metadata.mimeType ) {
         this.logger.debug('Attempting to auto-detect mime type, not specified in options', context.logSignal);
-
-        // if known RDF extension, set to JSON-LD
-        if( filePath.endsWith(this.jsonldExt) || context?.data.readPath?.endsWith(this.jsonldExt) ) {
-          this.logger.debug('Detected JSON-LD file based on file extension', context.logSignal);
-          metadata.mimeType = this.jsonLdMimeType;
-        } else {
-          this.logger.debug('Detecting mime type from file extension using mime package', context.logSignal);
-          // otherwise try to detect from file extension
-          metadata.mimeType = mime.getType(filePath);
-        }
-        // if still not found and we have a readPath, try to detect from that
-        if( !metadata.mimeType && context.readPath ) {
-          this.logger.debug('Detecting mime type from readPath file extension using mime package', context.logSignal);
-          metadata.mimeType = mime.getType(context.readPath);
-        }
+        metadata.mimeType = this.rdf.detectMimeType(filePath, {readPath: context.data.readPath});
       }
 
       // determine resource type based on mime type or file extension
-      if( metadata.mimeType === this.nquadsMimeType ||
-          metadata.mimeType === this.jsonLdMimeType ||
-          metadata.mimeType === this.n3MimeType ||
-          metadata.mimeType === this.nTriplesMimeType ||
-          metadata.mimeType === this.turtleMimeType ||
-          context.readPath?.endsWith(this.jsonldExt) ) {
+      metadata.resourceType = this.rdf.detectResourceType(metadata.mimeType, filePath, context.data.readPath);
+      if( metadata.resourceType === 'rdf' ) {
         this.logger.debug('Detected RDF file based on mime type or file extension', context.logSignal);
-        metadata.resourceType = 'rdf';
         context.data.actions.detectedLd = true;
       } else {
         this.logger.debug('Detected generic file based on mime type or file extension', context.logSignal);
-        metadata.resourceType = 'file';
       }
 
       // parse out file parts
@@ -317,27 +289,16 @@ class CaskFs {
       // specific relation table entries from another file with the same hash rather
       // than re-parsing all the RDF
       if( !context.data.fileExists ) {
-        // if replacing an existing file, delete old triples first
-        this.logger.info('Replacing existing RDF file, deleting old triples', context.logSignal);
-        await this.rdf.delete(context.data.file, {dbClient, ignoreAcl: true});
-
+        this.logger.info('Inserting RDF triples for file', context.logSignal);
         let readFile = context.data.stagedFile.tmpFile;
 
-        this.logger.info('Inserting RDF triples for file', context.logSignal);
-        let insertResp = await this.rdf.insert(context.data.file.file_id, 
-          {
-            dbClient, 
-            filepath: readFile
-          });
-        context.data.fileQuads = insertResp.fileQuads;
-        context.data.caskQuads = insertResp.caskQuads;
-        context.data.actions.parsedLinkedData = true;
-
-        // update the nquads column in the file table with the file-specific cask quads
-        await dbClient.query(
-          `UPDATE ${this.schema}.file SET nquads = $1 WHERE file_id = $2`, 
-          [context.data.caskQuads, context.data.file.file_id]
+        let {fileQuads, caskQuads} = await this.rdf.reharvestFile(
+          context.data.file.file_id,
+          {dbClient, filepath: readFile}
         );
+        context.data.fileQuads = fileQuads;
+        context.data.caskQuads = caskQuads;
+        context.data.actions.parsedLinkedData = true;
 
       } else {
         this.logger.info('File already exists, skipping RDF processing', context.logSignal);
@@ -1239,8 +1200,15 @@ class CaskFs {
    * @param {String} context.requestor user name of the requestor
    * @param {Object} opts options object
    * @param {String} opts.destPath Required. destination file path
+   * @param {Boolean} [opts.recheckMimeType=false] if the rename changes the file extension,
+   *   re-detect mimeType from the new extension instead of leaving it as-is. Off by default
+   *   since mimeType may have been set manually and a rename doesn't change file bytes.
+   *   resourceType is always re-derived from the (possibly-updated) mimeType and new extension
+   *   when the extension changes, regardless of this flag — that half of the check is purely
+   *   path-derived and safe to re-run unconditionally.
    *
-   * @returns {Promise<Object>} metadata for the file at its new path
+   * @returns {Promise<Object>} metadata for the file at its new path, with a `reharvest`
+   *   property describing the automatic post-move reharvest result
    */
   async moveFile(context, opts={}) {
     context = createContext(context, this.dbClient);
@@ -1265,6 +1233,20 @@ class CaskFs {
 
     const destParts = path.parse(destPath);
 
+    // if the rename changes the extension, resourceType (and, opt-in, mimeType) may be stale
+    let metadataPatch = null;
+    if (destParts.ext !== path.parse(srcPath).ext) {
+      let newMimeType = srcMeta.metadata.mimeType;
+      if (opts.recheckMimeType) {
+        newMimeType = this.rdf.detectMimeType(destPath);
+      }
+      let newResourceType = this.rdf.detectResourceType(newMimeType, destPath);
+
+      if (newMimeType !== srcMeta.metadata.mimeType || newResourceType !== srcMeta.metadata.resourceType) {
+        metadataPatch = { ...srcMeta.metadata, mimeType: newMimeType, resourceType: newResourceType };
+      }
+    }
+
     await this.runInTransaction(async (dbClient) => {
       let lockKey = this._lockKeyFromString(srcPath);
       await dbClient.query(`SELECT pg_advisory_xact_lock($1)`, [lockKey]);
@@ -1277,9 +1259,28 @@ class CaskFs {
         name: destParts.base,
         user: context.data.requestor
       });
+
+      if (metadataPatch) {
+        await dbClient.updateFileMetadata(destPath, { metadata: metadataPatch });
+      }
     });
 
-    return this.metadata({ filePath: destPath, requestor: context.data.requestor, ignoreAcl: context.data.ignoreAcl, dbClient: context.data.dbClient });
+    // resourceType flipped away from rdf: reharvest() only skips non-rdf files, it doesn't
+    // clean up ones that just flipped, so purge the now-stale content triples explicitly
+    if (metadataPatch && srcMeta.metadata.resourceType === 'rdf' && metadataPatch.resourceType !== 'rdf') {
+      await this.rdf.delete(srcMeta, { dbClient: context.data.dbClient, ignoreAcl: true });
+    }
+
+    const reharvestResult = await this.reharvest({
+      filePath: destPath,
+      requestor: context.data.requestor,
+      dbClient: context.data.dbClient,
+      ignoreAcl: true
+    });
+
+    const result = await this.metadata({ filePath: destPath, requestor: context.data.requestor, ignoreAcl: context.data.ignoreAcl, dbClient: context.data.dbClient });
+    result.reharvest = reharvestResult;
+    return result;
   }
 
   /**
@@ -1296,7 +1297,8 @@ class CaskFs {
    * @param {Object} opts options object
    * @param {String} opts.destPath Required. destination directory path
    *
-   * @returns {Promise<Object>} object with the new directory path
+   * @returns {Promise<Object>} object with the new directory path and a `reharvest` property
+   *   describing the automatic post-move reharvest result across the moved subtree
    */
   async moveDirectory(context, opts={}) {
     context = createContext(context, this.dbClient);
@@ -1326,7 +1328,16 @@ class CaskFs {
       await this.directory.move({ directory: srcDir, destPath, parentId, dbClient });
     });
 
-    return { directory: destPath };
+    // every descendant's logical path shifted with the directory, so any rdf-resourceType
+    // file anywhere in the subtree may have stale relative cask:/ references
+    const reharvestResult = await this.reharvest({
+      filePath: destPath,
+      requestor: context.data.requestor,
+      dbClient: context.data.dbClient,
+      ignoreAcl: true
+    });
+
+    return { directory: destPath, reharvest: reharvestResult };
   }
 
   /**
@@ -1366,6 +1377,93 @@ class CaskFs {
       { directory: srcPath, requestor: context.data.requestor, dbClient: context.data.dbClient },
       opts
     );
+  }
+
+  /**
+   * @method reharvest
+   * @description Re-parse and re-store RDF triples for a file, or for every RDF-resourceType
+   * file under a directory (recursively). Files whose resourceType is not 'rdf' are skipped,
+   * not treated as errors. Relative `cask:/` references in a file's JSON-LD content are only
+   * resolved against the file's current path at insert time, so reharvesting is what keeps
+   * them correct after the file (or something it points at) has moved — see
+   * docs/structural-metadata.md#a-known-boundary.
+   *
+   * @param {Object|CaskFSContext} context context or object with filePath property (file or directory)
+   * @param {String} context.filePath path to reharvest, file or directory
+   * @param {String} context.requestor user name of the requestor
+   * @param {Object} [opts] options object
+   * @param {DatabaseClient} [opts.dbClient] database client to use, defaults to the instance's client
+   *
+   * @returns {Promise<Object>} { reharvested: [filePath...], skipped: [filePath...], errors: [{filePath, error}] }
+   */
+  async reharvest(context, opts={}) {
+    context = createContext(context, this.dbClient);
+    const dbClient = opts.dbClient || context.data.dbClient;
+    const requestor = context.data.requestor;
+    const ignoreAcl = context.data.ignoreAcl;
+
+    const srcPath = context.data.filePath;
+    const results = { reharvested: [], skipped: [], errors: [] };
+
+    const reharvestOne = async (filePath) => {
+      await this.canWriteFile({ filePath, requestor, ignoreAcl, dbClient });
+      const meta = await this.metadata({ filePath, requestor, ignoreAcl, dbClient });
+
+      if( meta.metadata?.resourceType !== 'rdf' ) {
+        results.skipped.push(filePath);
+        return;
+      }
+
+      await this.rdf.reharvestFile(meta.file_id, { dbClient, filepath: meta.fullPath });
+      results.reharvested.push(filePath);
+    };
+
+    // detect whether source is a file
+    let srcIsFile = false;
+    try {
+      await this.metadata(context);
+      srcIsFile = true;
+    } catch(e) {}
+
+    if( srcIsFile ) {
+      try {
+        await reharvestOne(srcPath);
+      } catch(e) {
+        results.errors.push({ filePath: srcPath, error: e.message });
+      }
+      return results;
+    }
+
+    // directory: page through ls recursively and reharvest each rdf file
+    const walk = async (dir) => {
+      let offset = 0;
+      const limit = 1000;
+      while (true) {
+        const result = await this.ls({ directory: dir, limit, offset, requestor });
+
+        for (const file of (result.files || [])) {
+          const filePath = path.posix.join(file.directory, file.filename);
+          try {
+            await reharvestOne(filePath);
+          } catch(e) {
+            results.errors.push({ filePath, error: e.message });
+          }
+          // handle virtual dirs — a path that is both a file and a parent directory
+          try { await walk(filePath); } catch(e) {}
+        }
+
+        for (const subDir of (result.directories || [])) {
+          await walk(subDir.fullname);
+        }
+
+        const fetched = (result.files?.length || 0) + (result.directories?.length || 0);
+        if (fetched < limit) break;
+        offset += limit;
+      }
+    };
+
+    await walk(srcPath);
+    return results;
   }
 
   /**

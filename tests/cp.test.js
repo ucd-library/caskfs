@@ -345,6 +345,22 @@ describe('CLI – cp (direct-pg)', () => {
     assert.ok(stderr.includes('cask:'), `expected cask: guidance in stderr:\n${stderr}`);
   });
 
+  it('should reharvest via the CLI', async () => {
+    const rdfFile = path.join(tmpDir, 'reharvest-doc.jsonld.json');
+    await fs.writeFile(rdfFile, JSON.stringify({
+      '@id': 'https://example.org/reharvest-cli/doc',
+      'http://schema.org/about': { '@id': 'cask:/' }
+    }));
+    await runCask(['write', '/reharvest-cli/doc.jsonld.json', '-d', rdfFile, '-l'], { env: env() });
+
+    const { code, stdout, stderr } = await runCask(
+      ['reharvest', 'cask:/reharvest-cli'],
+      { env: env() }
+    );
+    assert.strictEqual(code, 0, `reharvest exited non-zero: ${stderr}`);
+    assert.ok(stdout.includes('reharvested : 1'), `expected 1 reharvested file in output:\n${stdout}`);
+  });
+
   it('should print a dry-run message and not write (cask: → cask:)', async () => {
     const { code, stdout, stderr } = await runCask(
       ['cp', 'cask:/cp-single/single.txt', 'cask:/cp-dryrun/single.txt', '--dry-run'],

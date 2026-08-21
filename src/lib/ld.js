@@ -4,6 +4,7 @@ import Database from "./database/index.js";
 import config from "./config.js";
 import path from "path";
 import fsp from "fs/promises";
+import mime from "mime";
 import { getLogger } from './logger.js';
 import acl from './acl.js';
 const { namedNode, quad, literal } = DataFactory;
@@ -35,6 +36,7 @@ class Rdf {
     this.jsonldExt = '.jsonld.json';
     this.jsonLdMimeType = 'application/ld+json';
     this.nquadsMimeType = 'application/n-quads';
+    this.nTriplesMimeType = 'application/n-triples';
     this.n3MimeType = 'text/n3';
     this.turtleMimeType = 'text/turtle';
 
@@ -227,15 +229,98 @@ class Rdf {
 
 
   /**
+   * @method detectMimeType
+   * @description Detect the mime type for a file path. Checks the known JSON-LD extension
+   * first, then falls back to extension-based detection via the mime package, optionally
+   * retrying against a secondary read path (e.g. a staged tmp file) if nothing is found.
+   *
+   * @param {String} filePath file path used for detection
+   * @param {Object} [opts]
+   * @param {String} [opts.readPath] secondary path to check if filePath yields nothing
+   *
+   * @returns {String|null} detected mime type, or null if none could be determined
+   */
+  detectMimeType(filePath='', opts={}) {
+    let mimeType;
+
+    if( filePath.endsWith(this.jsonldExt) || opts.readPath?.endsWith(this.jsonldExt) ) {
+      mimeType = this.jsonLdMimeType;
+    } else {
+      mimeType = mime.getType(filePath);
+    }
+
+    if( !mimeType && opts.readPath ) {
+      mimeType = mime.getType(opts.readPath);
+    }
+
+    return mimeType;
+  }
+
+  /**
+   * @method detectResourceType
+   * @description Decide whether a file's contents should be treated as RDF ('rdf') or an
+   * opaque binary ('file'), based on its mime type or the JSON-LD file extension. A path
+   * ending in the JSON-LD extension always forces 'rdf', even over an explicitly-set,
+   * non-RDF-looking mime type.
+   *
+   * @param {String} mimeType mime type to check against known RDF mime types
+   * @param {String} filePath file path to check against the JSON-LD extension
+   * @param {String} [readPath] secondary path to also check against the JSON-LD extension
+   *
+   * @returns {String} 'rdf' or 'file'
+   */
+  detectResourceType(mimeType, filePath='', readPath='') {
+    if( mimeType === this.nquadsMimeType ||
+        mimeType === this.jsonLdMimeType ||
+        mimeType === this.n3MimeType ||
+        mimeType === this.nTriplesMimeType ||
+        mimeType === this.turtleMimeType ||
+        filePath?.endsWith(this.jsonldExt) ||
+        readPath?.endsWith(this.jsonldExt) ) {
+      return 'rdf';
+    }
+    return 'file';
+  }
+
+  /**
+   * @method reharvestFile
+   * @description Re-parse and re-store the RDF triples for a single file: delete any existing
+   * file-scoped triples, re-run insert against the given physical file path, and persist the
+   * resulting cask quads on the file record. Safe to call whether or not the file has been
+   * inserted before (delete is a no-op when there is nothing to remove).
+   *
+   * @param {String} fileId file ID to reharvest
+   * @param {Object} opts options object
+   * @param {Object} [opts.dbClient] database client to use, defaults to the instance's client
+   * @param {String} opts.filepath physical disk path to read the file's bytes from
+   *
+   * @returns {Promise<Object>} { fileQuads, caskQuads } the parsed quads for the file
+   */
+  async reharvestFile(fileId, opts={}) {
+    let dbClient = opts.dbClient || this.dbClient;
+
+    await this.delete({file_id: fileId, filepath: opts.filepath}, {dbClient, ignoreAcl: true});
+
+    let {fileQuads, caskQuads} = await this.insert(fileId, {dbClient, filepath: opts.filepath});
+
+    await dbClient.query(
+      `UPDATE ${config.database.schema}.file SET nquads = $1 WHERE file_id = $2`,
+      [caskQuads, fileId]
+    );
+
+    return {fileQuads, caskQuads};
+  }
+
+  /**
    * @function insert
    * @description Insert rdf layer for a file into the database.  This accepts a custom filepath
    * in opts for reading a tmp file during insert.
-   * 
+   *
    * @param {String} fileId file ID to associate the RDF data with
    * @param {Object} opts options object
    * @param {String} opts.filepath optional file path to the RDF data file.  If not provided, will read from the CASKFS
-   * 
-   * @returns 
+   *
+   * @returns
    */
   async insert(fileId, opts={}) {
     let dbClient = opts.dbClient || this.dbClient;

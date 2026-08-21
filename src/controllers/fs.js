@@ -297,13 +297,13 @@ router.post('/copy', silentJson, async (req, res) => {
  */
 router.post('/mv', silentJson, async (req, res) => {
   try {
-    const { srcPath, destPath } = req.body || {};
+    const { srcPath, destPath, recheckMimeType } = req.body || {};
     if (!srcPath)  return res.status(400).json({ error: 'srcPath is required' });
     if (!destPath) return res.status(400).json({ error: 'destPath is required' });
 
     const result = await caskFs.move(
       { filePath: srcPath, requestor: getRequestor(req) },
-      { destPath }
+      { destPath, recheckMimeType }
     );
 
     res.status(200).json(result);
