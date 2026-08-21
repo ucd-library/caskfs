@@ -42,7 +42,11 @@ CLI: `cask copy <source-path> <destination-path> [options]`
 
 Rename or move a file or directory within CaskFS (`cask:` → `cask:` only — use Copy for transfers to/from local disk). The `file_id`/`directory_id` and everything keyed by them (partition keys, [lineage links](structural-metadata.md#three-structural-facets)) are unchanged; only the path is rewritten. Destination parent directories are created automatically. Fails if the destination path already exists — there is no unix-`mv`-style nesting into an existing directory.
 
-CLI: `cask mv <source-path> <destination-path>`
+After the move commits, `mv` automatically [reharvests](ld.md#reharvest) the moved file (or, for a directory, every RDF file in the subtree) so any [relative `cask:/` references](ld.md#reference-binary-file) they contain resolve against their new location — see [the known boundary](structural-metadata.md#a-known-boundary) this does and doesn't close.
+
+For a single-file move that changes the file's extension, `resourceType` is always rechecked against the new extension (harmless either way, since it's derived purely from the path). `mimeType` is left untouched unless `--recheck-mime-type` is passed, since it may have been set manually and a rename doesn't change file bytes. If the recheck flips `resourceType` away from `rdf`, that file's now-stale content triples are purged as part of the same move.
+
+CLI: `cask mv <source-path> <destination-path> [--recheck-mime-type]`
 
 ### Read
 Read is the basic method for reading a file from CaskFS.

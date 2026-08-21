@@ -22,7 +22,8 @@ export function buildIconsets(){
         'arrows-to-circle', 'copy', 'eye', 'plus', 'crosshairs',
         'code', 'arrow-right', 'circle-check', 'bars-progress',
         'circle-notch', 'circle-chevron-right', 'download',
-        'pen', 'lock', 'user-shield', 'chevron-down', 'chevron-right', 'globe'
+        'pen', 'lock', 'user-shield', 'chevron-down', 'chevron-right', 'globe',
+        'hard-drive', 'filter', 'link', 'quote-right'
       ]
     }, 
     { name: 'ucdlib-core', 

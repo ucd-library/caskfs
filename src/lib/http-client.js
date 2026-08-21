@@ -370,6 +370,8 @@ class HttpCaskFsClient {
    * @param {String} context.filePath - source path
    * @param {Object} opts
    * @param {String} opts.destPath - destination path
+   * @param {Boolean} [opts.recheckMimeType=false] - for a single-file move that changes the
+   *   extension, re-detect mimeType from the new extension
    * @returns {Promise<Object>}
    */
   async move(context, opts={}) {
@@ -380,7 +382,28 @@ class HttpCaskFsClient {
       body: JSON.stringify({
         srcPath:  filePath,
         destPath: opts.destPath,
+        recheckMimeType: opts.recheckMimeType || false,
       }),
+    });
+    return res.json();
+  }
+
+  /**
+   * @method reharvest
+   * @description Re-parse and re-store RDF triples for a file, or every rdf-resourceType file
+   * under a directory (recursively), via the HTTP server.
+   *
+   * @param {Object} context - CaskFSContext or plain opts object
+   * @param {String} context.filePath - path to reharvest, file or directory
+   * @param {Object} [opts]
+   * @returns {Promise<Object>} { reharvested, skipped, errors }
+   */
+  async reharvest(context, opts={}) {
+    const { filePath } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/ld/reharvest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: filePath }),
     });
     return res.json();
   }
@@ -836,6 +859,67 @@ class HttpCaskFsClient {
     if (isFile) url.searchParams.set('isFile', 'true');
     const res = await this._fetch(url.toString());
     return (await res.json()).hasPermission;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Audit log methods
+  // ---------------------------------------------------------------------------
+
+  /**
+   * @method rotateAuditLog
+   * @description Export audit_log partitions older than the server's configured hot window
+   * to gzipped JSONL, then drop them, via POST /audit/rotate. Global admin only.
+   * @param {Object|CaskFSContext} context
+   * @param {Boolean} [context.dryRun] if true, report what would be rotated without touching anything
+   * @returns {Promise<Object>}
+   */
+  async rotateAuditLog(context={}) {
+    const { dryRun } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/audit/rotate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dryRun: !!dryRun }),
+    });
+    return res.json();
+  }
+
+  /**
+   * @method listAuditArchives
+   * @description List rotated audit_log archive files via GET /audit/archives. Global admin only.
+   * @returns {Promise<Array<{name: String, size: Number, modified: String}>>}
+   */
+  async listAuditArchives() {
+    const res = await this._fetch(`${this.baseUrl}/audit/archives`);
+    return (await res.json()).archives;
+  }
+
+  /**
+   * @method getAuditArchive
+   * @description Download one rotated audit_log archive file via GET /audit/archives/:name.
+   * Returns the raw gzipped bytes as a stream, matching CaskFs#getAuditArchive. Global admin only.
+   * @param {Object|CaskFSContext} context
+   * @param {String} context.name archive filename, e.g. audit_log_2026_07.jsonl.gz
+   * @returns {Promise<{name: String, size: Number, stream: ReadableStream}>}
+   */
+  async getAuditArchive(context={}) {
+    const { name } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/audit/archives/${name}`);
+    const size = parseInt(res.headers.get('content-length') || '0');
+    return { name, size, stream: Readable.fromWeb(res.body) };
+  }
+
+  /**
+   * @method deleteAuditArchive
+   * @description Permanently delete one rotated audit_log archive file via
+   * DELETE /audit/archives/:name. Global admin only.
+   * @param {Object|CaskFSContext} context
+   * @param {String} context.name archive filename, e.g. audit_log_2026_07.jsonl.gz
+   * @returns {Promise<Object>}
+   */
+  async deleteAuditArchive(context={}) {
+    const { name } = this._extract(context);
+    const res = await this._fetch(`${this.baseUrl}/audit/archives/${name}`, { method: 'DELETE' });
+    return res.json();
   }
 
   // ---------------------------------------------------------------------------

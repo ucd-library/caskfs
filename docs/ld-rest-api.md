@@ -7,6 +7,7 @@ Overview:
  - [Relationship Search: /cask/rel](#relationship-search-caskrel)
  - [Fetch Linked Data: /cask/rdf](#fetch-linked-data-caskrdf)
  - [Harvest Test: /cask/harvest-test](#harvest-test-caskharvest-test)
+ - [Reharvest: /cask/ld/reharvest](#reharvest-caskldreharvest)
 
 # File Search: /cask/find
 
@@ -100,3 +101,17 @@ Overview:
      - 200 OK: `{ uri, literal, filter, link }` where each of `literal`/`filter`/`link` is `{ matches: boolean, matchedBy: "exact"|"regex"|null, pattern: string|null }`.
      - 400 Bad Request: Missing `uri` parameter.
      - 403 Forbidden: Requestor is not an admin.
+
+# Reharvest: /cask/ld/reharvest
+
+- POST /cask/ld/reharvest
+
+   - Description: Re-parse and re-store RDF triples for a file, or for every `resourceType: rdf` file under a directory (recursively). Files that are not `rdf` are skipped, not treated as errors. See [Reharvest](../docs/ld.md#reharvest) and [the known boundary it addresses](../docs/structural-metadata.md#a-known-boundary).
+   - Body Parameters:
+     - path (string, required): The file or directory path to reharvest.
+   - Headers:
+     - Authorization (string, required): Bearer token for authentication. Requestor needs write access to the target path.
+   - Responses:
+     - 200 OK: `{ reharvested: string[], skipped: string[], errors: { filePath: string, error: string }[] }`.
+     - 400 Bad Request: Missing `path` parameter.
+     - 403 Forbidden: Requestor lacks write access.

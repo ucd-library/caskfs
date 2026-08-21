@@ -10,7 +10,6 @@ export default class CaskfsPagePartitions extends Mixin(LitElement)
 
   static get properties() {
     return {
-      partitionKeyCt: { type: Number },
       autoPathRuleCt: { type: Number }
     }
   }
@@ -22,10 +21,9 @@ export default class CaskfsPagePartitions extends Mixin(LitElement)
   constructor() {
     super();
     this.render = render.bind(this);
-    this.partitionKeyCt = 0;
     this.autoPathRuleCt = 0;
 
-    this._injectModel('AppStateModel', 'AutoPathModel', 'SystemModel');
+    this._injectModel('AppStateModel', 'AutoPathModel');
 
     this.ctl = {
       appComponent: new AppComponentController(this)
@@ -34,7 +32,6 @@ export default class CaskfsPagePartitions extends Mixin(LitElement)
 
   async _onAppStateUpdate(e) {
     if ( !this.ctl.appComponent.isOnActivePage ) return;
-    this.getSystemStats();
     this.getAutoPathRuleCt();
   }
 
@@ -43,14 +40,6 @@ export default class CaskfsPagePartitions extends Mixin(LitElement)
     const res = await this.AutoPathModel.list('partition');
     if ( res.state === 'loaded' ) {
       this.autoPathRuleCt = res.payload.length;
-    }
-  }
-
-  async getSystemStats() {
-    this.partitionKeyCt = 0;
-    const res = await this.SystemModel.stats();
-    if ( res.state === 'loaded' ) {
-      this.partitionKeyCt = res.payload.total_file_partition_keys;
     }
   }
 

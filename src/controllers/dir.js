@@ -3,7 +3,7 @@ import handleError from './handleError.js';
 import caskFs from './caskFs.js';
 import { Validator } from './validate.js';
 import { MissingResourceError } from '../lib/errors.js';
-import { getRequestor } from '../lib/middleware/header-auth.js';
+import { getRequestor, getRequestIp } from '../lib/middleware/header-auth.js';
 
 const router = Router();
 
@@ -64,6 +64,7 @@ router.post(/(.*)/, async (req, res) => {
     const result = await caskFs.createDirectory({
       directory: directoryPath,
       requestor: getRequestor(req) || 'http',
+      ip: getRequestIp(req),
       corkTraceId: req.corkTraceId
     });
     res.status(201).json(result);
