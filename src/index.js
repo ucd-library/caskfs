@@ -809,10 +809,17 @@ class CaskFs {
     await this.allowAdminAction(context);
 
     context.setDbClientIfNotSet(this.dbClient);
-    let res = await context.data.dbClient.query(`
-      SELECT * from ${this.schema}.stats
-    `);
-    return res.rows[0];
+    const dbClient = context.data.dbClient;
+
+    const stats = await dbClient.query(`SELECT * from ${this.schema}.stats`);
+    const diskUsage = await dbClient.query(`SELECT * from ${this.schema}.disk_usage`);
+    const pgTableSizes = await dbClient.query(`SELECT * from ${this.schema}.pg_disk_usage`);
+
+    return {
+      ...stats.rows[0],
+      diskUsage: diskUsage.rows[0],
+      pgTableSizes: pgTableSizes.rows
+    };
   }
 
   /**

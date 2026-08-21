@@ -13,19 +13,20 @@ SELECT
     (SELECT COUNT(*) FROM caskfs.ld_filter WHERE type = 'graph') AS total_ld_graph_filters,
     (SELECT COUNT(*) FROM caskfs.ld_filter WHERE type = 'type') AS total_ld_type_filters,
     (SELECT COUNT(*) FROM caskfs.ld_link) AS total_ld_links,
-    (SELECT COUNT(*) FROM caskfs.ld_literal) AS total_ld_literals;
+    (SELECT COUNT(*) FROM caskfs.ld_literal) AS total_ld_literals,
+    (SELECT COUNT(*) FROM caskfs.ld_filter) AS total_ld_filters;
 
-CREATE OR REPLACE VIEW caskfs.pg_disk_usage AS
+DROP VIEW IF EXISTS caskfs.pg_disk_usage;
+CREATE VIEW caskfs.pg_disk_usage AS
 SELECT
-    c.relname,
-    pg_size_pretty(pg_relation_size(c.oid)) AS heap,
-    pg_size_pretty(pg_indexes_size(c.oid)) AS indexes,
-    pg_size_pretty(pg_total_relation_size(c.oid)) AS total
-FROM pg_class c
-JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE n.nspname = 'caskfs'
-  AND c.relkind = 'r'
-ORDER BY pg_total_relation_size(c.oid) DESC;
+    schemaname,
+    relname AS table_name,
+    pg_size_pretty(pg_total_relation_size(relid)) AS total_size,
+    pg_size_pretty(pg_table_size(relid)) AS table_size,
+    pg_size_pretty(pg_indexes_size(relid)) AS indexes_size
+FROM pg_catalog.pg_statio_user_tables
+WHERE schemaname = 'caskfs'
+ORDER BY pg_total_relation_size(relid) DESC;
 
 CREATE OR REPLACE VIEW caskfs.disk_usage AS
 SELECT count(*) AS total_files_on_disk,
