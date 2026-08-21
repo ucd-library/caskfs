@@ -1,6 +1,9 @@
 import Database from "./lib/database/index.js";
 import path from "path";
 import fs from "fs/promises";
+import fsSync from "fs";
+import zlib from "zlib";
+import { pipeline } from "stream/promises";
 import config from "./lib/config.js";
 import crypto from "crypto"
 import Cas from "./lib/cas.js";
@@ -14,6 +17,11 @@ import AutoPathPartition from "./lib/auto-path/partition.js";
 import Transfer from "./lib/transfer.js";
 import lineage from "./lib/lineage.js";
 import { MissingResourceError, AclAccessError, DuplicateFileError, HashNotFoundError } from "./lib/errors.js";
+
+// Rotated audit_log archive filenames, e.g. audit_log_2026_07.jsonl.gz - also doubles as the
+// validation regex for a caller-supplied filename (list/get/delete), so it can't be used to
+// escape the archive directory (no '/', no '..').
+const AUDIT_ARCHIVE_NAME_RE = /^audit_log_\d{4}_\d{2}\.jsonl\.gz$/;
 
 class CaskFs {
 
@@ -153,6 +161,7 @@ class CaskFs {
         replacedFile : false,
         detectedLd : false,
         fileInsert : false,
+        hashUpdated : false,
         updatedMetadata : false,
         parsedLinkedData : false,
         fileCopiedToCas : false,
@@ -261,13 +270,14 @@ class CaskFs {
         this.logger.info('Updating existing file record with new hash value', context.logSignal);
         await dbClient.updateFile({
           directoryId,
-          filePath, 
-          hash: context.data.stagedFile.hash_value, 
-          metadata, 
+          filePath,
+          hash: context.data.stagedFile.hash_value,
+          metadata,
           digests: context.data.stagedFile.digests,
           size: context.data.stagedFile.size,
           user: context.data.requestor
         });
+        context.data.actions.hashUpdated = true;
 
       } else {
         this.logger.info('File exists with same hash value, checking for metadata updates', context.logSignal);
@@ -313,6 +323,24 @@ class CaskFs {
       );
       context.update({copied});
       context.data.actions.fileCopiedToCas = copied;
+
+      // only audit a real state change - a rerun that dedup'd against identical content
+      // didn't actually change anything. The metadata-only-update branch above already
+      // audits itself via patchMetadata()'s own logAudit call, so it's deliberately excluded
+      // here to avoid double-counting.
+      if( context.data.actions.fileInsert || context.data.actions.hashUpdated ) {
+        await this.logAudit(context, {
+          operation: 'file.write',
+          resourceType: 'file',
+          resourceId: context.data.file?.file_id,
+          resourcePath: filePath,
+          details: {
+            hash: context.data.stagedFile?.hash_value,
+            size: context.data.stagedFile?.size,
+            replaced: !!context.data.actions.replacedFile
+          }
+        });
+      }
 
       // finally commit the transaction
       await dbClient.query('COMMIT');
@@ -420,6 +448,8 @@ class CaskFs {
       // set the global replace for sync
       file.replace = replace;
       file.requestor = context.data.requestor;
+      file.ip = context.data.ip;
+      file.corkTraceId = context.data.corkTraceId;
 
       try {
         wContext = createContext(file, context.data.dbClient || this.dbClient);
@@ -499,6 +529,14 @@ class CaskFs {
       autoPathKeys: autoPathKeys.partition,
       manualKeys: context.data.partitionKeys,
       dbClient
+    });
+
+    await this.logAudit(context, {
+      operation: 'file.patch_metadata',
+      resourceType: 'file',
+      resourceId: currentMetadata.file_id,
+      resourcePath: filePath,
+      details: { partitionKeys: keySet }
     });
 
     return {
@@ -778,6 +816,237 @@ class CaskFs {
   }
 
   /**
+   * @method _auditArchiveDir
+   * @description Absolute path to the on-disk directory where rotated audit_log partitions
+   * are archived - <rootDir>/audit, mirroring the CAS layer's <rootDir>/cas convention
+   * (see Cas#rootSubPath in src/lib/cas.js).
+   * @returns {String}
+   */
+  _auditArchiveDir() {
+    return path.join(config.rootDir, 'audit');
+  }
+
+  /**
+   * @method _findRotatableAuditPartitions
+   * @description List audit_log partition table names entirely older than cutoff.
+   * @param {Database} dbClient
+   * @param {Date} cutoff - a partition covering a month strictly before this is rotatable
+   * @returns {Promise<Array<String>>} partition table names, oldest first
+   */
+  async _findRotatableAuditPartitions(dbClient, cutoff) {
+    const res = await dbClient.query(`
+      SELECT c.relname
+      FROM pg_inherits i
+      JOIN pg_class c ON c.oid = i.inhrelid
+      JOIN pg_class p ON p.oid = i.inhparent
+      JOIN pg_namespace n ON n.oid = p.relnamespace
+      WHERE n.nspname = $1 AND p.relname = 'audit_log'
+      ORDER BY c.relname
+    `, [this.schema]);
+
+    return res.rows
+      .map(r => r.relname)
+      .filter(name => {
+        const m = name.match(/^audit_log_(\d{4})_(\d{2})$/);
+        if( !m ) return false;
+        const partitionMonth = new Date(parseInt(m[1]), parseInt(m[2]) - 1, 1);
+        return partitionMonth < cutoff;
+      });
+  }
+
+  /**
+   * @method _exportAndDropAuditPartition
+   * @description Export one audit_log partition to gzipped JSONL under <rootDir>/audit,
+   * verify the exported row count matches the table, then drop the partition. Rows are paged
+   * out via a server-side cursor (Database#batch) rather than loading the whole partition
+   * into memory at once.
+   *
+   * @param {Database} dbClient
+   * @param {String} partition partition table name, e.g. audit_log_2026_08
+   * @returns {Promise<{partition: String, rowCount: Number, archivePath: String}>}
+   */
+  async _exportAndDropAuditPartition(dbClient, partition) {
+    const archivePath = path.join(this._auditArchiveDir(), `${partition}.jsonl.gz`);
+    const tmpPath = `${archivePath}.tmp`;
+
+    let rowCount = 0;
+    const gzip = zlib.createGzip();
+    const writeStream = fsSync.createWriteStream(tmpPath);
+    const pipelinePromise = pipeline(gzip, writeStream);
+
+    for await (const rows of dbClient.batch(
+      `SELECT * FROM ${this.schema}.${partition} ORDER BY audit_log_id`, [], 1000
+    )) {
+      for( const row of rows ) {
+        gzip.write(JSON.stringify(row) + '\n');
+        rowCount++;
+      }
+    }
+    gzip.end();
+    await pipelinePromise;
+
+    const countRes = await dbClient.query(`SELECT COUNT(*) AS count FROM ${this.schema}.${partition}`);
+    const dbCount = parseInt(countRes.rows[0].count);
+
+    if( rowCount !== dbCount ) {
+      throw new Error(
+        `Row count mismatch for ${partition}: exported ${rowCount}, table has ${dbCount}. ` +
+        `Aborting rotation - archive left at ${tmpPath}, partition NOT dropped.`
+      );
+    }
+
+    await fs.rename(tmpPath, archivePath);
+    await dbClient.query(`DROP TABLE ${this.schema}.${partition}`);
+
+    return { partition, rowCount, archivePath };
+  }
+
+  /**
+   * @method rotateAuditLog
+   * @description Export audit_log partitions older than the configured hot window
+   * (config.audit.hotWindowMonths) to gzipped JSONL under <rootDir>/audit, then drop them
+   * from Postgres. Also ensures the current and next month's partitions exist ahead of time.
+   * Global admin only. Intended to run on a schedule (cron / k8s CronJob) rather than ad-hoc.
+   *
+   * @param {Object|CaskFSContext} context
+   * @param {Boolean} [context.dryRun] if true, report what would be rotated without touching anything
+   * @returns {Promise<Object>} { dryRun, partitions } when dryRun or nothing to rotate;
+   *   { dryRun: false, rotated: [{partition, rowCount, archivePath}] } otherwise
+   */
+  async rotateAuditLog(context={}) {
+    context = createContext(context, this.dbClient);
+    await this.allowAdminAction(context);
+
+    const dbClient = context.data.dbClient || this.dbClient;
+    const dryRun = !!context.data.dryRun;
+
+    const now = new Date();
+    await dbClient.query(`SELECT ${this.schema}.ensure_audit_partition($1::date)`, [now]);
+    await dbClient.query(
+      `SELECT ${this.schema}.ensure_audit_partition($1::date)`,
+      [new Date(now.getFullYear(), now.getMonth() + 1, 1)]
+    );
+
+    const cutoff = new Date(now.getFullYear(), now.getMonth() - config.audit.hotWindowMonths, 1);
+    const partitions = await this._findRotatableAuditPartitions(dbClient, cutoff);
+
+    if( dryRun || partitions.length === 0 ) {
+      return { dryRun, partitions };
+    }
+
+    await fs.mkdir(this._auditArchiveDir(), { recursive: true });
+
+    const rotated = [];
+    for( const partition of partitions ) {
+      rotated.push(await this._exportAndDropAuditPartition(dbClient, partition));
+    }
+
+    await this.logAudit(context, {
+      operation: 'audit.rotate',
+      resourceType: 'audit_archive',
+      details: { rotated: rotated.map(r => r.partition) }
+    });
+
+    return { dryRun: false, rotated };
+  }
+
+  /**
+   * @method listAuditArchives
+   * @description List rotated audit_log archive files under <rootDir>/audit. Global admin only.
+   *
+   * @param {Object|CaskFSContext} context
+   * @returns {Promise<Array<{name: String, size: Number, modified: Date}>>}
+   */
+  async listAuditArchives(context={}) {
+    context = createContext(context, this.dbClient);
+    await this.allowAdminAction(context);
+
+    const dir = this._auditArchiveDir();
+    let entries;
+    try {
+      entries = await fs.readdir(dir);
+    } catch(e) {
+      if( e.code === 'ENOENT' ) return [];
+      throw e;
+    }
+
+    const archives = [];
+    for( const name of entries ) {
+      if( !AUDIT_ARCHIVE_NAME_RE.test(name) ) continue;
+      const stat = await fs.stat(path.join(dir, name));
+      archives.push({ name, size: stat.size, modified: stat.mtime });
+    }
+
+    return archives.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /**
+   * @method getAuditArchive
+   * @description Open a rotated audit_log archive file for reading. Returns the raw gzipped
+   * bytes as a stream - callers that want parsed rows gunzip/parse it themselves (see
+   * docs/audit-log.md for a jq/duckdb-based workflow). Global admin only.
+   *
+   * @param {Object|CaskFSContext} context
+   * @param {String} context.name archive filename, e.g. audit_log_2026_07.jsonl.gz
+   * @returns {Promise<{name: String, size: Number, stream: ReadableStream}>}
+   */
+  async getAuditArchive(context={}) {
+    context = createContext(context, this.dbClient);
+    await this.allowAdminAction(context);
+
+    const name = context.data.name;
+    if( !AUDIT_ARCHIVE_NAME_RE.test(name || '') ) {
+      throw new Error(`Invalid audit archive filename: ${name}`);
+    }
+
+    const filePath = path.join(this._auditArchiveDir(), name);
+    let stat;
+    try {
+      stat = await fs.stat(filePath);
+    } catch(e) {
+      if( e.code === 'ENOENT' ) throw new MissingResourceError('AuditArchive', name);
+      throw e;
+    }
+
+    return { name, size: stat.size, stream: fsSync.createReadStream(filePath) };
+  }
+
+  /**
+   * @method deleteAuditArchive
+   * @description Permanently delete a rotated audit_log archive file from disk. Global admin
+   * only. This action is itself recorded to the audit log (operation 'audit.delete_archive').
+   *
+   * @param {Object|CaskFSContext} context
+   * @param {String} context.name archive filename, e.g. audit_log_2026_07.jsonl.gz
+   * @returns {Promise<{name: String, deleted: Boolean}>}
+   */
+  async deleteAuditArchive(context={}) {
+    context = createContext(context, this.dbClient);
+    await this.allowAdminAction(context);
+
+    const name = context.data.name;
+    if( !AUDIT_ARCHIVE_NAME_RE.test(name || '') ) {
+      throw new Error(`Invalid audit archive filename: ${name}`);
+    }
+
+    const filePath = path.join(this._auditArchiveDir(), name);
+    try {
+      await fs.unlink(filePath);
+    } catch(e) {
+      if( e.code === 'ENOENT' ) throw new MissingResourceError('AuditArchive', name);
+      throw e;
+    }
+
+    await this.logAudit(context, {
+      operation: 'audit.delete_archive',
+      resourceType: 'audit_archive',
+      resourcePath: name
+    });
+
+    return { name, deleted: true };
+  }
+
+  /**
    * @method createDirectory
    * @description Create a new empty directory, and any missing intermediate parent
    * directories, within CaskFS. Fails if a directory or file already exists at the path.
@@ -823,6 +1092,12 @@ class CaskFs {
 
     await this.runInTransaction(async (dbClient) => {
       await this.directory.mkdir(directoryPath, { dbClient });
+      await this.logAudit(context, {
+        operation: 'directory.create',
+        resourceType: 'directory',
+        resourcePath: directoryPath,
+        dbClient
+      });
     });
 
     this.logger.info(`Directory created: ${directoryPath}`, context.logSignal);
@@ -870,6 +1145,9 @@ class CaskFs {
       try {
         await this.deleteFile({
           filePath: file.filepath,
+          requestor: context.data.requestor,
+          ip: context.data.ip,
+          corkTraceId: context.data.corkTraceId,
           dbClient: context.data.dbClient,
           softDelete: context.data.softDelete,
           deleteLineage: context.data.deleteLineage,
@@ -896,6 +1174,8 @@ class CaskFs {
         createContext({
           directory: dir.fullname,
           requestor: context.data.requestor,
+          ip: context.data.ip,
+          corkTraceId: context.data.corkTraceId,
           rootDir: context.data.rootDir,
           dbClient: context.data.dbClient,
           softDelete: context.data.softDelete,
@@ -907,6 +1187,12 @@ class CaskFs {
 
     // finally remove the directory itself
     await this.directory.delete({directory: dirPath, dbClient: context.data.dbClient});
+
+    await this.logAudit(context, {
+      operation: 'directory.delete',
+      resourceType: 'directory',
+      resourcePath: dirPath
+    });
 
     this.logger.info(`Directory deleted: ${dirPath}`, context.logSignal);
 
@@ -964,6 +1250,8 @@ class CaskFs {
       let derivativeContext = createContext({
         filePath: derivative.from_filepath,
         requestor: context.data.requestor,
+        ip: context.data.ip,
+        corkTraceId: context.data.corkTraceId,
         dbClient: context.data.dbClient,
         softDelete: context.data.softDelete,
         ignoreAcl: context.data.ignoreAcl
@@ -977,7 +1265,19 @@ class CaskFs {
 
       let lockKey = this._lockKeyFromString(derivative.from_filepath);
       await context.data.dbClient.query(`SELECT pg_advisory_xact_lock($1)`, [lockKey]);
-      await this._deleteFileRecord(derivativeMetadata, derivativeContext);
+      let derivativeCasResp = await this._deleteFileRecord(derivativeMetadata, derivativeContext);
+
+      await this.logAudit(derivativeContext, {
+        operation: 'file.delete',
+        resourceType: 'file',
+        resourceId: derivativeMetadata.file_id,
+        resourcePath: derivative.from_filepath,
+        details: {
+          fileDeleted: derivativeCasResp.fileDeleted,
+          referencesRemaining: derivativeCasResp.referencesRemaining,
+          cascadedFrom: 'lineage'
+        }
+      });
 
       deletedPaths.push(derivative.from_filepath);
       if( context.data.onDeleteFile ) {
@@ -1030,6 +1330,18 @@ class CaskFs {
       }
 
       casResp = await this._deleteFileRecord(metadata, context);
+
+      await this.logAudit(context, {
+        operation: 'file.delete',
+        resourceType: 'file',
+        resourceId: metadata.file_id,
+        resourcePath: context.data.filePath,
+        details: {
+          fileDeleted: casResp.fileDeleted,
+          referencesRemaining: casResp.referencesRemaining,
+          deletedLineageFiles
+        }
+      });
 
       await context.data.dbClient.query('COMMIT');
 
@@ -1101,10 +1413,22 @@ class CaskFs {
         metadata: destMetadata,
         partitionKeys: destPartitionKeys,
         replace: opts.replace || false,
-        requestor: context.data.requestor
+        requestor: context.data.requestor,
+        ip: context.data.ip,
+        corkTraceId: context.data.corkTraceId
       });
 
       if (writeResult.hasError()) throw writeResult.getError();
+
+      if (writeResult.data.actions.fileInsert || writeResult.data.actions.hashUpdated) {
+        await this.logAudit(context, {
+          operation: 'file.copy',
+          resourceType: 'file',
+          resourceId: writeResult.data.file?.file_id,
+          resourcePath: destPath,
+          details: { sourcePath: srcPath, sourceHash: srcMeta.hash_value }
+        });
+      }
     });
 
     return writeResult;
@@ -1163,7 +1487,7 @@ class CaskFs {
           const destFilePath = destPath + srcFilePath.slice(srcPath.length);
           try {
             await this.copyFile(
-              { filePath: srcFilePath, requestor: context.data.requestor },
+              { filePath: srcFilePath, requestor: context.data.requestor, ip: context.data.ip, corkTraceId: context.data.corkTraceId },
               { ...opts, destPath: destFilePath }
             );
             results.copied++;
@@ -1263,6 +1587,15 @@ class CaskFs {
       if (metadataPatch) {
         await dbClient.updateFileMetadata(destPath, { metadata: metadataPatch });
       }
+
+      await this.logAudit(context, {
+        operation: 'file.move',
+        resourceType: 'file',
+        resourceId: srcMeta.file_id,
+        resourcePath: destPath,
+        details: { fromPath: srcPath, toPath: destPath },
+        dbClient
+      });
     });
 
     // resourceType flipped away from rdf: reharvest() only skips non-rdf files, it doesn't
@@ -1274,6 +1607,8 @@ class CaskFs {
     const reharvestResult = await this.reharvest({
       filePath: destPath,
       requestor: context.data.requestor,
+      ip: context.data.ip,
+      corkTraceId: context.data.corkTraceId,
       dbClient: context.data.dbClient,
       ignoreAcl: true
     });
@@ -1326,6 +1661,14 @@ class CaskFs {
     await this.runInTransaction(async (dbClient) => {
       const parentId = await this.directory.mkdir(destParts.dir, { dbClient });
       await this.directory.move({ directory: srcDir, destPath, parentId, dbClient });
+
+      await this.logAudit(context, {
+        operation: 'directory.move',
+        resourceType: 'directory',
+        resourcePath: destPath,
+        details: { fromPath: srcDir, toPath: destPath },
+        dbClient
+      });
     });
 
     // every descendant's logical path shifted with the directory, so any rdf-resourceType
@@ -1333,6 +1676,8 @@ class CaskFs {
     const reharvestResult = await this.reharvest({
       filePath: destPath,
       requestor: context.data.requestor,
+      ip: context.data.ip,
+      corkTraceId: context.data.corkTraceId,
       dbClient: context.data.dbClient,
       ignoreAcl: true
     });
@@ -1374,7 +1719,7 @@ class CaskFs {
     }
 
     return this.moveDirectory(
-      { directory: srcPath, requestor: context.data.requestor, dbClient: context.data.dbClient },
+      { directory: srcPath, requestor: context.data.requestor, ip: context.data.ip, corkTraceId: context.data.corkTraceId, dbClient: context.data.dbClient },
       opts
     );
   }
@@ -1415,6 +1760,13 @@ class CaskFs {
       }
 
       await this.rdf.reharvestFile(meta.file_id, { dbClient, filepath: meta.fullPath });
+      await this.logAudit(context, {
+        operation: 'file.reharvest',
+        resourceType: 'file',
+        resourceId: meta.file_id,
+        resourcePath: filePath,
+        dbClient
+      });
       results.reharvested.push(filePath);
     };
 
@@ -1501,13 +1853,23 @@ class CaskFs {
     const fromMeta = await this.metadata(context);
     const toMeta = await this.metadata(sourceContext);
 
-    return lineage.addLink({
+    const link = await lineage.addLink({
       fromFileId: fromMeta.file_id,
       toFileId: toMeta.file_id,
       relation: opts.relation,
       metadata: opts.metadata,
       dbClient: context.data.dbClient
     });
+
+    await this.logAudit(context, {
+      operation: 'lineage.add_derivative_link',
+      resourceType: 'derivative_link',
+      resourceId: link?.derivative_link_id,
+      resourcePath: context.data.filePath,
+      details: { sourcePath, relation: opts.relation }
+    });
+
+    return link;
   }
 
   /**
@@ -1539,12 +1901,24 @@ class CaskFs {
       dbClient: context.data.dbClient
     });
 
-    return lineage.removeLink({
+    const result = await lineage.removeLink({
       fromFileId: fromMeta.file_id,
       toFileId: toMeta.file_id,
       relation: opts.relation,
       dbClient: context.data.dbClient
     });
+
+    if( result.rows.length > 0 ) {
+      await this.logAudit(context, {
+        operation: 'lineage.remove_derivative_link',
+        resourceType: 'derivative_link',
+        resourceId: result.rows[0].derivative_link_id,
+        resourcePath: context.data.filePath,
+        details: { sourcePath, relation: opts.relation }
+      });
+    }
+
+    return result;
   }
 
   /**
@@ -1608,9 +1982,16 @@ class CaskFs {
     context = createContext(context, this.dbClient);
     await this.allowAdminAction(context);
 
-    await acl.ensureRole({
+    let roleId = await acl.ensureRole({
       role: context.data.role,
-      dbClient: context.dbClient || this.dbClient
+      dbClient: context.data.dbClient || this.dbClient
+    });
+
+    await this.logAudit(context, {
+      operation: 'acl.ensure_role',
+      resourceType: 'acl_role',
+      resourceId: roleId,
+      details: { role: context.data.role }
     });
   }
 
@@ -1628,10 +2009,20 @@ class CaskFs {
     await this.allowAdminAction(context);
 
     return this.runInTransaction(async (dbClient) => {
-      await acl.removeRole({
+      let res = await acl.removeRole({
         role: context.data.role,
         dbClient
       });
+
+      if( res.rows.length > 0 ) {
+        await this.logAudit(context, {
+          operation: 'acl.remove_role',
+          resourceType: 'acl_role',
+          resourceId: res.rows[0].role_id,
+          details: { role: context.data.role },
+          dbClient
+        });
+      }
     });
   }
 
@@ -1648,10 +2039,19 @@ class CaskFs {
     context = createContext(context, this.dbClient);
     await this.allowAdminAction(context);
 
-    return acl.ensureUser({
+    let userId = await acl.ensureUser({
       user: context.data.user,
-      dbClient: context.dbClient || this.dbClient
+      dbClient: context.data.dbClient || this.dbClient
     });
+
+    await this.logAudit(context, {
+      operation: 'acl.ensure_user',
+      resourceType: 'acl_user',
+      resourceId: userId,
+      details: { user: context.data.user }
+    });
+
+    return userId;
   }
 
   /**
@@ -1668,10 +2068,21 @@ class CaskFs {
     context = createContext(context, this.dbClient);
     await this.allowAdminAction(context);
 
-    return acl.removeUser({
+    let res = await acl.removeUser({
       user: context.data.user,
       dbClient: context.data.dbClient || this.dbClient
     });
+
+    if( res.rows.length > 0 ) {
+      await this.logAudit(context, {
+        operation: 'acl.remove_user',
+        resourceType: 'acl_user',
+        resourceId: res.rows[0].user_id,
+        details: { user: context.data.user }
+      });
+    }
+
+    return res;
   }
 
   /**
@@ -1699,7 +2110,13 @@ class CaskFs {
         await acl.ensureUserRole({
           user,
           role,
-          dbClient: context.dbClient || this.dbClient
+          dbClient: context.data.dbClient || this.dbClient
+        });
+
+        await this.logAudit(context, {
+          operation: 'acl.ensure_user_role',
+          resourceType: 'acl_role_user',
+          details: { user, role }
         });
       }
     }
@@ -1730,6 +2147,13 @@ class CaskFs {
       await acl.ensureRole(opts);
       await acl.ensureUserRole(opts);
 
+      await this.logAudit(context, {
+        operation: 'acl.set_user_role',
+        resourceType: 'acl_role_user',
+        details: { user: context.data.user, role: context.data.role },
+        dbClient
+      });
+
       return acl.getRole(opts);
     });
   }
@@ -1750,11 +2174,23 @@ class CaskFs {
     await this.allowAdminAction(context);
 
     return this.runInTransaction(async (dbClient) => {
-      return acl.removeUserRole({
+      let res = await acl.removeUserRole({
         user: context.data.user,
         role: context.data.role,
         dbClient
       });
+
+      if( res.rows.length > 0 ) {
+        await this.logAudit(context, {
+          operation: 'acl.remove_user_role',
+          resourceType: 'acl_role_user',
+          resourceId: res.rows[0].acl_role_user_id,
+          details: { user: context.data.user, role: context.data.role },
+          dbClient
+        });
+      }
+
+      return res;
     });
   }
 
@@ -1881,10 +2317,19 @@ class CaskFs {
         isPublic : (context.data.permission === 'true') || context.data.permission === true
       });
 
-      await acl.setDirectoryAcl({ 
+      await acl.setDirectoryAcl({
         dbClient : dbClient,
         rootDirectoryAclId,
         directoryId
+      });
+
+      await this.logAudit(context, {
+        operation: 'directory.set_public',
+        resourceType: 'directory',
+        resourceId: directoryId,
+        resourcePath: context.data.directory,
+        details: { public: (context.data.permission === 'true') || context.data.permission === true },
+        dbClient
       });
 
     });
@@ -1910,7 +2355,7 @@ class CaskFs {
     await this.canUpdateDirAcl(context);
 
     await this.runInTransaction(async (dbClient) => {
-      let {rootDirectoryAclId, directoryId} = await acl.setDirectoryPermission({
+      let {aclPermissionId, rootDirectoryAclId, directoryId} = await acl.setDirectoryPermission({
         dbClient,
         principal: context.data.principal,
         principalType: context.data.principalType,
@@ -1922,6 +2367,19 @@ class CaskFs {
         dbClient,
         rootDirectoryAclId,
         directoryId
+      });
+
+      await this.logAudit(context, {
+        operation: 'directory.grant_permission',
+        resourceType: 'acl_permission',
+        resourceId: aclPermissionId,
+        resourcePath: context.data.directory,
+        details: {
+          principal: context.data.principal,
+          principalType: context.data.principalType || 'role',
+          permission: context.data.permission
+        },
+        dbClient
       });
 
     });
@@ -1943,13 +2401,28 @@ class CaskFs {
     await this.canUpdateDirAcl(context);
 
     await this.runInTransaction(async (dbClient) => {
-      await acl.removeDirectoryPermission({
+      let res = await acl.removeDirectoryPermission({
         dbClient,
         principal: context.data.principal,
         principalType: context.data.principalType,
         directory: context.data.directory,
         permission: context.data.permission
       });
+
+      if( res.rows.length > 0 ) {
+        await this.logAudit(context, {
+          operation: 'directory.revoke_permission',
+          resourceType: 'acl_permission',
+          resourceId: res.rows[0].acl_permission_id,
+          resourcePath: context.data.directory,
+          details: {
+            principal: context.data.principal,
+            principalType: context.data.principalType || 'role',
+            permission: context.data.permission
+          },
+          dbClient
+        });
+      }
     });
   }
 
@@ -1971,6 +2444,13 @@ class CaskFs {
     await this.runInTransaction(async (dbClient) => {
       await acl.removeRootDirectoryAcl({
         dbClient, directory: context.data.directory
+      });
+
+      await this.logAudit(context, {
+        operation: 'directory.remove_acl',
+        resourceType: 'directory',
+        resourcePath: context.data.directory,
+        dbClient
       });
     });
   }
@@ -2185,6 +2665,44 @@ class CaskFs {
     await dbClient.connect();
     await dbClient.query('BEGIN');
     return dbClient;
+  }
+
+  /**
+   * @method logAudit
+   * @description Record a mutating operation to the audit trail (see config.audit). No-op
+   * unless config.audit.enabled is true, so callers never need their own flag check. Uses
+   * whatever dbClient is already open on the context, if any, so the audit row commits
+   * atomically with the operation it describes - if that transaction rolls back, no audit
+   * row exists either. Callers should only call this after confirming a real state change
+   * occurred (e.g. skip on a dedup'd no-op write) so re-running an idempotent operation
+   * doesn't inflate the audit log with rows that don't represent anything happening.
+   *
+   * @param {CaskFSContext} context active context; requestor/ip/corkTraceId/dbClient are read from it
+   * @param {Object} opts
+   * @param {String} opts.operation dotted operation name, e.g. 'file.write'
+   * @param {String} opts.resourceType resource type, e.g. 'file', 'directory', 'acl_role'
+   * @param {String} [opts.resourceId] UUID of the affected resource
+   * @param {String} [opts.resourcePath] point-in-time path label for the resource
+   * @param {Object} [opts.details] operation-specific payload
+   * @param {DatabaseClient} [opts.dbClient] explicit dbClient to use instead of the one on
+   *   context - needed inside a runInTransaction() callback, where the transactional client
+   *   is only available as that callback's argument, not yet reflected on context
+   * @returns {Promise<void>}
+   */
+  async logAudit(context, opts={}) {
+    if( !config.audit.enabled ) return;
+
+    let dbClient = opts.dbClient || context.data.dbClient || this.dbClient;
+    await dbClient.insertAuditLog({
+      requestor: context.data.requestor,
+      ip: context.data.ip,
+      corkTraceId: context.data.corkTraceId,
+      operation: opts.operation,
+      resourceType: opts.resourceType,
+      resourceId: opts.resourceId,
+      resourcePath: opts.resourcePath,
+      details: opts.details
+    });
   }
 
   /**

@@ -95,5 +95,20 @@ function getRequestor(req) {
   return req.user?.username || config.acl.defaultRequestor || null;
 }
 
+/**
+ * @function getRequestIp
+ * @description Extract the client IP address from a request for audit logging (see
+ * config.audit). Relies on Express's req.ip, which only trusts the X-Forwarded-For header
+ * when Express's "trust proxy" setting is enabled - matching this app's existing model of
+ * trusting an upstream gateway, the same one headerAuthMiddleware trusts for identity.
+ * Always null for CLI/internal-triggered operations, which is expected, not an error.
+ *
+ * @param {import('express').Request} req
+ * @returns {String|null}
+ */
+function getRequestIp(req) {
+  return req.ip || null;
+}
+
 export default headerAuthMiddleware;
-export { getRequestor };
+export { getRequestor, getRequestIp };

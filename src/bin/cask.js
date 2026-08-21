@@ -825,6 +825,7 @@ program
 program.command('acl', 'Manage ACL rules');
 program.command('auto-path', 'Manage auto-path rules');
 program.command('lineage', 'Manage file derivative/lineage links');
+program.command('audit', 'Manage audit log rotation/retention');
 program.command('env', 'Manage cask cli environment');
 program.command('admin', 'CaskFS administrative commands');
 program.command('archive', 'Import and export CaskFS archives');

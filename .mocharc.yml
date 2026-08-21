@@ -22,6 +22,7 @@ spec:
   - tests/reharvest.test.js
   - tests/lineage.test.js
   - tests/http-client-auth.test.js
+  - tests/audit.test.js
 
 timeout: 30000
 require: tests/helpers/env.js
