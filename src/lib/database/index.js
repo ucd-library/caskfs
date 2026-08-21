@@ -70,6 +70,10 @@ class Database {
     return this.client.query(sql, params);
   }
 
+  batch(sql, params, size) {
+    return this.client.batch(sql, params, size);
+  }
+
   end() {
     return this.client.end();
   }
@@ -828,6 +832,48 @@ async getChildDirectories(directory, opts = {}) {
     resp.rows = resp.rows.map(r => { delete r.total_count; return r; });
 
     return { limit, offset, totalCount, results: resp.rows };
+  }
+
+  /**
+   * @method insertAuditLog
+   * @description Insert one audit trail row. Caller (CaskFs#logAudit) is responsible for
+   * checking config.audit.enabled before calling this - this method always inserts.
+   *
+   * @param {Object} opts
+   * @param {String} opts.requestor acting user
+   * @param {String} opts.operation dotted operation name, e.g. 'file.write'
+   * @param {String} opts.resourceType resource type, e.g. 'file', 'directory', 'acl_role'
+   * @param {String} [opts.ip] source IP address of the request, null for CLI/internal operations
+   * @param {String} [opts.resourceId] UUID of the affected resource
+   * @param {String} [opts.resourcePath] point-in-time path label for the resource
+   * @param {String} [opts.corkTraceId] trace id correlating multi-step operations
+   * @param {Object} [opts.details] operation-specific JSON payload
+   * @returns {Promise<String>} the inserted audit_log_id
+   */
+  async insertAuditLog(opts={}) {
+    let resp = await this.client.query(`
+      SELECT ${this.schema}.insert_audit_log(
+        p_requestor := $1::TEXT,
+        p_operation := $2::TEXT,
+        p_resource_type := $3::TEXT,
+        p_ip_address := $4::INET,
+        p_resource_id := $5::UUID,
+        p_resource_path := $6::TEXT,
+        p_cork_trace_id := $7::UUID,
+        p_details := $8::JSONB
+      ) AS audit_log_id
+    `, [
+      opts.requestor || null,
+      opts.operation,
+      opts.resourceType,
+      opts.ip || null,
+      opts.resourceId || null,
+      opts.resourcePath || null,
+      opts.corkTraceId || null,
+      JSON.stringify(opts.details || {})
+    ]);
+
+    return resp.rows[0].audit_log_id;
   }
 
   powerWash() {

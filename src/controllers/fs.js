@@ -4,7 +4,7 @@ import caskFs from './caskFs.js';
 import { pipeline } from 'stream/promises';
 import { Validator } from './validate.js';
 import { MissingResourceError } from '../lib/errors.js';
-import { getRequestor } from '../lib/middleware/header-auth.js';
+import { getRequestor, getRequestIp } from '../lib/middleware/header-auth.js';
 
 const router = Router();
 
@@ -205,6 +205,7 @@ async function handleWrite(filePath, req, res, replace) {
       bucket: req.query.bucket || undefined,
       replace,
       requestor: getRequestor(req) || 'http',
+      ip: getRequestIp(req),
       corkTraceId: req.corkTraceId,
     };
 
@@ -253,7 +254,7 @@ router.post('/sync', silentJson, async (req, res) => {
       return res.status(400).json({ error: 'files array is required' });
     }
     const result = await caskFs.sync(
-      { requestor: getRequestor(req), corkTraceId: req.corkTraceId },
+      { requestor: getRequestor(req), ip: getRequestIp(req), corkTraceId: req.corkTraceId },
       { files }
     );
     res.status(200).json(result);
@@ -274,7 +275,7 @@ router.post('/copy', silentJson, async (req, res) => {
     if (!destPath) return res.status(400).json({ error: 'destPath is required' });
 
     const result = await caskFs.copy(
-      { filePath: srcPath, requestor: getRequestor(req) },
+      { filePath: srcPath, requestor: getRequestor(req), ip: getRequestIp(req) },
       { destPath, copyMetadata, copyPartitions, replace }
     );
 
@@ -302,7 +303,7 @@ router.post('/mv', silentJson, async (req, res) => {
     if (!destPath) return res.status(400).json({ error: 'destPath is required' });
 
     const result = await caskFs.move(
-      { filePath: srcPath, requestor: getRequestor(req) },
+      { filePath: srcPath, requestor: getRequestor(req), ip: getRequestIp(req) },
       { destPath, recheckMimeType }
     );
 
@@ -339,6 +340,7 @@ router.patch(/(.*)/, silentJson, async (req, res) => {
       filePath,
       partitionKeys,
       requestor: getRequestor(req) || 'http',
+      ip: getRequestIp(req),
       corkTraceId: req.corkTraceId,
     });
 
@@ -410,6 +412,7 @@ router.delete(/(.*)/, json(), async (req, res) => {
   try {
     const options = validator.validate({...req.query, ...(req.body || {}) });
     options.requestor = getRequestor(req);
+    options.ip = getRequestIp(req);
 
     if( options.stream ) {
       delete options.stream;

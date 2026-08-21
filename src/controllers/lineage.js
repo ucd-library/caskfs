@@ -1,7 +1,7 @@
 import { Router, json } from 'express';
 import handleError from './handleError.js';
 import caskFs from './caskFs.js';
-import { getRequestor } from '../lib/middleware/header-auth.js';
+import { getRequestor, getRequestIp } from '../lib/middleware/header-auth.js';
 
 const router = Router();
 
@@ -25,7 +25,7 @@ router.post('/add', silentJson, async (req, res) => {
     if (!sourcePath) return res.status(400).json({ error: 'sourcePath is required' });
 
     const result = await caskFs.addDerivativeLink(
-      { filePath: fromPath, requestor: getRequestor(req) },
+      { filePath: fromPath, requestor: getRequestor(req), ip: getRequestIp(req) },
       { sourcePath, relation, metadata }
     );
 
@@ -46,7 +46,7 @@ router.post('/remove', silentJson, async (req, res) => {
     if (!sourcePath) return res.status(400).json({ error: 'sourcePath is required' });
 
     const result = await caskFs.removeDerivativeLink(
-      { filePath: fromPath, requestor: getRequestor(req) },
+      { filePath: fromPath, requestor: getRequestor(req), ip: getRequestIp(req) },
       { sourcePath, relation }
     );
 

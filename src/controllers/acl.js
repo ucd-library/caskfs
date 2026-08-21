@@ -3,7 +3,7 @@ import handleError from './handleError.js';
 import caskFs from './caskFs.js';
 import { Validator } from './validate.js';
 import { silentJson } from './fs.js';
-import { getRequestor } from '../lib/middleware/header-auth.js';
+import { getRequestor, getRequestIp } from '../lib/middleware/header-auth.js';
 import acl from '../lib/acl.js';
 
 const router = Router();
@@ -120,7 +120,7 @@ router.put(/^\/directory(\/.*)?\/public$/, silentJson, async (req, res) => {
     const validator = new Validator({ public: { type: 'boolean', required: true } });
     const { public: isPublic } = validator.validate(req.body || {});
 
-    await caskFs.setDirectoryPublic({ directory, permission: isPublic, requestor: getRequestor(req) });
+    await caskFs.setDirectoryPublic({ directory, permission: isPublic, requestor: getRequestor(req), ip: getRequestIp(req) });
     res.status(200).json({ directory, public: isPublic });
   } catch (e) {
     return handleError(res, req, e);
@@ -138,7 +138,7 @@ router.post(/^\/directory(\/.*)?\/permissions$/, silentJson, async (req, res) =>
     const directory = req.params[0] || '/';
     const { principal, principalType, permission } = permissionBodyValidator.validate(req.body || {});
 
-    await caskFs.setDirectoryPermission({ directory, principal, principalType, permission, requestor: getRequestor(req) });
+    await caskFs.setDirectoryPermission({ directory, principal, principalType, permission, requestor: getRequestor(req), ip: getRequestIp(req) });
     res.status(200).json({ directory, principal, principalType: principalType || 'role', permission });
   } catch (e) {
     return handleError(res, req, e);
@@ -155,7 +155,7 @@ router.delete(/^\/directory(\/.*)?\/permissions$/, silentJson, async (req, res) 
     const directory = req.params[0] || '/';
     const { principal, principalType, permission } = permissionBodyValidator.validate(req.body || {});
 
-    await caskFs.removeDirectoryPermission({ directory, principal, principalType, permission, requestor: getRequestor(req) });
+    await caskFs.removeDirectoryPermission({ directory, principal, principalType, permission, requestor: getRequestor(req), ip: getRequestIp(req) });
     res.status(200).json({ directory, principal, principalType: principalType || 'role', permission });
   } catch (e) {
     return handleError(res, req, e);
@@ -170,7 +170,7 @@ router.delete(/^\/directory(\/.*)?\/permissions$/, silentJson, async (req, res) 
 router.delete(/^\/directory(\/.*)?$/, async (req, res) => {
   try {
     const directory = req.params[0] || '/';
-    await caskFs.removeDirectoryAcl({ directory, requestor: getRequestor(req) });
+    await caskFs.removeDirectoryAcl({ directory, requestor: getRequestor(req), ip: getRequestIp(req) });
     res.status(200).json({ directory });
   } catch (e) {
     return handleError(res, req, e);
@@ -232,7 +232,7 @@ router.get('/roles', async (req, res) => {
 router.post('/roles', silentJson, async (req, res) => {
   try {
     const { role } = roleBodyValidator.validate(req.body || {});
-    await caskFs.ensureRole({ role, requestor: getRequestor(req) });
+    await caskFs.ensureRole({ role, requestor: getRequestor(req), ip: getRequestIp(req) });
     res.status(200).json({ role });
   } catch (e) {
     return handleError(res, req, e);
@@ -261,7 +261,7 @@ router.get('/roles/:role/users', async (req, res) => {
  */
 router.delete('/roles/:role', async (req, res) => {
   try {
-    await caskFs.removeRole({ role: req.params.role, requestor: getRequestor(req) });
+    await caskFs.removeRole({ role: req.params.role, requestor: getRequestor(req), ip: getRequestIp(req) });
     res.status(200).json({ role: req.params.role });
   } catch (e) {
     return handleError(res, req, e);
@@ -291,7 +291,7 @@ router.get('/users', async (req, res) => {
 router.post('/users', silentJson, async (req, res) => {
   try {
     const { user } = userBodyValidator.validate(req.body || {});
-    await caskFs.ensureUser({ user, requestor: getRequestor(req) });
+    await caskFs.ensureUser({ user, requestor: getRequestor(req), ip: getRequestIp(req) });
     res.status(200).json({ user });
   } catch (e) {
     return handleError(res, req, e);
@@ -304,7 +304,7 @@ router.post('/users', silentJson, async (req, res) => {
  */
 router.delete('/users/:user', async (req, res) => {
   try {
-    await caskFs.removeUser({ user: req.params.user, requestor: getRequestor(req) });
+    await caskFs.removeUser({ user: req.params.user, requestor: getRequestor(req), ip: getRequestIp(req) });
     res.status(200).json({ user: req.params.user });
   } catch (e) {
     return handleError(res, req, e);
@@ -335,7 +335,7 @@ router.get('/users/:user/roles', async (req, res) => {
 router.post('/users/:user/roles', silentJson, async (req, res) => {
   try {
     const { role } = roleBodyValidator.validate(req.body || {});
-    await caskFs.setUserRole({ user: req.params.user, role, requestor: getRequestor(req) });
+    await caskFs.setUserRole({ user: req.params.user, role, requestor: getRequestor(req), ip: getRequestIp(req) });
     res.status(200).json({ user: req.params.user, role });
   } catch (e) {
     return handleError(res, req, e);
@@ -348,7 +348,7 @@ router.post('/users/:user/roles', silentJson, async (req, res) => {
  */
 router.delete('/users/:user/roles/:role', async (req, res) => {
   try {
-    await caskFs.removeUserRole({ user: req.params.user, role: req.params.role, requestor: getRequestor(req) });
+    await caskFs.removeUserRole({ user: req.params.user, role: req.params.role, requestor: getRequestor(req), ip: getRequestIp(req) });
     res.status(200).json({ user: req.params.user, role: req.params.role });
   } catch (e) {
     return handleError(res, req, e);

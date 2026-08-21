@@ -35,6 +35,7 @@ class PgClient {
       'layer1-cas.sql',
       'layer2-fs.sql',
       'layer3-ld.sql',
+      'audit.sql',
       'stats.sql'
     ]
   }
@@ -100,17 +101,31 @@ class PgClient {
 
   async *batch(text, params=[], size=100) {
     await this.connect();
-      const cursor = this.client.query(new Cursor(text, params));
 
-    let rows;
-    do {
-      rows = await cursor.read(size);
-      if (rows.length > 0) {
-        yield rows;
+    // pg-cursor needs a single connection checked out for the cursor's entire lifetime.
+    // this.client.query(cursor) against a Pool lets the pool reclaim the connection between
+    // reads instead, which hangs - so explicitly check out a dedicated client when pooled,
+    // and release it back once the cursor is exhausted (or the consumer stops early, via
+    // the generator's implicit finally on early return()).
+    const client = this.isPool ? await this.client.connect() : this.client;
+
+    try {
+      const cursor = client.query(new Cursor(text, params));
+
+      let rows;
+      do {
+        rows = await cursor.read(size);
+        if (rows.length > 0) {
+          yield rows;
+        }
+      } while (rows.length > 0);
+
+      await cursor.close();
+    } finally {
+      if( this.isPool ) {
+        client.release();
       }
-    } while (rows.length > 0);
-
-    await cursor.close();
+    }
   }
 
   async end() {

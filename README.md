@@ -417,3 +417,4 @@ The [RBAC system](docs/rbac.md) integrates with an external OIDC provider (e.g. 
 | Role-Based Access Control | [docs/rbac.md](docs/rbac.md) |
 | Role-Based Access Control REST API | [docs/acl-rest-api.md](docs/acl-rest-api.md) |
 | Auto Path / Partition Rules | [docs/auto-path.md](docs/auto-path.md) |
+| Audit Log | [docs/audit-log.md](docs/audit-log.md) |

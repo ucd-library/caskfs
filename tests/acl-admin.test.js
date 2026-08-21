@@ -221,6 +221,10 @@ describe('CaskFs ACL admin methods', () => {
       'getRoles with search/limit': () => caskFs.getRoles({ requestor: 'nobody', search: 'x', limit: 5 }),
       'getUsers with search/limit': () => caskFs.getUsers({ requestor: 'nobody', search: 'x', limit: 5 }),
       testPermission: () => caskFs.testPermission({ requestor: 'nobody', user: 'x', filePath: '/', permission: 'read' }),
+      rotateAuditLog: () => caskFs.rotateAuditLog({ requestor: 'nobody', dryRun: true }),
+      listAuditArchives: () => caskFs.listAuditArchives({ requestor: 'nobody' }),
+      getAuditArchive: () => caskFs.getAuditArchive({ requestor: 'nobody', name: 'audit_log_2026_01.jsonl.gz' }),
+      deleteAuditArchive: () => caskFs.deleteAuditArchive({ requestor: 'nobody', name: 'audit_log_2026_01.jsonl.gz' }),
     };
 
     for (const [name, call] of Object.entries(NON_ADMIN_CALLS)) {

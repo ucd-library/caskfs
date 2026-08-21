@@ -10,6 +10,7 @@ import harvestTest from './harvest-test.js';
 import system from './system.js';
 import transfer from './transfer.js';
 import lineage from './lineage.js';
+import audit from './audit.js';
 
 const router = Router();
 
@@ -24,5 +25,6 @@ router.use('/harvest-test', harvestTest);
 router.use('/system', system);
 router.use('/transfer', transfer);
 router.use('/lineage', lineage);
+router.use('/audit', audit);
 
 export default router;

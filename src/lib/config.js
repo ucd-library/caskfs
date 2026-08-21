@@ -162,6 +162,18 @@ const config = {
     // username, with no verification whatsoever. Only ever enable for local development.
     enabled    : env.CASKFS_ALLOW_IMPERSONATION === 'true',
     cookieName : 'caskfs_impersonate_user',
+  },
+
+  audit : {
+    // Opt-in, disabled by default. When off, logAudit() short-circuits before touching the
+    // database - the audit_log table/partitions are still created (cheap, empty) so turning
+    // this on later is just flipping the flag, not running a migration.
+    enabled : env.CASKFS_AUDIT_ENABLED === 'true',
+
+    // How many months of audit rows to keep in the hot Postgres table before `cask audit
+    // rotate` exports and drops the partition. Configurable because expected write volume
+    // varies a lot by deployment.
+    hotWindowMonths : parseInt(env.CASKFS_AUDIT_HOT_WINDOW_MONTHS) || 1
   }
 
 }
