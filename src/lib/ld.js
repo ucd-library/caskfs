@@ -208,6 +208,34 @@ class Rdf {
   }
 
   /**
+   * @method suggestUri
+   * @description Typeahead suggestions for URI values (subject/predicate/object/graph/type filter inputs).
+   *
+   * @param {Object} opts
+   * @param {String} opts.term substring to match against known URIs
+   * @param {Number} [opts.limit] max number of suggestions to return
+   *
+   * @returns {Promise<Array<String>>}
+   */
+  suggestUri(opts={}) {
+    return this.dbClient.suggestUri(opts.term, opts.limit);
+  }
+
+  /**
+   * @method suggestPartitionKey
+   * @description Typeahead suggestions for partition key values.
+   *
+   * @param {Object} opts
+   * @param {String} opts.term substring to match against known partition key values
+   * @param {Number} [opts.limit] max number of suggestions to return
+   *
+   * @returns {Promise<Array<String>>}
+   */
+  suggestPartitionKey(opts={}) {
+    return this.dbClient.suggestPartitionKey(opts.term, opts.limit);
+  }
+
+  /**
    * @method query
    * @description Internal method to query RDF data from the database based on given options.  A subject or
    * a file must be specified. Will return jsonld dataset of nodes and links that match the query.  

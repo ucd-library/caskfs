@@ -412,6 +412,16 @@ CREATE TABLE IF NOT EXISTS caskfs.partition_key (
 );
 -- This index is redundant because the UNIQUE constraint on value already creates an index.
 -- CREATE INDEX IF NOT EXISTS idx_partition_key_value ON caskfs.partition_key(value);
+-- Trigram index to support ILIKE '%term%' substring typeahead against caskfs.partition_key.value.
+CREATE INDEX IF NOT EXISTS idx_partition_key_value_trgm ON caskfs.partition_key USING GIN (value gin_trgm_ops);
+
+CREATE OR REPLACE FUNCTION caskfs.search_partition_key_by_value(p_search_term VARCHAR(256), p_limit INT DEFAULT 8)
+RETURNS TABLE (value VARCHAR(256)) AS $$
+    SELECT pk.value FROM caskfs.partition_key pk
+    WHERE pk.value ILIKE '%' || p_search_term || '%'
+    ORDER BY caskfs.similarity(pk.value, p_search_term) DESC
+    LIMIT p_limit;
+$$ LANGUAGE sql STABLE;
 
 ----------------
 -- file

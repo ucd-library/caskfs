@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS caskfs.uri (
 -- CREATE INDEX IF NOT EXISTS idx_uri_value ON caskfs.uri(uri);
 -- This index is redundant because the UNIQUE btree index on uri already supports equality lookups.
 -- CREATE INDEX IF NOT EXISTS idx_uri_value_hash ON caskfs.uri USING hash(uri);
+-- Trigram index to support ILIKE '%term%' substring typeahead against caskfs.uri.
+CREATE INDEX IF NOT EXISTS idx_uri_trgm ON caskfs.uri USING GIN (uri gin_trgm_ops);
 
 CREATE OR REPLACE FUNCTION caskfs.upsert_uri(p_uri VARCHAR(1028)) RETURNS UUID AS $$
 DECLARE
@@ -136,7 +138,7 @@ BEGIN
     WITH results AS (
         SELECT * from caskfs.ld_literal ll
         WHERE ll.value ILIKE '%' || p_search_term || '%'
-        ORDER BY similarity(ll.value, p_search_term) DESC
+        ORDER BY caskfs.similarity(ll.value, p_search_term) DESC
         LIMIT p_limit
     )
     SELECT
@@ -152,6 +154,14 @@ BEGIN
     LEFT JOIN caskfs.uri gu ON ll.graph = gu.uri_id;
 END;
 $$ LANGUAGE plpgsql STABLE;
+
+CREATE OR REPLACE FUNCTION caskfs.search_uri_by_value(p_search_term VARCHAR(1028), p_limit INT DEFAULT 8)
+RETURNS TABLE (uri VARCHAR(1028)) AS $$
+    SELECT u.uri FROM caskfs.uri u
+    WHERE u.uri ILIKE '%' || p_search_term || '%'
+    ORDER BY caskfs.similarity(u.uri, p_search_term) DESC
+    LIMIT p_limit;
+$$ LANGUAGE sql STABLE;
 
 
 CREATE TABLE IF NOT EXISTS caskfs.file_ld_literal (

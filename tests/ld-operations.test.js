@@ -197,6 +197,37 @@ describe('Linked Data Operations', () => {
     });
   });
 
+  // ─── rdf.suggestUri() / rdf.suggestPartitionKey() ──────────────────────────
+
+  describe('rdf.suggestUri()', () => {
+    it('should suggest URIs matching a substring in the middle of the value', async () => {
+      const result = await caskFs.rdf.suggestUri({ term: 'person/alice' });
+      assert.ok(result.includes(ALICE_URI));
+    });
+
+    it('should not suggest URIs that do not match the term', async () => {
+      const result = await caskFs.rdf.suggestUri({ term: 'person/alice' });
+      assert.ok(!result.includes(BOB_URI));
+    });
+
+    it('should respect the limit option', async () => {
+      const result = await caskFs.rdf.suggestUri({ term: 'example.org', limit: 1 });
+      assert.strictEqual(result.length, 1);
+    });
+  });
+
+  describe('rdf.suggestPartitionKey()', () => {
+    it('should suggest partition key values matching a substring', async () => {
+      const result = await caskFs.rdf.suggestPartitionKey({ term: 'tition-x' });
+      assert.ok(result.includes(PART_KEY));
+    });
+
+    it('should return an empty array when nothing matches', async () => {
+      const result = await caskFs.rdf.suggestPartitionKey({ term: 'no-such-partition-key' });
+      assert.deepStrictEqual(result, []);
+    });
+  });
+
   // ─── rdf.read() ────────────────────────────────────────────────────────────
 
   describe('rdf.read()', () => {

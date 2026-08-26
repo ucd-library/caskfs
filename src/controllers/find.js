@@ -50,4 +50,41 @@ router.post('/', json(), async (req, res) => {
   }
 });
 
+const parseSuggestArgs = ( query ) => {
+  const validator = new Validator({
+    q: { type: 'string', required: true },
+    limit: { type: 'positiveInteger' }
+  });
+
+  const parsed = validator.validate(query);
+
+  if ( !parsed.limit ) {
+    parsed.limit = 8;
+  } else if ( parsed.limit > 20 ) {
+    parsed.limit = 20;
+  }
+
+  return parsed;
+};
+
+router.get('/suggest/uri', async (req, res) => {
+  try {
+    const { q, limit } = parseSuggestArgs(req.query);
+    const resp = await caskFs.rdf.suggestUri({ term: q, limit });
+    res.status(200).json(resp);
+  } catch (e) {
+    return handleError(res, req, e);
+  }
+});
+
+router.get('/suggest/partition-key', async (req, res) => {
+  try {
+    const { q, limit } = parseSuggestArgs(req.query);
+    const resp = await caskFs.rdf.suggestPartitionKey({ term: q, limit });
+    res.status(200).json(resp);
+  } catch (e) {
+    return handleError(res, req, e);
+  }
+});
+
 export default router;

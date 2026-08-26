@@ -51,8 +51,8 @@ return html`
       <div>
         <div class='find-controls'>
           <div class='filter-controls'>
-            <caskfs-ld-filter-form></caskfs-ld-filter-form>
-            <caskfs-ld-filter-buttons></caskfs-ld-filter-buttons>
+            <caskfs-ld-filter-form .filters=${this.filters}></caskfs-ld-filter-form>
+            <caskfs-ld-filter-buttons .filters=${this.filters}></caskfs-ld-filter-buttons>
           </div>
           <div class='action-controls'>
             <div ?hidden=${!this.ctl.qs.query.partition.length} class='double-decker bold'>

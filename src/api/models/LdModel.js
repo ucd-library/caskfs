@@ -21,6 +21,14 @@ class LdModel extends BaseModel {
     return this.service.find(query);
   }
 
+  suggestUri(q, limit, appStateOptions) {
+    return this.service.suggestUri(q, limit, appStateOptions);
+  }
+
+  suggestPartitionKey(q, limit, appStateOptions) {
+    return this.service.suggestPartitionKey(q, limit, appStateOptions);
+  }
+
 }
 
 const model = new LdModel();

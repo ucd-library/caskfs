@@ -5,6 +5,7 @@ import { LitCorkUtils, Mixin } from '@ucd-lib/cork-app-utils';
 
 import QueryStringController from '../../controllers/QueryStringController.js';
 import AppComponentController from '../../controllers/AppComponentController.js';
+import './caskfs-value-typeahead.js';
 
 /**
  * @typedef {Object} FilterDefinition
@@ -12,6 +13,8 @@ import AppComponentController from '../../controllers/AppComponentController.js'
  * @property {String} label - The human readable label for the filter
  * @property {Boolean} [multiple] - Whether the filter supports multiple values
  * @property {String} [queryParam] - The query param to use instead of the value
+ * @property {String} [inputType] - The input control to render for this filter's value: 'text' (default), 'date', or 'typeahead'
+ * @property {String} [suggestSource] - When inputType is 'typeahead', which suggestion source to query: 'uri' or 'partition-key'
  */
 
 /**

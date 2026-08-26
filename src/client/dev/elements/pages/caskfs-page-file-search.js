@@ -11,7 +11,7 @@ export default class CaskfsPageFileSearch extends Mixin(LitElement)
 
   static get properties() {
     return {
-      
+
     }
   }
 
@@ -22,6 +22,17 @@ export default class CaskfsPageFileSearch extends Mixin(LitElement)
   constructor() {
     super();
     this.render = render.bind(this);
+
+    this.filters = [
+      { value: 'subject', label: 'Subject', inputType: 'typeahead', suggestSource: 'uri' },
+      { value: 'predicate', label: 'Predicate', inputType: 'typeahead', suggestSource: 'uri' },
+      { value: 'object', label: 'Object', inputType: 'typeahead', suggestSource: 'uri' },
+      { value: 'graph', label: 'Graph', inputType: 'typeahead', suggestSource: 'uri' },
+      { value: 'type', label: 'Type', inputType: 'typeahead', suggestSource: 'uri' },
+      { value: 'updatedAfter', label: 'Modified After', inputType: 'date' },
+      { value: 'updatedBefore', label: 'Modified Before', inputType: 'date' },
+      { value: 'partition', label: 'Partition', multiple: true, inputType: 'typeahead', suggestSource: 'partition-key' }
+    ];
 
     this.ctl = {
       select: new DirectoryItemSelectController(this),

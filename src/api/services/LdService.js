@@ -2,6 +2,7 @@ import {BaseService, digest} from '@ucd-lib/cork-app-utils';
 import LdStore from '../stores/LdStore.js';
 
 import appUrlUtils from '../../client/dev/utils/appUrlUtils.js';
+import serviceUtils from '../utils/serviceUtils.js';
 
 class LdService extends BaseService {
 
@@ -62,6 +63,62 @@ class LdService extends BaseService {
           method: 'POST',
           body: query
         },
+        checkCached : () => store.get(id),
+        onUpdate : resp => this.store.set(
+          {...resp, id},
+          store,
+          null,
+          appStateOptions
+        )
+      })
+    );
+
+    return store.get(id);
+  }
+
+  async suggestUri(q, limit, modelAppStateOptions={}) {
+    let id = await digest({q, limit});
+    const store = this.store.data.suggestUri;
+
+    const appStateOptions = serviceUtils.mergeAppStateOptions(
+      { errorSettings: {suppressError: true}, loaderSettings: {suppressLoader: true} },
+      modelAppStateOptions
+    );
+
+    await this.checkRequesting(
+      id, store,
+      () => this.request({
+        url : `${this.baseUrl}/find/suggest/uri`,
+        json: true,
+        qs: {q, limit},
+        checkCached : () => store.get(id),
+        onUpdate : resp => this.store.set(
+          {...resp, id},
+          store,
+          null,
+          appStateOptions
+        )
+      })
+    );
+
+    return store.get(id);
+  }
+
+  async suggestPartitionKey(q, limit, modelAppStateOptions={}) {
+    let id = await digest({q, limit});
+    const store = this.store.data.suggestPartitionKey;
+
+    const appStateOptions = serviceUtils.mergeAppStateOptions(
+      { errorSettings: {suppressError: true}, loaderSettings: {suppressLoader: true} },
+      modelAppStateOptions
+    );
+
+    await this.checkRequesting(
+      id, store,
+      () => this.request({
+        url : `${this.baseUrl}/find/suggest/partition-key`,
+        json: true,
+        qs: {q, limit},
         checkCached : () => store.get(id),
         onUpdate : resp => this.store.set(
           {...resp, id},

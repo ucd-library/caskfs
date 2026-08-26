@@ -503,6 +503,40 @@ async getChildDirectories(directory, opts = {}) {
   }
 
   /**
+   * @method suggestUri
+   * @description Typeahead suggestions for URI values (used for subject/predicate/object/graph/type filter inputs).
+   *
+   * @param {String} term substring to match against known URIs
+   * @param {Number} limit max number of suggestions to return. Default 8
+   *
+   * @returns {Promise<Array<String>>} array of matching URIs
+   */
+  async suggestUri(term, limit=8) {
+    let resp = await this.client.query(
+      `SELECT uri FROM ${this.schema}.search_uri_by_value($1, $2)`,
+      [term, limit]
+    );
+    return resp.rows.map(r => r.uri);
+  }
+
+  /**
+   * @method suggestPartitionKey
+   * @description Typeahead suggestions for partition key values.
+   *
+   * @param {String} term substring to match against known partition key values
+   * @param {Number} limit max number of suggestions to return. Default 8
+   *
+   * @returns {Promise<Array<String>>} array of matching partition key values
+   */
+  async suggestPartitionKey(term, limit=8) {
+    let resp = await this.client.query(
+      `SELECT value FROM ${this.schema}.search_partition_key_by_value($1, $2)`,
+      [term, limit]
+    );
+    return resp.rows.map(r => r.value);
+  }
+
+  /**
    * @method generateAclWithFilter
    * @description Generate SQL WITH clauses to filter files based on ACLs.  Assumes you
    * have a files table and will return an acl_files table if ACL filtering is required.
