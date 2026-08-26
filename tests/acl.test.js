@@ -824,4 +824,59 @@ describe('ACL', () => {
     });
   });
 
+  // ── 11. getPermissions() — bulk non-throwing self-check ────────────────────
+
+  describe('getPermissions() — bulk non-throwing self-check', () => {
+    let caskFs;
+
+    before(async () => {
+      config.acl.enabled = true;
+      caskFs = await setup();
+
+      await caskFs.write({
+        filePath: '/self-check-bulk/file.txt',
+        data: Buffer.from('x'),
+        requestor: 'setup',
+        ignoreAcl: true,
+      });
+      await caskFs.setDirectoryPermission({
+        directory: '/self-check-bulk', principal: 'self-check-bulk-writers', permission: 'write', ignoreAcl: true
+      });
+      await aclImpl.ensureUserRole({ user: 'bulk-writer', role: 'self-check-bulk-writers', dbClient: caskFs.dbClient });
+      await aclImpl.ensureUserRole({ user: 'bulk-admin', role: 'admin', dbClient: caskFs.dbClient });
+    });
+
+    after(aclTeardown);
+
+    it('reports read+write true, admin false for a writer (write implies read)', async () => {
+      const result = await caskFs.getPermissions({ directory: '/self-check-bulk', requestor: 'bulk-writer' });
+      assert.deepStrictEqual(result, { read: true, write: true, admin: false });
+    });
+
+    it('reports all true for a global admin regardless of directory-specific grants', async () => {
+      const result = await caskFs.getPermissions({ directory: '/self-check-bulk', requestor: 'bulk-admin' });
+      assert.deepStrictEqual(result, { read: true, write: true, admin: true });
+    });
+
+    it('reports all false for an anonymous requestor on a non-public directory', async () => {
+      const result = await caskFs.getPermissions({ directory: '/self-check-bulk' });
+      assert.deepStrictEqual(result, { read: false, write: false, admin: false });
+    });
+
+    it('reports all true for anyone when ACL is disabled', async () => {
+      config.acl.enabled = false;
+      const result = await caskFs.getPermissions({ directory: '/self-check-bulk', requestor: 'random-nobody' });
+      assert.deepStrictEqual(result, { read: true, write: true, admin: true });
+      config.acl.enabled = true;
+    });
+
+    it('matches calling hasPermission for each permission individually', async () => {
+      const bulk = await caskFs.getPermissions({ directory: '/self-check-bulk', requestor: 'bulk-writer' });
+      const read = await caskFs.hasPermission({ directory: '/self-check-bulk', requestor: 'bulk-writer' }, { permission: 'read' });
+      const write = await caskFs.hasPermission({ directory: '/self-check-bulk', requestor: 'bulk-writer' }, { permission: 'write' });
+      const admin = await caskFs.hasPermission({ directory: '/self-check-bulk', requestor: 'bulk-writer' }, { permission: 'admin' });
+      assert.deepStrictEqual(bulk, { read, write, admin });
+    });
+  });
+
 });

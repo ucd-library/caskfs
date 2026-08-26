@@ -81,4 +81,29 @@ program
     await endClient(cask);
   });
 
+program
+  .command('log <path>')
+  .description('Show the full audit history for a file or directory. Requires write permission on the resource.')
+  .option('-f, --is-file', 'Treat <path> as a file rather than a directory', false)
+  .action(async (targetPath, options) => {
+    handleGlobalOpts(options);
+    const cask = getClient(options);
+
+    const entries = await cask.getAuditLog({
+      filePath: targetPath,
+      isFile: options.isFile,
+      requestor: options.requestor
+    });
+
+    if( entries.length === 0 ) {
+      console.log('No audit history for this resource.');
+    } else {
+      for( const e of entries ) {
+        console.log(`${e.created}\t${e.requestor}\t${e.operation}\t${e.resource_path}`);
+      }
+    }
+
+    await endClient(cask);
+  });
+
 program.parse(process.argv);

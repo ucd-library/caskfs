@@ -9,6 +9,7 @@ import '../components/caskfs-directory-simple-list.js';
 import '../components/caskfs-file-preview.js';
 import '../components/caskfs-lineage-widget.js';
 import '../components/caskfs-public-badge.js';
+import '../components/caskfs-audit-log.js';
 
 export function styles() {
   const elementStyles = css`
@@ -46,6 +47,7 @@ return html`
         <a class="btn btn--alt3 btn--block u-space-mb" href=${this.FsModel.fileDownloadUrl(this.ctl.directoryPath.pathname)} download>Download File</a>
         <button class="btn btn--alt3 btn--block u-space-mb" @click=${this._onCopyPathClick}>Copy File System Path</button>
         <button class="btn btn--alt3 btn--block u-space-mb" ?hidden=${!this.showManageAccess} @click=${this._onManageAccessClick}>Manage Access</button>
+        <button class="btn btn--alt3 btn--block u-space-mb" ?hidden=${!this.showAuditLog} @click=${this._onViewAuditHistoryClick}>View Audit History</button>
         <div class="u-space-mb u-space-mt--large">
           <caskfs-lineage-widget></caskfs-lineage-widget>
         </div>

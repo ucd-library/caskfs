@@ -51,17 +51,15 @@ export default class DirectoryPermissionController {
       return;
     }
 
-    const [writeRes, adminRes] = await Promise.all([
-      this.AclModel.checkDirectoryPermission(directory, 'write'),
-      this.AclModel.checkDirectoryPermission(directory, 'admin')
-    ]);
+    const res = await this.AclModel.checkDirectoryPermissions(directory, ['write', 'admin']);
 
     // the checked directory may have moved on again while this was in flight - a stale result
     // for a path we've since navigated away from shouldn't overwrite current state
     if ( directory !== this._checkedDirectory ) return;
 
-    this.canWrite = writeRes.state === 'loaded' && !!writeRes.payload?.hasPermission;
-    this.canAdmin = adminRes.state === 'loaded' && !!adminRes.payload?.hasPermission;
+    const loaded = res.state === 'loaded';
+    this.canWrite = loaded && !!res.payload?.permissions?.write;
+    this.canAdmin = loaded && !!res.payload?.permissions?.admin;
     this.host.requestUpdate();
   }
 

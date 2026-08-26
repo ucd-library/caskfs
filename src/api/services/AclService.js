@@ -100,15 +100,16 @@ class AclService extends BaseService {
   }
 
   /**
-   * @description Check whether the current user has a specific permission on a directory.
-   * Self-check only, not admin-gated - mirrors getWhoAmI's "tell me about myself" pattern.
+   * @description Check whether the current user has the given permissions on a directory, in a
+   * single request. Self-check only, not admin-gated - mirrors getWhoAmI's "tell me about
+   * myself" pattern.
    * @param {String} directory
-   * @param {String} permission - 'read' | 'write' | 'admin'
+   * @param {Array<String>} permissions - e.g. ['write', 'admin']
    * @param {Object} modelAppStateOptions
-   * @returns {Promise<Object>} store record; payload is {directory, permission, hasPermission}
+   * @returns {Promise<Object>} store record; payload is {directory, permissions: {write, admin, ...}}
    */
-  async checkDirectoryPermission(directory, permission, modelAppStateOptions={}) {
-    const id = await digest({directory, permission});
+  async checkDirectoryPermissions(directory, permissions, modelAppStateOptions={}) {
+    const id = await digest({directory, permissions: [...permissions].sort()});
     const store = this.store.data.directoryPermission;
 
     const appStateOptions = serviceUtils.mergeAppStateOptions(
@@ -120,7 +121,7 @@ class AclService extends BaseService {
       id, store,
       () => this.request({
         url : `${this.baseUrl}/directory${directory}/my-permission`,
-        qs: { permission },
+        qs: { permission: permissions },
         parseResponseJson: true,
         checkCached : () => store.get(id),
         onUpdate : resp => this.store.set(

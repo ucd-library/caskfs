@@ -1285,6 +1285,59 @@ class CaskFs {
   }
 
   /**
+   * @method getAuditLog
+   * @description Get the full audit history for one file or directory, oldest first. Not
+   * paginated - callers needing bounded result sizes should query caskfs.audit_log directly.
+   * Requires write permission on the resource (not read or admin - audit details can reveal
+   * sensitive operation info, so this is intentionally gated more tightly than most read paths).
+   *
+   * Resolves the resource's current id (file_id/directory_id) and queries by
+   * (resource_type, resource_id) rather than resource_path, since resource_id is stable across
+   * renames/moves while resource_path is only a point-in-time label - this is what lets a
+   * resource's history survive a rename and still show up here.
+   *
+   * @param {Object|CaskFSContext} context
+   * @param {String} context.filePath resource path to get history for (file or directory)
+   * @param {Boolean} [context.isFile=false] true if filePath names a file, false for a directory
+   * @param {String} [context.requestor] user name of the requestor
+   * @param {DatabaseClient} [context.dbClient] optional database client to use
+   * @returns {Promise<Array<Object>>} raw caskfs.audit_log rows, oldest first
+   */
+  async getAuditLog(context={}) {
+    context = createContext(context, this.dbClient);
+    const isFile = !!context.data.isFile;
+
+    await this.checkPermissions(context, { permission: 'write', isFile });
+
+    const dbClient = context.data.dbClient || this.dbClient;
+    let resourceId;
+
+    if( isFile ) {
+      const fileParts = path.parse(context.data.filePath);
+      const res = await dbClient.query(`
+        SELECT file_id FROM ${this.schema}.file_view WHERE directory = $1 AND filename = $2
+      `, [fileParts.dir, fileParts.base]);
+      if( res.rows.length === 0 ) {
+        throw new MissingResourceError('File', context.data.filePath);
+      }
+      resourceId = res.rows[0].file_id;
+    } else {
+      const res = await dbClient.query(`
+        SELECT ${this.schema}.get_directory_id($1) AS directory_id
+      `, [context.data.filePath]);
+      if( !res.rows[0]?.directory_id ) {
+        throw new MissingResourceError('Directory', context.data.filePath);
+      }
+      resourceId = res.rows[0].directory_id;
+    }
+
+    return dbClient.getAuditLogForResource({
+      resourceType: isFile ? 'file' : 'directory',
+      resourceId
+    });
+  }
+
+  /**
    * @method createDirectory
    * @description Create a new empty directory, and any missing intermediate parent
    * directories, within CaskFS. Fails if a directory or file already exists at the path.
@@ -1329,10 +1382,11 @@ class CaskFs {
     }
 
     await this.runInTransaction(async (dbClient) => {
-      await this.directory.mkdir(directoryPath, { dbClient });
+      const directoryId = await this.directory.mkdir(directoryPath, { dbClient });
       await this.logAudit(context, {
         operation: 'directory.create',
         resourceType: 'directory',
+        resourceId: directoryId,
         resourcePath: directoryPath,
         dbClient
       });
@@ -1423,12 +1477,15 @@ class CaskFs {
       );
     }
 
-    // finally remove the directory itself
+    // finally remove the directory itself - resolve its id before the delete, since the row
+    // (and therefore its directory_id) won't exist to look up afterward
+    const deletedDirectoryRow = await context.data.dbClient.getDirectory(dirPath);
     await this.directory.delete({directory: dirPath, dbClient: context.data.dbClient});
 
     await this.logAudit(context, {
       operation: 'directory.delete',
       resourceType: 'directory',
+      resourceId: deletedDirectoryRow.directory_id,
       resourcePath: dirPath
     });
 
@@ -1884,8 +1941,9 @@ class CaskFs {
       throw new Error('Cannot move a directory into itself or one of its own descendants');
     }
 
-    // confirms the source directory exists
-    await this.directory.get(context);
+    // confirms the source directory exists; also gives us its directory_id, which move()
+    // preserves and is otherwise unrecoverable at the source path once the move completes
+    const srcDirRow = await this.directory.get(context);
 
     await this.checkPermissions(context, { permission: 'write' });
     await this.canWriteFile({ filePath: destPath, requestor: context.data.requestor, ignoreAcl: context.data.ignoreAcl, dbClient: context.data.dbClient });
@@ -1903,6 +1961,7 @@ class CaskFs {
       await this.logAudit(context, {
         operation: 'directory.move',
         resourceType: 'directory',
+        resourceId: srcDirRow.directory_id,
         resourcePath: destPath,
         details: { fromPath: srcDir, toPath: destPath },
         dbClient
@@ -2680,6 +2739,8 @@ class CaskFs {
     await this.canUpdateDirAcl(context);
 
     await this.runInTransaction(async (dbClient) => {
+      const directoryRow = await dbClient.getDirectory(context.data.directory);
+
       await acl.removeRootDirectoryAcl({
         dbClient, directory: context.data.directory
       });
@@ -2687,6 +2748,7 @@ class CaskFs {
       await this.logAudit(context, {
         operation: 'directory.remove_acl',
         resourceType: 'directory',
+        resourceId: directoryRow.directory_id,
         resourcePath: context.data.directory,
         dbClient
       });
@@ -2740,6 +2802,40 @@ class CaskFs {
       if( e instanceof AclAccessError ) return false;
       throw e;
     }
+  }
+
+  /**
+   * @method getPermissions
+   * @description Non-throwing bulk self-check: what permissions (read/write/admin) does
+   * context.data.requestor have on a directory? Like hasPermission, but returns all three
+   * booleans from one query instead of checking one permission at a time. Directory-only (no
+   * isFile support), since the webapp only ever needs this for directory-scoped UI controls.
+   * Same ACL-disabled/global-admin shortcut as checkPermissions - only ever evaluates the
+   * caller's own identity.
+   *
+   * @param {Object|CaskFSContext} context
+   * @param {String} context.directory - directory path to check
+   * @param {String} context.requestor - user name to check (the caller's own identity)
+   * @returns {Promise<Object>} {read, write, admin} booleans
+   */
+  async getPermissions(context={}) {
+    context = createContext(context, this.dbClient);
+    const dbClient = context.data.dbClient || this.dbClient;
+
+    const lookupRequired = await acl.aclLookupRequired({
+      requestor: context.data.requestor,
+      dbClient,
+      ignoreAcl: context.data.ignoreAcl || false
+    });
+    if( !lookupRequired ) {
+      return { read: true, write: true, admin: true };
+    }
+
+    return acl.getPermissions({
+      dbClient,
+      requestor: context.data.requestor,
+      filePath: context.data.directory
+    });
   }
 
   /**

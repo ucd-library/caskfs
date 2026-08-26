@@ -49,6 +49,15 @@ export default class CaskfsPageFileSingle extends Mixin(LitElement)
     return !!config.aclEnabled && this.ctl.permission.canAdmin;
   }
 
+  /**
+   * @description Viewing a file's audit history requires write permission (getAuditLog is
+   * gated the same way server-side) - always shown when ACL is disabled, since permissions
+   * aren't enforced server-side either way.
+   */
+  get showAuditLog() {
+    return !config.aclEnabled || this.ctl.permission.canWrite;
+  }
+
   updated(changedProps) {
     super.updated(changedProps);
     this.ctl.permission.check(this.ctl.directoryPath.parentPath || '/');
@@ -89,6 +98,16 @@ export default class CaskfsPageFileSingle extends Mixin(LitElement)
     this.AppStateModel.showDialogModal({
       title: `Manage Access: ${directory}`,
       content: () => html`<caskfs-acl-form .directory=${directory}></caskfs-acl-form>`,
+      fullWidth: true,
+      actions: [{text: 'Close', value: 'dismiss', invert: true, color: 'secondary'}]
+    });
+  }
+
+  _onViewAuditHistoryClick() {
+    const filePath = this.ctl.directoryPath.pathname;
+    this.AppStateModel.showDialogModal({
+      title: `Audit History: ${filePath}`,
+      content: () => html`<caskfs-audit-log .resourcePath=${filePath} .isFile=${true}></caskfs-audit-log>`,
       fullWidth: true,
       actions: [{text: 'Close', value: 'dismiss', invert: true, color: 'secondary'}]
     });

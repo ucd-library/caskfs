@@ -23,7 +23,7 @@ export function buildIconsets(){
         'code', 'arrow-right', 'circle-check', 'bars-progress',
         'circle-notch', 'circle-chevron-right', 'download',
         'pen', 'lock', 'user-shield', 'chevron-down', 'chevron-right', 'globe',
-        'hard-drive', 'filter', 'link', 'quote-right'
+        'hard-drive', 'filter', 'link', 'quote-right', 'clock-rotate-left'
       ]
     }, 
     { name: 'ucdlib-core', 

@@ -8,6 +8,7 @@ class AclCache {
   constructor() {
     this.userRoleCache = new Map();
     this.dirPermissionsCache = new Map();
+    this.dirAllPermissionsCache = new Map();
   }
 
   setUserRole(user, role, value) {
@@ -53,6 +54,28 @@ class AclCache {
       return null;
     }
     return this.dirPermissionsCache.get(user+'-'+filePath+'-'+permission);
+  }
+
+  setAllDirPermissions(user, filePath, value) {
+    if( config.acl.enabledCache !== true ) {
+      return null;
+    }
+    let key = user+'-'+filePath;
+    if( this.dirAllPermissionsCache.has(key) ) {
+      return null;
+    }
+
+    this.dirAllPermissionsCache.set(key, value);
+    setTimeout(() => {
+      this.dirAllPermissionsCache.delete(key);
+    }, config.acl.cacheTTL);
+  }
+
+  getAllDirPermissions(user, filePath) {
+    if( config.acl.enabledCache !== true ) {
+      return null;
+    }
+    return this.dirAllPermissionsCache.get(user+'-'+filePath) ?? null;
   }
 
 }
@@ -252,6 +275,68 @@ class Acl {
     }
 
     this.cache.setDirPermissions(opts.requestor || 'PUBLIC', filePath, permission, value);
+    return value;
+  }
+
+  /**
+   * @method getPermissions
+   * @description Check all three permissions (read/write/admin) a user has on a directory in a
+   * single query, using caskfs.get_permission() directly instead of has_permission()'s
+   * single-permission wrapper. Directory-only (no isFile support) - built for the
+   * my-permission self-check endpoint, which never checks files.
+   *
+   * @param {Object} opts
+   * @param {String} opts.requestor - The user to check permissions for.
+   * @param {String} opts.filePath - The directory path to check permissions on.
+   * @param {Object} opts.dbClient - The database client instance.
+   * @returns {Promise<Object>} - {read, write, admin} booleans.
+   */
+  async getPermissions(opts={}) {
+    let { filePath, dbClient } = opts;
+
+    if( !filePath || !dbClient ) {
+      throw new Error('filePath and dbClient are required');
+    }
+
+    let cached = this.cache.getAllDirPermissions(opts.requestor || 'PUBLIC', filePath);
+    if( cached !== null ) return cached;
+
+    let user = opts.requestor || null;
+    let args = [filePath];
+    let withQueries = [`dir AS (
+      SELECT directory_id FROM ${config.database.schema}.directory WHERE fullname = $1
+    )`];
+    let userSelect = 'NULL';
+    if( user ) {
+      withQueries.push(`acluser AS (
+        SELECT user_id FROM ${config.database.schema}.acl_user WHERE name = $2
+      )`);
+      args.push(user);
+      userSelect = '(SELECT user_id FROM acluser)::UUID';
+    }
+
+    let resp = await dbClient.query(`
+      WITH ${withQueries.join(', ')}
+      SELECT
+        COALESCE(bool_or(can_read), FALSE) AS can_read,
+        COALESCE(bool_or(can_write), FALSE) AS can_write,
+        COALESCE(bool_or(is_admin), FALSE) AS is_admin
+      FROM ${config.database.schema}.get_permission(
+        (SELECT directory_id FROM dir)::UUID,
+        ${userSelect}
+      )
+    `, args);
+
+    let value = { read: false, write: false, admin: false };
+    if( resp.rows.length > 0 ) {
+      value = {
+        read: resp.rows[0].can_read,
+        write: resp.rows[0].can_write,
+        admin: resp.rows[0].is_admin
+      };
+    }
+
+    this.cache.setAllDirPermissions(opts.requestor || 'PUBLIC', filePath, value);
     return value;
   }
 

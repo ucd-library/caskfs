@@ -84,4 +84,24 @@ router.delete('/archives/:name', async (req, res) => {
   }
 });
 
+/**
+ * GET /audit/log/*
+ * @description Get the full audit history for one file or directory, oldest first. Not
+ * paginated. Requires write permission on the resource (checked inside getAuditLog) - not
+ * global-admin-only, unlike the rotate/archive routes above.
+ * @query {String} [isFile=false] pass 'true' to treat the path as a file rather than a directory
+ */
+router.get(/^\/log(\/.*)?$/, async (req, res) => {
+  try {
+    const rows = await caskFs.getAuditLog({
+      filePath: req.params[0] || '/',
+      isFile: req.query.isFile === 'true',
+      requestor: getRequestor(req)
+    });
+    res.status(200).json({ entries: rows });
+  } catch (e) {
+    return handleError(res, req, e);
+  }
+});
+
 export default router;

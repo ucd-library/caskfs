@@ -483,7 +483,7 @@ describe('GET /acl/directory/*/my-permission', () => {
     url.searchParams.set('permission', 'write');
     const res = await fetch(url, { headers: userHeader('mp-writer') });
     assert.deepStrictEqual(await res.json(), {
-      directory: '/my-permission-test', permission: 'write', hasPermission: true
+      directory: '/my-permission-test', permissions: { write: true }
     });
   });
 
@@ -492,14 +492,14 @@ describe('GET /acl/directory/*/my-permission', () => {
     url.searchParams.set('permission', 'admin');
     const res = await fetch(url, { headers: userHeader('mp-writer') });
     assert.strictEqual(res.status, 200);
-    assert.strictEqual((await res.json()).hasPermission, false);
+    assert.strictEqual((await res.json()).permissions.admin, false);
   });
 
   it('reports true for a global admin', async () => {
     const url = new URL(`${baseUrl}/acl/directory/my-permission-test/my-permission`);
     url.searchParams.set('permission', 'admin');
     const res = await fetch(url, { headers: userHeader('mp-admin') });
-    assert.strictEqual((await res.json()).hasPermission, true);
+    assert.strictEqual((await res.json()).permissions.admin, true);
   });
 
   it('reports false for an unauthenticated caller checking write', async () => {
@@ -507,7 +507,7 @@ describe('GET /acl/directory/*/my-permission', () => {
     url.searchParams.set('permission', 'write');
     const res = await fetch(url);
     assert.strictEqual(res.status, 200);
-    assert.strictEqual((await res.json()).hasPermission, false);
+    assert.strictEqual((await res.json()).permissions.write, false);
   });
 
   it('rejects an invalid permission value with 400', async () => {
@@ -522,8 +522,48 @@ describe('GET /acl/directory/*/my-permission', () => {
     const url = new URL(`${baseUrl}/acl/directory/my-permission-test/my-permission`);
     url.searchParams.set('permission', 'admin');
     const res = await fetch(url);
-    assert.strictEqual((await res.json()).hasPermission, true);
+    assert.strictEqual((await res.json()).permissions.admin, true);
     config.acl.enabled = true;
+  });
+
+  it('reports multiple permissions in a single request via a comma-separated value', async () => {
+    const url = new URL(`${baseUrl}/acl/directory/my-permission-test/my-permission`);
+    url.searchParams.set('permission', 'write,admin');
+    const res = await fetch(url, { headers: userHeader('mp-writer') });
+    assert.strictEqual(res.status, 200);
+    assert.deepStrictEqual(await res.json(), {
+      directory: '/my-permission-test', permissions: { write: true, admin: false }
+    });
+  });
+
+  it('reports multiple permissions in a single request via repeated params', async () => {
+    const url = new URL(`${baseUrl}/acl/directory/my-permission-test/my-permission`);
+    url.searchParams.append('permission', 'write');
+    url.searchParams.append('permission', 'admin');
+    const res = await fetch(url, { headers: userHeader('mp-writer') });
+    assert.strictEqual(res.status, 200);
+    assert.deepStrictEqual(await res.json(), {
+      directory: '/my-permission-test', permissions: { write: true, admin: false }
+    });
+  });
+
+  it('combined multi-permission request matches two separate single-permission requests', async () => {
+    const combinedUrl = new URL(`${baseUrl}/acl/directory/my-permission-test/my-permission`);
+    combinedUrl.searchParams.set('permission', 'write,admin');
+    const combined = await (await fetch(combinedUrl, { headers: userHeader('mp-writer') })).json();
+
+    const writeUrl = new URL(`${baseUrl}/acl/directory/my-permission-test/my-permission`);
+    writeUrl.searchParams.set('permission', 'write');
+    const write = await (await fetch(writeUrl, { headers: userHeader('mp-writer') })).json();
+
+    const adminUrl = new URL(`${baseUrl}/acl/directory/my-permission-test/my-permission`);
+    adminUrl.searchParams.set('permission', 'admin');
+    const admin = await (await fetch(adminUrl, { headers: userHeader('mp-writer') })).json();
+
+    assert.deepStrictEqual(combined.permissions, {
+      write: write.permissions.write,
+      admin: admin.permissions.admin
+    });
   });
 });
 

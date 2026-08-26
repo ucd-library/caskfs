@@ -22,8 +22,8 @@ class AclModel extends BaseModel {
     return this.service.getDirectoryAcl(directory, appStateOptions);
   }
 
-  checkDirectoryPermission(directory, permission, appStateOptions={}) {
-    return this.service.checkDirectoryPermission(directory, permission, appStateOptions);
+  checkDirectoryPermissions(directory, permissions, appStateOptions={}) {
+    return this.service.checkDirectoryPermissions(directory, permissions, appStateOptions);
   }
 
   async setDirectoryPublic(directory, isPublic, appStateOptions={}) {

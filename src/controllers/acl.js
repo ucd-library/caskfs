@@ -33,7 +33,7 @@ const testQueryValidator = new Validator({
 });
 
 const myPermissionQueryValidator = new Validator({
-  permission: { type: 'string', required: true, inSet: PERMISSIONS }
+  permission: { type: 'string', multiple: true, required: true, inSet: PERMISSIONS }
 });
 
 const MAX_LIST_LIMIT = 100;
@@ -66,22 +66,27 @@ function parseListQuery(query) {
 
 /**
  * GET /acl/directory/*\/my-permission
- * @description Report whether the calling user has a specific permission on this directory.
- * Self-check only, like /whoami below - no admin gate, since it only ever evaluates the
- * caller's own identity (never an arbitrary target user, unlike the admin-only /test
- * diagnostic). Used by the webapp to decide whether to show write/admin-only directory
- * controls to the current user. Registered before the plain GET /directory/* route below,
- * since that route's regex would otherwise greedily match this suffixed path too.
+ * @description Report whether the calling user has one or more permissions on this directory.
+ * `?permission=` accepts a single value, a comma-separated list, or repeated params (e.g.
+ * `?permission=write,admin`) and reports on all of them in a single query. Self-check only,
+ * like /whoami below - no admin gate, since it only ever evaluates the caller's own identity
+ * (never an arbitrary target user, unlike the admin-only /test diagnostic). Used by the webapp
+ * to decide whether to show write/admin-only directory controls to the current user.
+ * Registered before the plain GET /directory/* route below, since that route's regex would
+ * otherwise greedily match this suffixed path too.
  */
 router.get(/^\/directory(\/.*)?\/my-permission$/, async (req, res) => {
   try {
     const directory = req.params[0] || '/';
     const { permission } = myPermissionQueryValidator.validate(req.query || {});
-    const hasPermission = await caskFs.hasPermission(
-      { directory, requestor: getRequestor(req) },
-      { permission }
-    );
-    res.status(200).json({ directory, permission, hasPermission });
+    const allPermissions = await caskFs.getPermissions({ directory, requestor: getRequestor(req) });
+
+    const permissions = {};
+    for( const p of permission ) {
+      permissions[p] = !!allPermissions[p];
+    }
+
+    res.status(200).json({ directory, permissions });
   } catch (e) {
     return handleError(res, req, e);
   }

@@ -910,6 +910,25 @@ async getChildDirectories(directory, opts = {}) {
     return resp.rows[0].audit_log_id;
   }
 
+  /**
+   * @method getAuditLogForResource
+   * @description Get every audit_log row for one resource, oldest first. Not paginated.
+   *
+   * @param {Object} opts
+   * @param {String} opts.resourceType resource type, e.g. 'file', 'directory'
+   * @param {String} opts.resourceId UUID of the resource
+   * @returns {Promise<Array<Object>>} raw audit_log rows
+   */
+  async getAuditLogForResource(opts={}) {
+    let resp = await this.client.query(`
+      SELECT * FROM ${this.schema}.audit_log
+      WHERE resource_type = $1 AND resource_id = $2
+      ORDER BY audit_log_id
+    `, [opts.resourceType, opts.resourceId]);
+
+    return resp.rows;
+  }
+
   powerWash() {
     return this.client.query(`DROP SCHEMA IF EXISTS ${this.schema} CASCADE;`);
   }

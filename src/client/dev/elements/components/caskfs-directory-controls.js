@@ -13,6 +13,7 @@ import './caskf-sort-form.js';
 import './caskfs-upload-tracker-toggle.js';
 import './caskfs-acl-form.js';
 import './caskfs-create-directory-form.js';
+import './caskfs-audit-log.js';
 
 export default class CaskfsDirectoryControls extends Mixin(LitElement)
   .with(LitCorkUtils) {
@@ -73,6 +74,15 @@ export default class CaskfsDirectoryControls extends Mixin(LitElement)
   }
 
   /**
+   * @description Viewing a directory's audit history requires write permission (getAuditLog
+   * is gated the same way server-side) - always shown when ACL is disabled, since permissions
+   * aren't enforced server-side either way.
+   */
+  get showAuditLog() {
+    return !config.aclEnabled || this.ctl.permission.canWrite;
+  }
+
+  /**
    * @description Re-run the write/admin self-check whenever the viewed directory changes.
    * directoryPath.pathname isn't a reactive Lit property (it's a getter on a controller kept
    * in sync by app-state-update events), so this diffs it on every render pass instead of
@@ -117,6 +127,16 @@ export default class CaskfsDirectoryControls extends Mixin(LitElement)
     this.AppStateModel.showDialogModal({
       title: `Manage Access: ${directory}`,
       content: () => html`<caskfs-acl-form .directory=${directory}></caskfs-acl-form>`,
+      fullWidth: true,
+      actions: [{text: 'Close', value: 'dismiss', invert: true, color: 'secondary'}]
+    });
+  }
+
+  _onViewAuditHistoryClick() {
+    const directory = this.ctl.directoryPath.pathname;
+    this.AppStateModel.showDialogModal({
+      title: `Audit History: ${directory}`,
+      content: () => html`<caskfs-audit-log .resourcePath=${directory} .isFile=${false}></caskfs-audit-log>`,
       fullWidth: true,
       actions: [{text: 'Close', value: 'dismiss', invert: true, color: 'secondary'}]
     });

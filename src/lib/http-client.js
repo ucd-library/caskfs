@@ -922,6 +922,23 @@ class HttpCaskFsClient {
     return res.json();
   }
 
+  /**
+   * @method getAuditLog
+   * @description Get the full audit history for one file or directory via GET /audit/log/*.
+   * Requires write permission on the resource - not global-admin-only.
+   * @param {Object|CaskFSContext} context
+   * @param {String} context.filePath resource path to get history for (file or directory)
+   * @param {Boolean} [context.isFile=false] true if filePath names a file, false for a directory
+   * @returns {Promise<Array<Object>>} raw audit_log rows, oldest first
+   */
+  async getAuditLog(context={}) {
+    const { filePath, isFile } = this._extract(context);
+    const url = new URL(`${this.baseUrl}/audit/log${filePath}`);
+    if (isFile) url.searchParams.set('isFile', 'true');
+    const res = await this._fetch(url.toString());
+    return (await res.json()).entries;
+  }
+
   // ---------------------------------------------------------------------------
   // Namespace builders
   // ---------------------------------------------------------------------------

@@ -51,7 +51,7 @@ export function styles() {
       grid-template-columns: repeat(1, minmax(0, 1fr));
       gap: 1rem 2rem;
     }
-    .no-contents {
+    .no-contents:not([hidden]) {
       display: flex;
       align-items: center;
       gap: .5rem;

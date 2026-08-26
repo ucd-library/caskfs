@@ -38,6 +38,7 @@ import '@ucd-lib/cork-icon';
 // cork models
 import '../../../api/models/AclModel.js';
 import '../../../api/models/AppStateModel.js';
+import '../../../api/models/AuditModel.js';
 import '../../../api/models/AutoPathModel.js';
 import '../../../api/models/DirectoryModel.js';
 import '../../../api/models/FsModel.js';

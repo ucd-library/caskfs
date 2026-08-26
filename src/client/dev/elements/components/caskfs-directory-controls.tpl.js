@@ -51,6 +51,13 @@ return html`
       link-aria-label='Manage Access'>
     </cork-icon-button>
     <cork-icon-button
+      icon='fas.clock-rotate-left'
+      title='View Audit History'
+      ?hidden=${!this.showAuditLog}
+      @click=${this._onViewAuditHistoryClick}
+      link-aria-label='View Audit History'>
+    </cork-icon-button>
+    <cork-icon-button
       icon="fas.folder-plus"
       title="Create Empty Folder"
       ?hidden=${!this.showWriteControls}

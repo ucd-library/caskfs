@@ -7,6 +7,7 @@ import zlib from 'zlib';
 import { fileURLToPath } from 'url';
 import { setup, teardown } from './helpers/setup.js';
 import { setup as httpSetup, teardown as httpTeardown } from './helpers/http-setup.js';
+import aclImpl from '../src/lib/acl.js';
 import config from '../src/lib/config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -176,6 +177,135 @@ describe('audit log — enabled', () => {
   });
 });
 
+describe('audit log — getAuditLog (per-resource history)', () => {
+  let caskFs;
+
+  before(async () => {
+    caskFs = await setup();
+    config.audit.enabled = true;
+  });
+
+  after(async () => {
+    config.audit.enabled = false;
+    await teardown();
+  });
+
+  it('returns a file\'s full history, oldest first, while the file still exists', async () => {
+    await caskFs.write({
+      filePath: '/audit-log/doc.txt',
+      data: Buffer.from('v1'),
+      requestor: TEST_USER,
+      ignoreAcl: true
+    });
+    await caskFs.write({
+      filePath: '/audit-log/doc.txt',
+      data: Buffer.from('v2'),
+      requestor: TEST_USER,
+      replace: true,
+      ignoreAcl: true
+    });
+    await caskFs.patchMetadata(
+      { filePath: '/audit-log/doc.txt', requestor: TEST_USER, ignoreAcl: true },
+      { metadata: { tag: 'reviewed' } }
+    );
+
+    const entries = await caskFs.getAuditLog({ filePath: '/audit-log/doc.txt', isFile: true, ignoreAcl: true });
+
+    assert.ok(entries.length >= 3, `expected at least 3 entries, got ${entries.length}`);
+    assert.deepStrictEqual(
+      entries.map(e => e.audit_log_id).slice().sort((a, b) => (a < b ? -1 : 1)),
+      entries.map(e => e.audit_log_id),
+      'entries should already be ordered oldest first by audit_log_id'
+    );
+    assert.ok(entries.every(e => e.resource_type === 'file'));
+    assert.ok(entries.some(e => e.operation === 'file.write'));
+    assert.ok(entries.some(e => e.operation === 'file.patch_metadata'));
+  });
+
+  it('throws MissingResourceError for a file that does not exist', async () => {
+    await assert.rejects(
+      caskFs.getAuditLog({ filePath: '/audit-log/does-not-exist.txt', isFile: true, ignoreAcl: true }),
+      { name: 'MissingResource' }
+    );
+  });
+
+  it('returns a directory\'s history across create + move, keyed on a stable resource_id', async () => {
+    await caskFs.createDirectory({ directory: '/audit-log-dir/original', requestor: TEST_USER, ignoreAcl: true });
+    await caskFs.moveDirectory(
+      { directory: '/audit-log-dir/original', requestor: TEST_USER, ignoreAcl: true },
+      { destPath: '/audit-log-dir/renamed' }
+    );
+
+    const entries = await caskFs.getAuditLog({ filePath: '/audit-log-dir/renamed', isFile: false, ignoreAcl: true });
+
+    assert.ok(entries.some(e => e.operation === 'directory.create'), 'expected the pre-rename directory.create row to still show up');
+    assert.ok(entries.some(e => e.operation === 'directory.move'));
+    assert.ok(entries.every(e => e.resource_type === 'directory'));
+    const resourceIds = new Set(entries.map(e => e.resource_id));
+    assert.strictEqual(resourceIds.size, 1, 'create and move rows should share the same resource_id');
+    assert.ok(resourceIds.values().next().value, 'resource_id should not be null');
+  });
+
+  it('records a resource_id on directory.delete and directory.remove_acl audit rows', async () => {
+    await caskFs.createDirectory({ directory: '/audit-log-dir/to-delete', requestor: TEST_USER, ignoreAcl: true });
+    await caskFs.deleteDirectory({ directory: '/audit-log-dir/to-delete', requestor: TEST_USER, ignoreAcl: true });
+
+    const deleteRows = await getAuditRows(caskFs, 'directory.delete');
+    const row = deleteRows.find(r => r.resource_path === '/audit-log-dir/to-delete');
+    assert.ok(row, 'expected a directory.delete audit row');
+    assert.ok(row.resource_id, 'directory.delete row should carry a resource_id');
+  });
+
+  describe('permission gating', () => {
+    let aclCaskFs;
+
+    before(async () => {
+      config.acl.enabled = true;
+      await caskFs.write({
+        filePath: '/audit-log-acl/doc.txt',
+        data: Buffer.from('secret'),
+        requestor: 'admin',
+        ignoreAcl: true
+      });
+      await aclImpl.ensureUserRole({ user: 'audit-reader', role: 'audit-readers', dbClient: caskFs.dbClient });
+      await aclImpl.ensureUserRole({ user: 'audit-writer', role: 'audit-writers', dbClient: caskFs.dbClient });
+      await caskFs.setDirectoryPermission({
+        directory: '/audit-log-acl',
+        principal: 'audit-readers',
+        permission: 'read',
+        requestor: TEST_USER,
+        ignoreAcl: true
+      });
+      await caskFs.setDirectoryPermission({
+        directory: '/audit-log-acl',
+        principal: 'audit-writers',
+        permission: 'write',
+        requestor: TEST_USER,
+        ignoreAcl: true
+      });
+      aclCaskFs = caskFs;
+    });
+
+    after(async () => {
+      config.acl.enabled = false;
+    });
+
+    it('denies a requestor with only read permission', async () => {
+      await assert.rejects(
+        aclCaskFs.getAuditLog({ filePath: '/audit-log-acl/doc.txt', isFile: true, requestor: 'audit-reader' }),
+        { name: 'AclAccessError' }
+      );
+    });
+
+    it('allows a requestor with write permission', async () => {
+      const entries = await aclCaskFs.getAuditLog({
+        filePath: '/audit-log-acl/doc.txt', isFile: true, requestor: 'audit-writer'
+      });
+      assert.ok(entries.some(e => e.operation === 'file.write'));
+    });
+  });
+});
+
 describe('CLI – audit rotate/list/get/delete', () => {
   let caskFs;
   let tmpDir;
@@ -239,6 +369,40 @@ describe('CLI – audit rotate/list/get/delete', () => {
 
   it('archives directory under <rootDir>/audit, matching the CAS <rootDir>/cas convention', async () => {
     assert.strictEqual(archiveDir, path.join(caskFs.rootDir, 'audit'));
+  });
+
+  it('shows a file\'s audit history via `cask audit log <path> -f`', async () => {
+    // config.audit.enabled is false in this process (this describe block exercises rotation
+    // via direct SQL inserts, same convention as the tests above) - write the file for real,
+    // then insert its audit_log row by hand using the real file_id, so getAuditLog's
+    // path -> resource_id resolution has something to match against.
+    const writeResult = await caskFs.write({
+      filePath: '/audit-log-cli/doc.txt',
+      data: Buffer.from('hello'),
+      requestor: TEST_USER,
+      ignoreAcl: true
+    });
+    await caskFs.dbClient.query(`
+      INSERT INTO ${config.database.schema}.audit_log (requestor, operation, resource_type, resource_id, resource_path)
+      VALUES ($1, 'file.write', 'file', $2, $3)
+    `, [TEST_USER, writeResult.data.file.file_id, '/audit-log-cli/doc.txt']);
+
+    const { code, stdout, stderr } = await runCask(
+      ['audit', 'log', '/audit-log-cli/doc.txt', '-f'],
+      { env: env() }
+    );
+    assert.strictEqual(code, 0, stderr);
+    assert.match(stdout, /file\.write/);
+    assert.match(stdout, new RegExp(TEST_USER));
+  });
+
+  it('`cask audit log` exits non-zero for a directory that does not exist', async () => {
+    const { code, stderr } = await runCask(
+      ['audit', 'log', '/audit-log-cli-nonexistent'],
+      { env: env() }
+    );
+    assert.notStrictEqual(code, 0);
+    assert.match(stderr, /Directory/i);
   });
 
   let partitionName;
@@ -383,6 +547,76 @@ describe('/audit HTTP API', () => {
     const { archives } = await listRes.json();
     assert.ok(!archives.some(a => a.name === `${partitionName}.jsonl.gz`));
   });
+
+  it('GET /audit/log/* returns a file\'s history, oldest first', async () => {
+    await caskFs.write({
+      filePath: '/http-audit-log/doc.txt',
+      data: Buffer.from('hello'),
+      requestor: 'http-audit-user',
+      ignoreAcl: true
+    });
+
+    const res = await fetch(`${baseUrl}/audit/log/http-audit-log/doc.txt?isFile=true`);
+    assert.strictEqual(res.status, 200);
+    const { entries } = await res.json();
+    assert.ok(entries.some(e => e.operation === 'file.write' && e.resource_path === '/http-audit-log/doc.txt'));
+  });
+
+  it('GET /audit/log/* returns 404 for a directory that does not exist', async () => {
+    const res = await fetch(`${baseUrl}/audit/log/http-audit-log-nonexistent`);
+    assert.strictEqual(res.status, 404);
+  });
+});
+
+describe('/audit HTTP API — permission gating', () => {
+  let caskFs, baseUrl;
+  const HEADER = 'x-user';
+  const userHeader = (username) => ({ [HEADER]: JSON.stringify({ username }) });
+
+  before(async () => {
+    config.headerAuth.enabled = true;
+    config.acl.enabled = true;
+    ({ caskFs, baseUrl } = await httpSetup());
+    config.audit.enabled = true;
+
+    await caskFs.write({
+      filePath: '/http-audit-acl/doc.txt',
+      data: Buffer.from('secret'),
+      requestor: 'admin',
+      ignoreAcl: true
+    });
+    await aclImpl.ensureUserRole({ user: 'http-audit-reader', role: 'http-audit-readers', dbClient: caskFs.dbClient });
+    await aclImpl.ensureUserRole({ user: 'http-audit-writer', role: 'http-audit-writers', dbClient: caskFs.dbClient });
+    await caskFs.setDirectoryPermission({
+      directory: '/http-audit-acl', principal: 'http-audit-readers', permission: 'read', ignoreAcl: true
+    });
+    await caskFs.setDirectoryPermission({
+      directory: '/http-audit-acl', principal: 'http-audit-writers', permission: 'write', ignoreAcl: true
+    });
+  });
+
+  after(async () => {
+    config.headerAuth.enabled = false;
+    config.acl.enabled = false;
+    config.audit.enabled = false;
+    await httpTeardown();
+  });
+
+  it('GET /audit/log/* returns 403 for a requestor with only read permission', async () => {
+    const res = await fetch(`${baseUrl}/audit/log/http-audit-acl/doc.txt?isFile=true`, {
+      headers: userHeader('http-audit-reader')
+    });
+    assert.strictEqual(res.status, 403);
+  });
+
+  it('GET /audit/log/* returns 200 for a requestor with write permission', async () => {
+    const res = await fetch(`${baseUrl}/audit/log/http-audit-acl/doc.txt?isFile=true`, {
+      headers: userHeader('http-audit-writer')
+    });
+    assert.strictEqual(res.status, 200);
+    const { entries } = await res.json();
+    assert.ok(entries.some(e => e.operation === 'file.write'));
+  });
 });
 
 describe('CLI – audit rotate/list/get/delete (http)', () => {
@@ -469,5 +703,21 @@ describe('CLI – audit rotate/list/get/delete (http)', () => {
 
     const listResult = await runCask(['audit', 'list'], { env: env() });
     assert.doesNotMatch(listResult.stdout, new RegExp(`${partitionName}\\.jsonl\\.gz`));
+  });
+
+  it('shows a file\'s audit history via `cask audit log <path> -f` against the HTTP server', async () => {
+    await caskFs.write({
+      filePath: '/audit-log-cli-http/doc.txt',
+      data: Buffer.from('hello'),
+      requestor: 'http-cli-audit-user',
+      ignoreAcl: true
+    });
+
+    const { code, stdout, stderr } = await runCask(
+      ['audit', 'log', '/audit-log-cli-http/doc.txt', '-f'],
+      { env: env() }
+    );
+    assert.strictEqual(code, 0, stderr);
+    assert.match(stdout, /file\.write/);
   });
 });
