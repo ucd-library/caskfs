@@ -117,15 +117,33 @@ export function render() {
         <div class="input-container">
           ${values.map((v, i) => html`
             <div style="position: relative;">
-              <input
-                type="text"
-                placeholder=${this.filter ? "Enter filter value" : "Select a filter then enter value"}
-                aria-label="Filter value"
-                ?disabled=${!this.filter}
-                ?is-multiple=${i > 0}
-                .value=${v}
-                @input=${e => this._onValueInput(e.target.value, i)}
-              />
+              ${filter?.inputType === 'date' ? html`
+                <input
+                  type="date"
+                  aria-label="Filter value"
+                  ?disabled=${!this.filter}
+                  ?is-multiple=${i > 0}
+                  .value=${v}
+                  @input=${e => this._onValueInput(e.target.value, i)}
+                />
+              ` : filter?.inputType === 'typeahead' ? html`
+                <caskfs-value-typeahead
+                  .value=${v}
+                  .source=${filter.suggestSource || 'uri'}
+                  ?is-multiple=${i > 0}
+                  @caskfs-value-typeahead-input=${e => this._onValueInput(e.detail.value, i)}
+                ></caskfs-value-typeahead>
+              ` : html`
+                <input
+                  type="text"
+                  placeholder=${this.filter ? "Enter filter value" : "Select a filter then enter value"}
+                  aria-label="Filter value"
+                  ?disabled=${!this.filter}
+                  ?is-multiple=${i > 0}
+                  .value=${v}
+                  @input=${e => this._onValueInput(e.target.value, i)}
+                />
+              `}
               <cork-icon-button
                 class="clear-value"
                 basic

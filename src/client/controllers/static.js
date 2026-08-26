@@ -13,6 +13,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export default (app) => {
   let assetsDir = path.join(__dirname, '../public');
   logger.info(`Serving static assets from ${assetsDir}`);
+  logger.info(`Serving client bundle in ${config.webapp.isDevEnv ? 'dev' : 'prod'} mode`);
 
   let packageJsonPath = path.join(__dirname, '../../../package.json');
   let bundleVersion = 'unknown';

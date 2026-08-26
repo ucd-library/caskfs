@@ -903,12 +903,13 @@ program
   .option('-r, --path-prefix <path-prefix>', 'Path prefix to mount the web application at')
   .option('-d, --disable-acl', 'Disable ACL checks for all requests (not recommended)')
   .option('-I, --allow-impersonation', 'Let the webapp act as any username via a dev-only impersonation control (never use outside local development)')
+  .option('--dev', 'Serve the unminified dev client bundle (js/dev) instead of the prod bundle (js/dist)')
   .action(async (options) => {
     config.acl.defaultRequestor = null; // webapp requests are always anonymous unless the user logs in
 
     handleGlobalOpts(options);
 
-    if( options.environment && options.environment?.config?.clientEnv === 'dev' ) {
+    if( options.dev || (options.environment && options.environment?.config?.clientEnv === 'dev') ) {
       console.log('Starting CaskFs web application in development mode');
       config.webapp.isDevEnv = true;
     }

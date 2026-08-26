@@ -8,7 +8,9 @@ class LdStore extends BaseStore {
 
     this.data = {
       rel: new LruStore({name: 'ld.rel'}),
-      find: new LruStore({name: 'ld.find'})
+      find: new LruStore({name: 'ld.find'}),
+      suggestUri: new LruStore({name: 'ld.suggestUri'}),
+      suggestPartitionKey: new LruStore({name: 'ld.suggestPartitionKey'})
     };
     this.events = {};
   }
