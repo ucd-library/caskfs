@@ -497,6 +497,14 @@ describe('Directory Operations', () => {
       );
     });
 
+    it('should be a no-op when the directory does not exist', async () => {
+      await caskFs.deleteDirectory({
+        directory: '/never-created',
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+    });
+
     it('should throw when trying to delete the root directory', async () => {
       await assert.rejects(
         () => caskFs.deleteDirectory({

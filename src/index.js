@@ -1478,8 +1478,16 @@ class CaskFs {
     }
 
     // finally remove the directory itself - resolve its id before the delete, since the row
-    // (and therefore its directory_id) won't exist to look up afterward
-    const deletedDirectoryRow = await context.data.dbClient.getDirectory(dirPath);
+    // (and therefore its directory_id) won't exist to look up afterward. deleteDirectory() is
+    // expected to be a no-op when the directory doesn't exist (callers like the AE harvest ETL
+    // call it unconditionally to clear state that may never have been created).
+    let deletedDirectoryRow;
+    try {
+      deletedDirectoryRow = await context.data.dbClient.getDirectory(dirPath);
+    } catch( err ) {
+      if( err instanceof MissingResourceError ) return;
+      throw err;
+    }
     await this.directory.delete({directory: dirPath, dbClient: context.data.dbClient});
 
     await this.logAudit(context, {
