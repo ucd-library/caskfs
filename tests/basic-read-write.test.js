@@ -171,6 +171,17 @@ describe('Basic Read/Write Operations', () => {
         { name: 'MissingResource' }
       );
     });
+
+    it('should no-op instead of throwing when ignoreMissing is set on a non-existent file', async () => {
+      const result = await caskFs.deleteFile({
+        filePath: TEST_FILE_PATH,
+        requestor: TEST_USER,
+        ignoreAcl: true,
+        ignoreMissing: true,
+      });
+      assert.strictEqual(result.deleted, false, 'deleted should be false for a no-op');
+      assert.strictEqual(result.metadata, null, 'metadata should be null for a no-op');
+    });
   });
 
   describe('zero-length payloads', () => {

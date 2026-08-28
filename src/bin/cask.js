@@ -732,6 +732,7 @@ program
   .option('-d, --directory', 'Indicates that the file-path is a directory and all files in the directory should be deleted recursively', false)
   .option('-s, --soft-delete', 'Never delete the file from the underlying storage, even if all references are removed', false)
   .option('-l, --delete-lineage', 'Also recursively delete every downstream lineage derivative of each file removed (files derived from it, and files derived from those, transitively)', false)
+  .option('--ignore-missing', 'Do not throw an error if the file or directory does not exist; silently do nothing', false)
   .action(async (filePath, options) => {
     handleGlobalOpts(options);
 
@@ -748,11 +749,19 @@ program
           console.log(`Deleted ${deleteCount} files from ${filePath}...`);
         }
       };
-      await cask.deleteDirectory(options);
-      console.log(`Delete complete: ${deleteCount} total files removed from ${filePath}`);
+      const dirResult = await cask.deleteDirectory(options);
+      if( dirResult.deleted === false ) {
+        console.log(`No-op: directory ${filePath} does not exist`);
+      } else {
+        console.log(`Delete complete: ${deleteCount} total files removed from ${filePath}`);
+      }
     } else {
       const resp = await cask.deleteFile(options);
-      console.log(resp);
+      if( resp.deleted === false ) {
+        console.log(`No-op: ${filePath} does not exist`);
+      } else {
+        console.log(resp);
+      }
     }
 
     await endClient(cask);

@@ -1409,7 +1409,12 @@ class CaskFs {
    *                                  lineage derivative of each file removed (see deleteFile)
    * @param {DatabaseClient} [context.dbClient] optional database client to use
    * @param {Function} [context.onDeleteFile] optional callback invoked after each file deletion; receives (filePath)
-   * @returns {Promise<void>}
+   * @param {Boolean} [context.ignoreMissing] if true, silently no-op instead of throwing MissingResourceError
+   *                                  when the target directory (or, during recursion, a subdirectory or file
+   *                                  reached along the way) does not exist. Default: false
+   * @returns {Promise<Object>} result object: deleted (boolean) - true if the target directory existed and
+   *                                  was removed, false if it was already missing and ignoreMissing caused
+   *                                  a no-op
    */
   async deleteDirectory(context={}) {
     context = createContext(context);
@@ -1434,8 +1439,9 @@ class CaskFs {
     context.data.limit = 100000;
     let ls = await this.ls(context);
     for( let file of ls.files ) {
+      let fileResult;
       try {
-        await this.deleteFile({
+        fileResult = await this.deleteFile({
           filePath: file.filepath,
           requestor: context.data.requestor,
           ip: context.data.ip,
@@ -1444,6 +1450,7 @@ class CaskFs {
           softDelete: context.data.softDelete,
           deleteLineage: context.data.deleteLineage,
           onDeleteFile: context.data.onDeleteFile,
+          ignoreMissing: context.data.ignoreMissing,
           ignoreAcl: true
         });
       } catch( err ) {
@@ -1453,6 +1460,10 @@ class CaskFs {
           continue;
         }
         throw err;
+      }
+      // ignoreMissing may have no-op'd this file (e.g. a concurrent delete raced this listing)
+      if( fileResult.deleted === false ) {
+        continue;
       }
       this.logger.info(`Deleted file: ${file.filepath}`, context.logSignal);
       if( context.data.onDeleteFile ) {
@@ -1472,14 +1483,27 @@ class CaskFs {
           dbClient: context.data.dbClient,
           softDelete: context.data.softDelete,
           deleteLineage: context.data.deleteLineage,
-          onDeleteFile: context.data.onDeleteFile
+          onDeleteFile: context.data.onDeleteFile,
+          ignoreMissing: context.data.ignoreMissing
         })
       );
     }
 
     // finally remove the directory itself - resolve its id before the delete, since the row
     // (and therefore its directory_id) won't exist to look up afterward
-    const deletedDirectoryRow = await context.data.dbClient.getDirectory(dirPath);
+    let deletedDirectoryRow;
+    try {
+      deletedDirectoryRow = await context.data.dbClient.getDirectory(dirPath);
+    } catch( err ) {
+      if( context.data.ignoreMissing && err instanceof MissingResourceError ) {
+        this.logger.info(`Skipped delete of missing directory: ${dirPath}`, context.logSignal);
+        if( dirPath === context.data.rootDir ) {
+          await context.data.dbClient.end();
+        }
+        return { deleted: false };
+      }
+      throw err;
+    }
     await this.directory.delete({directory: dirPath, dbClient: context.data.dbClient});
 
     await this.logAudit(context, {
@@ -1495,6 +1519,8 @@ class CaskFs {
       await context.data.dbClient.end();
       this.logger.info(`Completed delete of root directory: ${dirPath}`);
     }
+
+    return { deleted: true };
   }
 
   /**
@@ -1599,8 +1625,12 @@ class CaskFs {
    *                                  deleted file are removed automatically via ON DELETE CASCADE. Default: false
    * @param {Function} [context.onDeleteFile] optional callback invoked after each lineage-cascaded derivative
    *                                  file deletion; receives (filePath). Not invoked for the primary file.
-   * @returns {Promise<Object>} result object with metadata, fileDeleted (boolean), referencesRemaining (int),
-   *                                  deletedLineageFiles (array of filepaths removed via lineage cascade)
+   * @param {Boolean} [context.ignoreMissing] if true, silently no-op instead of throwing MissingResourceError
+   *                                  when the target file does not exist. Default: false
+   * @returns {Promise<Object>} result object: metadata (null if no-op), fileDeleted (boolean, false if no-op),
+   *                                  referencesRemaining (int, null if no-op), deletedLineageFiles (array,
+   *                                  empty if no-op), deleted (boolean) - true if a delete was actually performed,
+   *                                  false if it no-op'd because the file was already missing (ignoreMissing only)
    */
   async deleteFile(context={}) {
     context = createContext(context, this.dbClient);
@@ -1611,7 +1641,23 @@ class CaskFs {
 
     try {
       await context.data.dbClient.query('BEGIN');
-      metadata = await this.metadata(context);
+
+      try {
+        metadata = await this.metadata(context);
+      } catch (err) {
+        if( context.data.ignoreMissing && err instanceof MissingResourceError ) {
+          await context.data.dbClient.query('ROLLBACK');
+          this.logger.info(`Skipped delete of missing file: ${context.data.filePath}`, context.logSignal);
+          return {
+            metadata: null,
+            fileDeleted: false,
+            referencesRemaining: null,
+            deletedLineageFiles: [],
+            deleted: false
+          };
+        }
+        throw err;
+      }
 
       // wait to acquire an advisory lock for the file path to prevent multiple concurrent writes/delete to the same file path.
       // this will automatically release when the transaction is committed or rolled back, so we don't have to worry about manually releasing it.
@@ -1650,7 +1696,8 @@ class CaskFs {
       metadata,
       fileDeleted : casResp.fileDeleted,
       referencesRemaining: casResp.referencesRemaining,
-      deletedLineageFiles
+      deletedLineageFiles,
+      deleted: true
     };
   }
 

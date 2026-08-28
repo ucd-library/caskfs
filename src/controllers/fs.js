@@ -360,7 +360,7 @@ router.patch(/(.*)/, silentJson, async (req, res) => {
  * the time an error can occur mid-delete, errors are reported in-band rather than via HTTP status.
  *
  * @param {String} filePath - file or directory path to delete
- * @param {Object} options - validated delete options (directory, softDelete, deleteLineage)
+ * @param {Object} options - validated delete options (directory, softDelete, deleteLineage, ignoreMissing)
  * @param {import('express').Response} res - Express response
  * @returns {Promise<void>}
  */
@@ -385,8 +385,7 @@ async function streamDelete(filePath, options, res) {
     options.onDeleteFile = onDeleteFile;
     if( options.directory ) {
       options.directory = filePath;
-      await caskFs.deleteDirectory(options);
-      result = { success: true };
+      result = { success: true, ...await caskFs.deleteDirectory(options) };
     } else {
       options.filePath = filePath;
       result = await caskFs.deleteFile(options);
@@ -406,6 +405,7 @@ router.delete(/(.*)/, json(), async (req, res) => {
     softDelete: { type: 'boolean' },
     directory: { type: 'boolean' },
     deleteLineage: { type: 'boolean' },
+    ignoreMissing: { type: 'boolean' },
     stream: { type: 'boolean' }
   });
 
@@ -422,9 +422,7 @@ router.delete(/(.*)/, json(), async (req, res) => {
     let result;
     if( options.directory ) {
       options.directory = filePath;
-      await caskFs.deleteDirectory(options);
-      // directory delete does not return anything.
-      result = { success: true };
+      result = { success: true, ...await caskFs.deleteDirectory(options) };
     } else {
       options.filePath = filePath;
       result = await caskFs.deleteFile(options);

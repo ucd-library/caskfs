@@ -264,13 +264,15 @@ class HttpCaskFsClient {
    * @param {String} opts.filePath
    * @param {Boolean} [opts.softDelete]
    * @param {Boolean} [opts.deleteLineage] also delete all downstream lineage-derivative files, recursively
+   * @param {Boolean} [opts.ignoreMissing] silently no-op instead of erroring if the file does not exist
    * @returns {Promise<Object>}
    */
   async deleteFile(opts={}) {
-    const { filePath, softDelete, deleteLineage } = opts;
+    const { filePath, softDelete, deleteLineage, ignoreMissing } = opts;
     const url = new URL(`${this.baseUrl}/fs${filePath}`);
     if (softDelete) url.searchParams.set('softDelete', 'true');
     if (deleteLineage) url.searchParams.set('deleteLineage', 'true');
+    if (ignoreMissing) url.searchParams.set('ignoreMissing', 'true');
     const res = await this._fetch(url.toString(), { method: 'DELETE' });
     return res.json();
   }
@@ -282,14 +284,16 @@ class HttpCaskFsClient {
    * @param {String} opts.directory
    * @param {Boolean} [opts.softDelete]
    * @param {Boolean} [opts.deleteLineage] also delete all downstream lineage-derivative files of every file removed, recursively
+   * @param {Boolean} [opts.ignoreMissing] silently no-op instead of erroring if the directory does not exist
    * @returns {Promise<Object>}
    */
   async deleteDirectory(opts={}) {
-    const { directory, softDelete, deleteLineage } = opts;
+    const { directory, softDelete, deleteLineage, ignoreMissing } = opts;
     const url = new URL(`${this.baseUrl}/fs${directory}`);
     url.searchParams.set('directory', 'true');
     if (softDelete) url.searchParams.set('softDelete', 'true');
     if (deleteLineage) url.searchParams.set('deleteLineage', 'true');
+    if (ignoreMissing) url.searchParams.set('ignoreMissing', 'true');
     const res = await this._fetch(url.toString(), { method: 'DELETE' });
     return res.json();
   }

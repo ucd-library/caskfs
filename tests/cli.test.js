@@ -254,6 +254,24 @@ describe('CLI – direct-pg mode', () => {
     assert.strictEqual(code, 0, `rm exited non-zero. stderr: ${stderr}`);
   });
 
+  it('should error via cask rm on an already-deleted file without --ignore-missing', async () => {
+    const { code, stderr } = await runCask(
+      ['rm', TEST_FILE_PATH],
+      { env: env() }
+    );
+    assert.notStrictEqual(code, 0, 'rm should exit non-zero for a missing file');
+    assert.ok(stderr.includes('MissingResource'), `expected MissingResource error in stderr:\n${stderr}`);
+  });
+
+  it('should no-op via cask rm --ignore-missing on an already-deleted file', async () => {
+    const { code, stdout, stderr } = await runCask(
+      ['rm', TEST_FILE_PATH, '--ignore-missing'],
+      { env: env() }
+    );
+    assert.strictEqual(code, 0, `rm --ignore-missing exited non-zero. stderr: ${stderr}`);
+    assert.ok(stdout.includes('No-op'), `expected No-op message in stdout:\n${stdout}`);
+  });
+
   it('should show connection info via cask info', async () => {
     const { code, stdout, stderr } = await runCask(
       ['info'],
@@ -426,6 +444,24 @@ describe('CLI – http mode', () => {
       { env: env() }
     );
     assert.strictEqual(code, 0, `rm exited non-zero. stderr: ${stderr}`);
+  });
+
+  it('should no-op via cask rm --ignore-missing on an already-deleted file (http mode)', async () => {
+    const { code, stdout, stderr } = await runCask(
+      ['rm', TEST_FILE_PATH, '--ignore-missing'],
+      { env: env() }
+    );
+    assert.strictEqual(code, 0, `rm --ignore-missing exited non-zero. stderr: ${stderr}`);
+    assert.ok(stdout.includes('No-op'), `expected No-op message in stdout:\n${stdout}`);
+  });
+
+  it('should no-op via cask rm -d --ignore-missing on a non-existent directory (http mode)', async () => {
+    const { code, stdout, stderr } = await runCask(
+      ['rm', '-d', '/no-such-http-directory', '--ignore-missing'],
+      { env: env() }
+    );
+    assert.strictEqual(code, 0, `rm -d --ignore-missing exited non-zero. stderr: ${stderr}`);
+    assert.ok(stdout.includes('No-op'), `expected No-op message in stdout:\n${stdout}`);
   });
 
   it('should show connection info via cask info (http mode)', async () => {

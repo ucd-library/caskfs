@@ -507,5 +507,50 @@ describe('Directory Operations', () => {
         /Cannot delete root directory/
       );
     });
+
+    it('should throw MissingResourceError when deleting a non-existent directory', async () => {
+      await assert.rejects(
+        () => caskFs.deleteDirectory({
+          directory: '/does/not/exist',
+          requestor: TEST_USER,
+          ignoreAcl: true,
+        }),
+        { name: 'MissingResource' }
+      );
+    });
+
+    it('should no-op instead of throwing when ignoreMissing is set on a non-existent directory', async () => {
+      const result = await caskFs.deleteDirectory({
+        directory: '/does/not/exist',
+        requestor: TEST_USER,
+        ignoreAcl: true,
+        ignoreMissing: true,
+      });
+      assert.strictEqual(result.deleted, false, 'deleted should be false for a no-op');
+    });
+
+    it('should still delete an existing directory normally when ignoreMissing is set', async () => {
+      await caskFs.write({
+        filePath: '/ignore-missing-delete/file.txt',
+        data: Buffer.from('still deletes'),
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+
+      const result = await caskFs.deleteDirectory({
+        directory: '/ignore-missing-delete',
+        requestor: TEST_USER,
+        ignoreAcl: true,
+        ignoreMissing: true,
+      });
+      assert.strictEqual(result.deleted, true, 'deleted should be true when the directory actually existed');
+
+      const exists = await caskFs.exists({
+        filePath: '/ignore-missing-delete',
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+      assert.strictEqual(exists, false, '/ignore-missing-delete should no longer exist');
+    });
   });
 });
