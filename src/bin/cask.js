@@ -548,8 +548,53 @@ program
     const caskPath = targetPath.slice('cask:'.length);
     const cask = getClient(options);
 
-    const result = await cask.reharvest({ filePath: caskPath, requestor: options.requestor });
+    const isTTY = process.stdout.isTTY;
+    let currentPath = caskPath;
+    let counts = { reharvested: 0, skipped: 0, errors: 0 };
+    let linesRendered = 0;
 
+    const renderStatus = () => {
+      const lines = [
+        `Reharvesting cask:${caskPath} | reharvested: ${counts.reharvested} skipped: ${counts.skipped} errors: ${counts.errors}`,
+        `  ${currentPath}`
+      ];
+      if (linesRendered > 0) {
+        readline.moveCursor(process.stdout, 0, -linesRendered);
+      }
+      for (const line of lines) {
+        readline.cursorTo(process.stdout, 0);
+        readline.clearLine(process.stdout, 0);
+        process.stdout.write(line + '\n');
+      }
+      linesRendered = lines.length;
+    };
+    const clearStatus = () => {
+      if (!isTTY || !linesRendered) return;
+      readline.moveCursor(process.stdout, 0, -linesRendered);
+      for (let i = 0; i < linesRendered; i++) {
+        readline.cursorTo(process.stdout, 0);
+        readline.clearLine(process.stdout, 0);
+        if (i < linesRendered - 1) readline.moveCursor(process.stdout, 0, 1);
+      }
+      readline.moveCursor(process.stdout, 0, -(linesRendered - 1));
+      readline.cursorTo(process.stdout, 0);
+      linesRendered = 0;
+    };
+
+    const onProgress = (event) => {
+      currentPath = event.path;
+      if (event.type === 'file') counts = event.counts;
+
+      if (isTTY) {
+        renderStatus();
+      } else if (event.type === 'directory') {
+        console.log(`Entering directory: cask:${event.path}`);
+      }
+    };
+
+    const result = await cask.reharvest({ filePath: caskPath, requestor: options.requestor }, { onProgress });
+
+    clearStatus();
     console.log(`Reharvested cask:${caskPath}`);
     console.log(`  reharvested : ${result.reharvested.length}`);
     console.log(`  skipped     : ${result.skipped.length}`);

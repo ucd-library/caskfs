@@ -86,6 +86,7 @@ function startServer(opts = {}) {
     logger.info(`Mounted at basepath : ${basepath}`);
     logger.info(`Web application     : ${disableWebApp ? 'disabled' : 'enabled'}`);
     logger.info(`Request logging     : ${logRequests ? 'enabled' : 'disabled'}`);
+    logger.info(`Postgres connection : ${config.postgres.host}:${config.postgres.port}`);
     logger.info(`Header auth         : ${config.headerAuth.enabled ? 'enabled' : 'disabled'}`);
     if( config.headerAuth.enabled ) {
       logger.info(`Header auth header  : ${config.headerAuth.header}`);
@@ -94,6 +95,7 @@ function startServer(opts = {}) {
     }
     logger.info(`ACL                 : ${config.acl.enabled ? 'enabled' : 'disabled'}`);
     logger.info(`Impersonation       : ${config.impersonation.enabled ? 'enabled' : 'disabled'}`);
+    logger.info(`Audit logging       : ${config.audit.enabled ? 'enabled' : 'disabled'}`);
 
   });
 }

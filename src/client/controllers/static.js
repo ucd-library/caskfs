@@ -51,6 +51,7 @@ export default (app) => {
         // reads the live acl singleton rather than config.acl.enabled directly, since it can be
         // overridden at runtime (e.g. controllers/caskFs.js forcing it off in local dev)
         aclEnabled : acl.enabled,
+        auditEnabled : config.audit.enabled,
         impersonationEnabled : config.impersonation.enabled,
         impersonationCookieName : config.impersonation.cookieName
       });

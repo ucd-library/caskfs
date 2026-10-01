@@ -74,12 +74,13 @@ export default class CaskfsDirectoryControls extends Mixin(LitElement)
   }
 
   /**
-   * @description Viewing a directory's audit history requires write permission (getAuditLog
-   * is gated the same way server-side) - always shown when ACL is disabled, since permissions
-   * aren't enforced server-side either way.
+   * @description Viewing a directory's audit history requires audit logging to be enabled
+   * server-side (otherwise there's nothing to show) and write permission (getAuditLog is
+   * gated the same way server-side) - permission is always satisfied when ACL is disabled,
+   * since permissions aren't enforced server-side either way.
    */
   get showAuditLog() {
-    return !config.aclEnabled || this.ctl.permission.canWrite;
+    return !!config.auditEnabled && (!config.aclEnabled || this.ctl.permission.canWrite);
   }
 
   /**

@@ -2082,6 +2082,9 @@ class CaskFs {
    * @param {String} context.requestor user name of the requestor
    * @param {Object} [opts] options object
    * @param {DatabaseClient} [opts.dbClient] database client to use, defaults to the instance's client
+   * @param {Function} [opts.onProgress] optional callback invoked on directory-enter and after each
+   *                                  file attempt; receives ({type: 'directory', path}) or
+   *                                  ({type: 'file', path, status: 'reharvested'|'skipped'|'error', counts})
    *
    * @returns {Promise<Object>} { reharvested: [filePath...], skipped: [filePath...], errors: [{filePath, error}] }
    */
@@ -2090,28 +2093,44 @@ class CaskFs {
     const dbClient = opts.dbClient || context.data.dbClient;
     const requestor = context.data.requestor;
     const ignoreAcl = context.data.ignoreAcl;
+    const onProgress = opts.onProgress;
 
     const srcPath = context.data.filePath;
     const results = { reharvested: [], skipped: [], errors: [] };
+    const counts = () => ({
+      reharvested: results.reharvested.length,
+      skipped: results.skipped.length,
+      errors: results.errors.length
+    });
 
     const reharvestOne = async (filePath) => {
-      await this.canWriteFile({ filePath, requestor, ignoreAcl, dbClient });
-      const meta = await this.metadata({ filePath, requestor, ignoreAcl, dbClient });
+      let status;
+      try {
+        await this.canWriteFile({ filePath, requestor, ignoreAcl, dbClient });
+        const meta = await this.metadata({ filePath, requestor, ignoreAcl, dbClient });
 
-      if( meta.metadata?.resourceType !== 'rdf' ) {
-        results.skipped.push(filePath);
-        return;
+        if( meta.metadata?.resourceType !== 'rdf' ) {
+          results.skipped.push(filePath);
+          status = 'skipped';
+          return;
+        }
+
+        await this.rdf.reharvestFile(meta.file_id, { dbClient, filepath: meta.fullPath });
+        await this.logAudit(context, {
+          operation: 'file.reharvest',
+          resourceType: 'file',
+          resourceId: meta.file_id,
+          resourcePath: filePath,
+          dbClient
+        });
+        results.reharvested.push(filePath);
+        status = 'reharvested';
+      } catch(e) {
+        results.errors.push({ filePath, error: e.message });
+        status = 'error';
+      } finally {
+        onProgress?.({ type: 'file', path: filePath, status, counts: counts() });
       }
-
-      await this.rdf.reharvestFile(meta.file_id, { dbClient, filepath: meta.fullPath });
-      await this.logAudit(context, {
-        operation: 'file.reharvest',
-        resourceType: 'file',
-        resourceId: meta.file_id,
-        resourcePath: filePath,
-        dbClient
-      });
-      results.reharvested.push(filePath);
     };
 
     // detect whether source is a file
@@ -2122,16 +2141,13 @@ class CaskFs {
     } catch(e) {}
 
     if( srcIsFile ) {
-      try {
-        await reharvestOne(srcPath);
-      } catch(e) {
-        results.errors.push({ filePath: srcPath, error: e.message });
-      }
+      await reharvestOne(srcPath);
       return results;
     }
 
     // directory: page through ls recursively and reharvest each rdf file
     const walk = async (dir) => {
+      onProgress?.({ type: 'directory', path: dir });
       let offset = 0;
       const limit = 1000;
       while (true) {
@@ -2139,11 +2155,7 @@ class CaskFs {
 
         for (const file of (result.files || [])) {
           const filePath = path.posix.join(file.directory, file.filename);
-          try {
-            await reharvestOne(filePath);
-          } catch(e) {
-            results.errors.push({ filePath, error: e.message });
-          }
+          await reharvestOne(filePath);
           // handle virtual dirs — a path that is both a file and a parent directory
           try { await walk(filePath); } catch(e) {}
         }

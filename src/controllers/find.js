@@ -2,6 +2,7 @@ import { Router, json } from 'express';
 import handleError from './handleError.js';
 import caskFs from './caskFs.js';
 import { Validator } from './validate.js';
+import { getRequestor } from '../lib/middleware/header-auth.js';
 
 const router = Router();
 
@@ -33,6 +34,7 @@ const parseArgs = ( query ) => {
 router.get('/', async (req, res) => {
   try {
     const options = parseArgs(req.query);
+    options.requestor = getRequestor(req);
     const resp = await caskFs.rdf.find(options);
     res.status(200).json(resp);
   } catch (e) {
@@ -43,6 +45,7 @@ router.get('/', async (req, res) => {
 router.post('/', json(), async (req, res) => {
   try {
     const options = parseArgs(req.body);
+    options.requestor = getRequestor(req);
     const resp = await caskFs.rdf.find(options);
     res.status(200).json(resp);
   } catch (e) {

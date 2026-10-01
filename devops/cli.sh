@@ -6,5 +6,6 @@ export CASKFS_PG_DATABASE=${CASKFS_PG_DATABASE:-caskfs_db}
 export CASKFS_ROOT_DIR="$ROOT_DIR/../cache"
 export CASKFS_WEBAPP_ENV=${CASKFS_WEBAPP_ENV:-dev}
 export CASKFS_ENABLE_POWERWASH=${CASKFS_ENABLE_POWERWASH:-true}
+export CASKFS_ACL_ENABLED=${CASKFS_ACL_ENABLED:-false}
 
 node "$ROOT_DIR/../src/bin/cask.js" "$@"
