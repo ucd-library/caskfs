@@ -976,6 +976,10 @@ class HttpCaskFsClient {
       read()    { self._notSupported('ld (rdf read)'); },
       literal() { self._notSupported('literal'); },
 
+      getUnusedLdOverview: () => self._notSupported('admin cleanup-ld'),
+      cleanupUnusedLd:     () => self._notSupported('admin cleanup-ld'),
+      vacuumLdTables:      () => self._notSupported('admin cleanup-ld'),
+
       /**
        * @method rdf.testHarvest
        * @description Test a single URI against the server's Linked Data Harvesting

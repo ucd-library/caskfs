@@ -345,6 +345,47 @@ describe('CLI – direct-pg mode', () => {
       await runAclCliFlow(env(), dataFile);
     });
   });
+
+  describe('admin cleanup-ld (direct-pg)', () => {
+    it('should print an overview with --dry-run and not prompt for confirmation', async () => {
+      const { code, stdout, stderr } = await runCask(
+        ['admin', 'cleanup-ld', '--dry-run'],
+        { env: env() }
+      );
+      assert.strictEqual(code, 0, `cleanup-ld --dry-run exited non-zero. stderr: ${stderr}`);
+      assert.ok(stdout.includes('ld_filter:'), `expected ld_filter count in output:\n${stdout}`);
+      assert.ok(stdout.includes('ld_link:'), `expected ld_link count in output:\n${stdout}`);
+      assert.ok(stdout.includes('ld_literal:'), `expected ld_literal count in output:\n${stdout}`);
+      assert.ok(stdout.includes('uri'), `expected uri count in output:\n${stdout}`);
+    });
+
+    it('should abort without deleting when the confirmation prompt is answered no', async () => {
+      const { code, stdout, stderr } = await runCask(
+        ['admin', 'cleanup-ld'],
+        { env: env(), stdin: 'no\n' }
+      );
+      assert.strictEqual(code, 0, `cleanup-ld exited non-zero. stderr: ${stderr}`);
+      assert.ok(stdout.includes('Cleanup aborted'), `expected abort message in output:\n${stdout}`);
+    });
+
+    it('should delete unused rows with -y and report a summary', async () => {
+      const { code, stdout, stderr } = await runCask(
+        ['admin', 'cleanup-ld', '-y', '--batch-size', '10'],
+        { env: env() }
+      );
+      assert.strictEqual(code, 0, `cleanup-ld -y exited non-zero. stderr: ${stderr}`);
+      assert.ok(stdout.includes('Deleted'), `expected a Deleted summary line in output:\n${stdout}`);
+    });
+
+    it('should run cleanup with --vacuum-full without error', async () => {
+      const { code, stdout, stderr } = await runCask(
+        ['admin', 'cleanup-ld', '-y', '--vacuum-full'],
+        { env: env() }
+      );
+      assert.strictEqual(code, 0, `cleanup-ld --vacuum-full exited non-zero. stderr: ${stderr}`);
+      assert.ok(stdout.includes('Vacuum complete'), `expected vacuum completion message in output:\n${stdout}`);
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

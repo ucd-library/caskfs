@@ -397,6 +397,18 @@ FROM caskfs.ld_literal ll
 LEFT JOIN caskfs.file_ld_literal fll ON ll.ld_literal_id = fll.ld_literal_id
 WHERE fll.ld_literal_id IS NULL;
 
+-- Note: ld_filter.uri_id, ld_link.predicate/object, and ld_literal.graph/subject/predicate
+-- are plain UUID columns with no foreign key back to uri, so this anti-join is the only way
+-- to determine whether a uri row is still referenced. Callers deleting from this view must
+-- hold a lock across uri and all three ld_* tables for the duration, or a concurrent insert
+-- into one of those tables can race past the check and leave a dangling reference.
+CREATE OR REPLACE VIEW caskfs.unused_uris AS
+SELECT u.*
+FROM caskfs.uri u
+WHERE NOT EXISTS (SELECT 1 FROM caskfs.ld_filter f WHERE f.uri_id = u.uri_id)
+  AND NOT EXISTS (SELECT 1 FROM caskfs.ld_link l WHERE l.predicate = u.uri_id OR l.object = u.uri_id)
+  AND NOT EXISTS (SELECT 1 FROM caskfs.ld_literal t WHERE t.graph = u.uri_id OR t.subject = u.uri_id OR t.predicate = u.uri_id);
+
 CREATE OR REPLACE FUNCTION caskfs.delete_unused_ld_data() RETURNS VOID AS $$
 BEGIN
     DELETE FROM caskfs.ld_filter

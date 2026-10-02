@@ -861,13 +861,202 @@ class Rdf {
     this.logger.debug('Deleting LD data for file', fileMetadata.filepath);
     let dbClient = opts.dbClient || this.dbClient;
     await dbClient.query(
-      `delete from ${config.database.schema}.file_ld_filter where file_id = $1`, 
+      `delete from ${config.database.schema}.file_ld_filter where file_id = $1`,
       [fileMetadata.file_id]
     );
     await dbClient.query(
-      `delete from ${config.database.schema}.file_ld_link where file_id = $1`, 
+      `delete from ${config.database.schema}.file_ld_link where file_id = $1`,
       [fileMetadata.file_id]
     );
+  }
+
+  /**
+   * @method getUnusedLdOverview
+   * @description Get counts of ld_filter, ld_link, and ld_literal rows that are not currently
+   * referenced by any file, plus a projected count of uri rows that would become unused once
+   * those rows are removed (a plain count of currently-unused uri rows would undercount, since
+   * it would miss uri rows that are only referenced by an ld_filter/ld_link/ld_literal row that
+   * is itself about to be deleted). This method is read-only and takes no locks, so the counts
+   * are a snapshot that can be stale by the time cleanupUnusedLd() actually runs - it is meant
+   * for admin overview/dry-run output, not as a transactionally consistent precondition.
+   *
+   * @returns {Promise<Object>} { ldFilter, ldLink, ldLiteral, uri } unused row counts
+   */
+  async getUnusedLdOverview() {
+    const schema = config.database.schema;
+
+    const ldFilterResp = await this.dbClient.query(`SELECT COUNT(*) AS count FROM ${schema}.unused_ld_filters`);
+    const ldLinkResp = await this.dbClient.query(`SELECT COUNT(*) AS count FROM ${schema}.unused_ld_links`);
+    const ldLiteralResp = await this.dbClient.query(`SELECT COUNT(*) AS count FROM ${schema}.unused_ld_literals`);
+    const uriResp = await this.dbClient.query(`
+      SELECT COUNT(*) AS count FROM ${schema}.uri u
+      WHERE NOT EXISTS (
+        SELECT 1 FROM ${schema}.ld_filter f WHERE f.uri_id = u.uri_id
+          AND f.ld_filter_id NOT IN (SELECT ld_filter_id FROM ${schema}.unused_ld_filters)
+      ) AND NOT EXISTS (
+        SELECT 1 FROM ${schema}.ld_link l WHERE (l.predicate = u.uri_id OR l.object = u.uri_id)
+          AND l.ld_link_id NOT IN (SELECT ld_link_id FROM ${schema}.unused_ld_links)
+      ) AND NOT EXISTS (
+        SELECT 1 FROM ${schema}.ld_literal t WHERE (t.graph = u.uri_id OR t.subject = u.uri_id OR t.predicate = u.uri_id)
+          AND t.ld_literal_id NOT IN (SELECT ld_literal_id FROM ${schema}.unused_ld_literals)
+      )
+    `);
+
+    return {
+      ldFilter: parseInt(ldFilterResp.rows[0].count),
+      ldLink: parseInt(ldLinkResp.rows[0].count),
+      ldLiteral: parseInt(ldLiteralResp.rows[0].count),
+      uri: parseInt(uriResp.rows[0].count)
+    };
+  }
+
+  /**
+   * @method cleanupUnusedLd
+   * @description Permanently delete ld_filter, ld_link, and ld_literal rows that are not
+   * referenced by any file, then delete uri rows that are no longer referenced by any
+   * remaining ld_filter/ld_link/ld_literal row. Deletes run in batches; each batch opens its
+   * own short transaction that holds a SHARE ROW EXCLUSIVE lock on the relevant tables before
+   * computing and deleting, so a concurrent file write cannot insert a new reference to a row
+   * this method is about to remove out from under it. The uri phase additionally locks
+   * ld_filter/ld_link/ld_literal because those tables reference uri through a plain UUID
+   * column with no foreign key - without that lock a concurrent write could leave a uri_id
+   * pointing at a row that no longer exists.
+   *
+   * @param {Object} opts
+   * @param {Number} [opts.batchSize=100] number of rows to delete per batch, per table
+   *
+   * @returns {Promise<Object>} { ldFilterDeleted, ldLinkDeleted, ldLiteralDeleted, uriDeleted }
+   */
+  async cleanupUnusedLd(opts={}) {
+    const batchSize = opts.batchSize || 100;
+
+    const ldFilterDeleted = await this._batchDeleteUnused({
+      table: 'ld_filter',
+      idColumn: 'ld_filter_id',
+      unusedView: 'unused_ld_filters',
+      lockTables: ['ld_filter', 'file_ld_filter'],
+      batchSize
+    });
+
+    const ldLinkDeleted = await this._batchDeleteUnused({
+      table: 'ld_link',
+      idColumn: 'ld_link_id',
+      unusedView: 'unused_ld_links',
+      lockTables: ['ld_link', 'file_ld_link'],
+      batchSize
+    });
+
+    const ldLiteralDeleted = await this._batchDeleteUnused({
+      table: 'ld_literal',
+      idColumn: 'ld_literal_id',
+      unusedView: 'unused_ld_literals',
+      lockTables: ['ld_literal', 'file_ld_literal'],
+      batchSize
+    });
+
+    const uriDeleted = await this._batchDeleteUnused({
+      table: 'uri',
+      idColumn: 'uri_id',
+      unusedView: 'unused_uris',
+      lockTables: ['uri', 'ld_filter', 'ld_link', 'ld_literal'],
+      batchSize
+    });
+
+    this.logger.info('Cleaned up unused linked-data rows', {
+      ldFilterDeleted, ldLinkDeleted, ldLiteralDeleted, uriDeleted
+    });
+
+    return {ldFilterDeleted, ldLinkDeleted, ldLiteralDeleted, uriDeleted};
+  }
+
+  /**
+   * @method _batchDeleteUnused
+   * @description Internal helper for cleanupUnusedLd(). Repeatedly deletes up to opts.batchSize
+   * rows at a time from opts.table, selected from opts.unusedView, until none remain. Each
+   * batch runs in its own dedicated transaction that locks opts.lockTables in SHARE ROW
+   * EXCLUSIVE mode before deleting, so a concurrent write referencing one of the targeted rows
+   * blocks until the batch commits rather than racing past it. Uses a fresh, non-pooled
+   * connection per batch (rather than the shared dbClient) so LOCK TABLE/BEGIN/COMMIT are
+   * guaranteed to run against a single connection even when the shared client is pooled.
+   *
+   * @param {Object} opts
+   * @param {String} opts.table table to delete from
+   * @param {String} opts.idColumn primary key column of opts.table
+   * @param {String} opts.unusedView view selecting the currently-unused rows of opts.table
+   * @param {Array<String>} opts.lockTables tables to lock, in SHARE ROW EXCLUSIVE mode, for each batch
+   * @param {Number} opts.batchSize max rows to delete per batch
+   *
+   * @returns {Promise<Number>} total number of rows deleted across all batches
+   */
+  async _batchDeleteUnused(opts) {
+    const {table, idColumn, unusedView, lockTables, batchSize} = opts;
+    const schema = config.database.schema;
+    let totalDeleted = 0;
+
+    while( true ) {
+      const dbClient = new Database({type: config.database.client});
+      await dbClient.connect();
+
+      let batchCount = 0;
+      try {
+        await dbClient.query('BEGIN');
+        await dbClient.query(`SET lock_timeout TO '${config.postgres.lockTimeout}s'`);
+        await dbClient.query(`SET statement_timeout TO '${config.postgres.statementTimeout}s'`);
+
+        const lockList = lockTables.map(t => `${schema}.${t}`).join(', ');
+        await dbClient.query(`LOCK TABLE ${lockList} IN SHARE ROW EXCLUSIVE MODE`);
+
+        const resp = await dbClient.query(`
+          DELETE FROM ${schema}.${table}
+          WHERE ${idColumn} IN (SELECT ${idColumn} FROM ${schema}.${unusedView} LIMIT $1)
+          RETURNING ${idColumn}
+        `, [batchSize]);
+
+        await dbClient.query('COMMIT');
+        batchCount = resp.rows.length;
+      } catch(err) {
+        await dbClient.query('ROLLBACK');
+        await dbClient.end();
+        throw err;
+      }
+
+      await dbClient.end();
+      totalDeleted += batchCount;
+
+      if( batchCount === 0 ) break;
+    }
+
+    return totalDeleted;
+  }
+
+  /**
+   * @method vacuumLdTables
+   * @description Run VACUUM (FULL, ANALYZE) against the tables affected by cleanupUnusedLd():
+   * ld_filter, ld_link, ld_literal, uri, and their junction tables file_ld_filter,
+   * file_ld_link, file_ld_literal. Reclaims disk space left behind by the deletes. Each table
+   * is vacuumed sequentially on its own fresh, non-pooled connection run outside of any
+   * transaction, since VACUUM cannot execute inside a transaction block. VACUUM FULL takes an
+   * ACCESS EXCLUSIVE lock on the table being vacuumed - this blocks all reads and writes to
+   * that one table, not just writes, for as long as the vacuum takes. Vacuuming one table at a
+   * time (rather than all of them under one connection) limits that blocking to a single table
+   * at any given moment instead of all seven simultaneously.
+   *
+   * @returns {Promise<void>}
+   */
+  async vacuumLdTables() {
+    const schema = config.database.schema;
+    const tables = [
+      'ld_filter', 'ld_link', 'ld_literal', 'uri',
+      'file_ld_filter', 'file_ld_link', 'file_ld_literal'
+    ];
+
+    for( let table of tables ) {
+      const dbClient = new Database({type: config.database.client});
+      await dbClient.connect();
+      this.logger.info(`Running VACUUM (FULL, ANALYZE) on ${schema}.${table}`);
+      await dbClient.query(`VACUUM (FULL, ANALYZE) ${schema}.${table}`);
+      await dbClient.end();
+    }
   }
 
   _getContextProperty(uri='') {
