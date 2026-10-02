@@ -924,18 +924,23 @@ class Rdf {
    *
    * @param {Object} opts
    * @param {Number} [opts.batchSize=100] number of rows to delete per batch, per table
+   * @param {Number} [opts.statementTimeout=120] seconds to allow each batch's lock_timeout and
+   * statement_timeout, independent of config.postgres.lockTimeout/statementTimeout (which are
+   * tuned for the interactive file-write path, not bulk admin cleanup)
    *
    * @returns {Promise<Object>} { ldFilterDeleted, ldLinkDeleted, ldLiteralDeleted, uriDeleted }
    */
   async cleanupUnusedLd(opts={}) {
     const batchSize = opts.batchSize || 100;
+    const statementTimeout = opts.statementTimeout || 120;
 
     const ldFilterDeleted = await this._batchDeleteUnused({
       table: 'ld_filter',
       idColumn: 'ld_filter_id',
       unusedView: 'unused_ld_filters',
       lockTables: ['ld_filter', 'file_ld_filter'],
-      batchSize
+      batchSize,
+      statementTimeout
     });
 
     const ldLinkDeleted = await this._batchDeleteUnused({
@@ -943,7 +948,8 @@ class Rdf {
       idColumn: 'ld_link_id',
       unusedView: 'unused_ld_links',
       lockTables: ['ld_link', 'file_ld_link'],
-      batchSize
+      batchSize,
+      statementTimeout
     });
 
     const ldLiteralDeleted = await this._batchDeleteUnused({
@@ -951,7 +957,8 @@ class Rdf {
       idColumn: 'ld_literal_id',
       unusedView: 'unused_ld_literals',
       lockTables: ['ld_literal', 'file_ld_literal'],
-      batchSize
+      batchSize,
+      statementTimeout
     });
 
     const uriDeleted = await this._batchDeleteUnused({
@@ -959,7 +966,8 @@ class Rdf {
       idColumn: 'uri_id',
       unusedView: 'unused_uris',
       lockTables: ['uri', 'ld_filter', 'ld_link', 'ld_literal'],
-      batchSize
+      batchSize,
+      statementTimeout
     });
 
     this.logger.info('Cleaned up unused linked-data rows', {
@@ -985,11 +993,12 @@ class Rdf {
    * @param {String} opts.unusedView view selecting the currently-unused rows of opts.table
    * @param {Array<String>} opts.lockTables tables to lock, in SHARE ROW EXCLUSIVE mode, for each batch
    * @param {Number} opts.batchSize max rows to delete per batch
+   * @param {Number} opts.statementTimeout seconds to set lock_timeout/statement_timeout to for each batch
    *
    * @returns {Promise<Number>} total number of rows deleted across all batches
    */
   async _batchDeleteUnused(opts) {
-    const {table, idColumn, unusedView, lockTables, batchSize} = opts;
+    const {table, idColumn, unusedView, lockTables, batchSize, statementTimeout} = opts;
     const schema = config.database.schema;
     let totalDeleted = 0;
 
@@ -1000,8 +1009,8 @@ class Rdf {
       let batchCount = 0;
       try {
         await dbClient.query('BEGIN');
-        await dbClient.query(`SET lock_timeout TO '${config.postgres.lockTimeout}s'`);
-        await dbClient.query(`SET statement_timeout TO '${config.postgres.statementTimeout}s'`);
+        await dbClient.query(`SET lock_timeout TO '${statementTimeout}s'`);
+        await dbClient.query(`SET statement_timeout TO '${statementTimeout}s'`);
 
         const lockList = lockTables.map(t => `${schema}.${t}`).join(', ');
         await dbClient.query(`LOCK TABLE ${lockList} IN SHARE ROW EXCLUSIVE MODE`);

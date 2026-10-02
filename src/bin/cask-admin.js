@@ -84,20 +84,20 @@ program
   .option('-n, --dry-run', 'Show what would be deleted without deleting anything', false)
   .option('-y, --yes', 'Skip the confirmation prompt', false)
   .option('-b, --batch-size <n>', 'Number of rows to delete per batch', (val) => parseInt(val), 100)
+  .option('-t, --statement-timeout <seconds>', 'lock_timeout/statement_timeout (seconds) for each delete batch', (val) => parseInt(val), 120)
   .option('--vacuum-full', 'Run VACUUM FULL on affected tables after cleanup', false)
   .action(async (options) => {
     handleGlobalOpts(options);
     const cask = getClient(options);
     assertDirectPg(cask, 'admin cleanup-ld');
 
-    const overview = await cask.rdf.getUnusedLdOverview();
-    console.log('Unused linked-data overview (approximate - counts may change before you confirm):');
-    console.log(`  ld_filter:  ${overview.ldFilter}`);
-    console.log(`  ld_link:    ${overview.ldLink}`);
-    console.log(`  ld_literal: ${overview.ldLiteral}`);
-    console.log(`  uri (projected, after the rows above are removed): ${overview.uri}`);
-
     if (options.dryRun) {
+      const overview = await cask.rdf.getUnusedLdOverview();
+      console.log('Unused linked-data overview (approximate - counts may change before you confirm):');
+      console.log(`  ld_filter:  ${overview.ldFilter}`);
+      console.log(`  ld_link:    ${overview.ldLink}`);
+      console.log(`  ld_literal: ${overview.ldLiteral}`);
+      console.log(`  uri (projected, after the rows above are removed): ${overview.uri}`);
       await endClient(cask);
       return;
     }
@@ -109,7 +109,7 @@ program
         output: process.stdout
       });
 
-      console.warn(`\nYou are about to permanently delete the unused linked-data rows listed above from the CaskFS. This action is irreversible! Counts may have changed since the overview was printed above.\n`);
+      console.warn(`\nYou are about to permanently delete all currently-unused ld_filter/ld_link/ld_literal and now-orphaned uri rows from the CaskFS. This action is irreversible! Run with --dry-run first if you want to see counts before confirming.\n`);
 
       const confirm = await new Promise(resolve => {
         rl.question('Are you sure you want to continue? (yes/no): ', answer => {
@@ -125,7 +125,7 @@ program
     }
 
     console.log('Cleaning up unused linked-data entries...');
-    const result = await cask.rdf.cleanupUnusedLd({ batchSize: options.batchSize });
+    const result = await cask.rdf.cleanupUnusedLd({ batchSize: options.batchSize, statementTimeout: options.statementTimeout });
     console.log(`Deleted ${result.ldFilterDeleted} ld_filter, ${result.ldLinkDeleted} ld_link, ${result.ldLiteralDeleted} ld_literal, ${result.uriDeleted} uri rows.`);
 
     if (options.vacuumFull) {

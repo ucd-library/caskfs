@@ -359,13 +359,16 @@ describe('CLI – direct-pg mode', () => {
       assert.ok(stdout.includes('uri'), `expected uri count in output:\n${stdout}`);
     });
 
-    it('should abort without deleting when the confirmation prompt is answered no', async () => {
+    it('should abort without deleting when the confirmation prompt is answered no, and skip the overview query', async () => {
       const { code, stdout, stderr } = await runCask(
         ['admin', 'cleanup-ld'],
         { env: env(), stdin: 'no\n' }
       );
       assert.strictEqual(code, 0, `cleanup-ld exited non-zero. stderr: ${stderr}`);
       assert.ok(stdout.includes('Cleanup aborted'), `expected abort message in output:\n${stdout}`);
+      assert.ok(!stdout.includes('ld_filter:'), `overview should not be computed on the confirm path:\n${stdout}`);
+      assert.ok(!stdout.includes('ld_link:'), `overview should not be computed on the confirm path:\n${stdout}`);
+      assert.ok(!stdout.includes('ld_literal:'), `overview should not be computed on the confirm path:\n${stdout}`);
     });
 
     it('should delete unused rows with -y and report a summary', async () => {

@@ -269,6 +269,29 @@ describe('LD Cleanup', () => {
         'projected uri count from getUnusedLdOverview() should match the actual uriDeleted count when nothing else writes in between'
       );
     });
+
+    it('should accept a custom statementTimeout and still complete correctly', async () => {
+      const filePath = '/ld-cleanup/custom-timeout.jsonld.json';
+      await caskFs.write({
+        filePath,
+        data: thingDoc('https://example.org/ld-cleanup/custom-timeout', { name: 'Custom Timeout Thing' }),
+        requestor: TEST_USER,
+        ignoreAcl: true
+      });
+      await caskFs.deleteFile({ filePath, requestor: TEST_USER, ignoreAcl: true });
+
+      const overview = await rdf.getUnusedLdOverview();
+      assert.ok(
+        overview.ldFilter > 0 || overview.ldLink > 0 || overview.ldLiteral > 0,
+        'expected something unused to exist before cleanup'
+      );
+
+      const result = await rdf.cleanupUnusedLd({ batchSize: 5, statementTimeout: 5 });
+      assert.strictEqual(typeof result.ldFilterDeleted, 'number');
+
+      const afterOverview = await rdf.getUnusedLdOverview();
+      assert.deepStrictEqual(afterOverview, { ldFilter: 0, ldLink: 0, ldLiteral: 0, uri: 0 });
+    });
   });
 
   describe('vacuumLdTables()', () => {
