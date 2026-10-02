@@ -31,7 +31,6 @@ return html`
       </div>
       <div ?hidden=${this.items.length < 2}>
         <div class='double-decker bold u-space-mb'>Are you sure you want to delete ${this.items.length} items?</div>
-        TODO: make bulk delete endpoint
       </div>
       <div ?hidden=${!this.deleteProgress} class='u-space-mb'>
         <div>Deleted ${this.deleteProgress?.deletedCount || 0} file${this.deleteProgress?.deletedCount === 1 ? '' : 's'}...</div>

@@ -33,12 +33,17 @@ export default class CaskfsDeleteForm extends Mixin(LitElement)
     this.items = [];
     this.reqOptions = {};
     this.deleteProgress = null;
+    this._isDeleting = false;
 
     this._injectModel('AppStateModel', 'DirectoryModel', 'FsModel');
   }
 
   willUpdate(props){
-    if ( props.has('items') ) {
+    // the dialog re-binds .items on every re-render of its (unrelated) parent content
+    // (e.g. cork-app-dialog-modal's own layout-driven re-renders, or a background
+    // AppStateModel.refresh()); skip resetting state from that while a delete streams in,
+    // or the in-progress deleteProgress gets wiped before it's ever visible
+    if ( props.has('items') && !this._isDeleting ) {
       this.updateState();
     }
   }
@@ -73,16 +78,21 @@ export default class CaskfsDeleteForm extends Mixin(LitElement)
   }
 
   async submit(){
-    let r;
-    if ( this.isSingleFile ) {
-      r = await this.FsModel.delete(this.items[0].filepath, this.reqOptions);
-    } else if ( this.isSingleDirectory ){
-      this.reqOptions.directory = true;
-      this.deleteProgress = { deletedCount: 0 };
-      r = await this.FsModel.delete(this.items[0].fullname, this.reqOptions);
+    this._isDeleting = true;
+    try {
+      let r;
+      if ( this.isSingleFile ) {
+        r = await this.FsModel.delete(this.items[0].filepath, this.reqOptions);
+      } else if ( this.isSingleDirectory ){
+        this.reqOptions.directory = true;
+        this.deleteProgress = { deletedCount: 0 };
+        r = await this.FsModel.delete(this.items[0].fullname, this.reqOptions);
+      }
+      console.log('delete result', r);
+      return r;
+    } finally {
+      this._isDeleting = false;
     }
-    console.log('delete result', r);
-    return r;
   }
 
   /**
