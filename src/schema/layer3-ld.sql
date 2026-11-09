@@ -56,6 +56,8 @@ CREATE TABLE IF NOT EXISTS caskfs.ld_filter (
 );
 -- This index is redundant because it duplicates the index created by the UNIQUE constraint on (type, uri_id).
 -- CREATE INDEX IF NOT EXISTS idx_ld_filter_type_uri ON caskfs.ld_filter(type, uri_id);
+-- Needed for caskfs.unused_uris, which looks up by uri_id alone (type is not leftmost-usable there).
+CREATE INDEX IF NOT EXISTS idx_ld_filter_uri_id ON caskfs.ld_filter(uri_id);
 
 CREATE TABLE IF NOT EXISTS caskfs.file_ld_filter (
     -- file_ld_filter_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -123,6 +125,9 @@ CREATE TABLE IF NOT EXISTS caskfs.ld_literal (
 );
 CREATE INDEX IF NOT EXISTS idx_ld_literal_subject ON caskfs.ld_literal(subject);
 CREATE INDEX IF NOT EXISTS idx_ld_literal_value ON caskfs.ld_literal USING GIN (value gin_trgm_ops);
+-- Needed for caskfs.unused_uris, which looks up by graph/predicate alone.
+CREATE INDEX IF NOT EXISTS idx_ld_literal_graph ON caskfs.ld_literal(graph);
+CREATE INDEX IF NOT EXISTS idx_ld_literal_predicate ON caskfs.ld_literal(predicate);
 
 CREATE OR REPLACE FUNCTION caskfs.search_ld_literal_by_value(p_search_term VARCHAR(1028), p_limit INT DEFAULT 5)
 RETURNS TABLE (

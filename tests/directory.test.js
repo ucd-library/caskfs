@@ -310,6 +310,59 @@ describe('Directory Operations', () => {
         result.files.length + result.directories.length
       );
     });
+
+    it('should return the last item and a correct totalCount when the last page offset falls between directories and files', async () => {
+      // Regression test: 19 sub-directories + 2 files = 21 items. With a page
+      // size of 20, page 2 (offset 20) has no directories left and only one
+      // file left. The directory/file count queries used to derive totalCount
+      // from the first row of the LIMIT/OFFSET result set, so an offset that
+      // produced zero rows for either query was reported as a totalCount of 0
+      // instead of the real total, and the final item silently disappeared.
+      const base = '/pagination-bug';
+
+      for (let i = 1; i <= 19; i++) {
+        await caskFs.directory.mkdir(`${base}/dir-${String(i).padStart(2, '0')}`, {
+          dbClient: caskFs.dbClient,
+        });
+      }
+      await caskFs.write({
+        filePath: `${base}/identifiers.json`,
+        data: Buffer.from('{}'),
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+      await caskFs.write({
+        filePath: `${base}/metadata.json`,
+        data: Buffer.from('{}'),
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+
+      const page1 = await caskFs.ls({
+        directory: base,
+        limit: 20,
+        offset: 0,
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+      assert.strictEqual(page1.totalCount, 21, 'page 1 should report the full total count');
+      assert.strictEqual(page1.directories.length + page1.files.length, 20);
+
+      const page2 = await caskFs.ls({
+        directory: base,
+        limit: 20,
+        offset: 20,
+        requestor: TEST_USER,
+        ignoreAcl: true,
+      });
+      assert.strictEqual(page2.totalCount, 21, 'page 2 should still report the full total count');
+      assert.strictEqual(
+        page2.directories.length + page2.files.length,
+        1,
+        'page 2 should contain the 21st item'
+      );
+      assert.strictEqual(page2.files[0].filename, 'metadata.json');
+    });
   });
 
   // ── createDirectory() ─────────────────────────────────────────────────────

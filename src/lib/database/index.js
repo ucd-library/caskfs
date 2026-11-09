@@ -332,7 +332,7 @@ class Database {
    * @returns {Promise<Array>} array of child directory objects
    */
 async getChildDirectories(directory, opts = {}) {
-  let params = [directory, opts.limit || 100, opts.offset || 0];
+  let params = [directory];
   let aclJoin = '';
   let aclWhere = '';
 
@@ -369,6 +369,17 @@ async getChildDirectories(directory, opts = {}) {
     fileNameQuery = `AND d.name ILIKE '%' || $${params.length} || '%'`;
   }
 
+  const countSql = `
+    SELECT COUNT(DISTINCT d.directory_id) as total_count
+    FROM ${config.database.schema}.directory d
+    ${aclJoin}
+    WHERE d.parent_id = ${config.database.schema}.get_directory_id($1)
+      ${aclWhere}
+      ${fileNameQuery}
+  `;
+
+  let limitParamIndex = params.length + 1;
+  let offsetParamIndex = params.length + 2;
   const sql = `
     SELECT DISTINCT
       d.directory_id,
@@ -376,24 +387,23 @@ async getChildDirectories(directory, opts = {}) {
       d.name,
       d.parent_id,
       d.created,
-      d.modified,
-      COUNT(*) OVER() as total_count
+      d.modified
     FROM ${config.database.schema}.directory d
     ${aclJoin}
     WHERE d.parent_id = ${config.database.schema}.get_directory_id($1)
       ${aclWhere}
       ${fileNameQuery}
     ORDER BY d.fullname ASC
-    LIMIT $2 OFFSET $3;
+    LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex};
   `;
 
-  let res = await this.client.query(sql, params);
-
-  let totalCount = res.rows.length > 0 ? parseInt(res.rows[0].total_count) : 0;
-  res.rows = res.rows.map(r => { delete r.total_count; return r; });
+  let [countRes, res] = await Promise.all([
+    this.client.query(countSql, params),
+    this.client.query(sql, [...params, opts.limit || 100, opts.offset || 0])
+  ]);
 
   return {
-    totalCount,
+    totalCount: parseInt(countRes.rows[0].total_count) || 0,
     results: res.rows,
     offset: parseInt(opts.offset) || 0,
     limit: parseInt(opts.limit) || 100
@@ -412,29 +422,40 @@ async getChildDirectories(directory, opts = {}) {
    * @returns 
    */
   async getChildFiles(directory, opts={}) {
-    let params = [directory, opts.limit || 100, opts.offset || 0];
+    let params = [directory];
 
     let fileNameQuery = '';
     if( opts.query ) {
-      fileNameQuery = `AND filename ILIKE '%' || $4 || '%'`;
       params.push(opts.query);
+      fileNameQuery = `AND filename ILIKE '%' || $${params.length} || '%'`;
     }
 
-    const sql = `
-      SELECT 
-        *,
-        COUNT(*) OVER() as total_count 
-      FROM ${this.schema}.file_view 
-      WHERE directory_id = ${config.database.schema}.get_directory_id($1) 
+    const countSql = `
+      SELECT COUNT(*) as total_count
+      FROM ${this.schema}.file_view
+      WHERE directory_id = ${config.database.schema}.get_directory_id($1)
             ${fileNameQuery}
-      ORDER BY directory, filename ASC 
-      LIMIT $2 OFFSET $3;
     `;
-    let res = await this.client.query(sql, params);
 
-    return { 
-      totalCount: res.rows.length > 0 ? parseInt(res.rows[0].total_count) : 0,
-      results: res.rows.map(r => { delete r.total_count; return r; }),
+    let limitParamIndex = params.length + 1;
+    let offsetParamIndex = params.length + 2;
+    const sql = `
+      SELECT *
+      FROM ${this.schema}.file_view
+      WHERE directory_id = ${config.database.schema}.get_directory_id($1)
+            ${fileNameQuery}
+      ORDER BY directory, filename ASC
+      LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex};
+    `;
+
+    let [countRes, res] = await Promise.all([
+      this.client.query(countSql, params),
+      this.client.query(sql, [...params, opts.limit || 100, opts.offset || 0])
+    ]);
+
+    return {
+      totalCount: parseInt(countRes.rows[0].total_count) || 0,
+      results: res.rows,
       offset: parseInt(opts.offset) || 0,
       limit: parseInt(opts.limit) || 100
     };
