@@ -983,9 +983,10 @@ class Rdf {
    * rows at a time from opts.table, selected from opts.unusedView, until none remain. Each
    * batch runs in its own dedicated transaction that locks opts.lockTables in SHARE ROW
    * EXCLUSIVE mode before deleting, so a concurrent write referencing one of the targeted rows
-   * blocks until the batch commits rather than racing past it. Uses a fresh, non-pooled
-   * connection per batch (rather than the shared dbClient) so LOCK TABLE/BEGIN/COMMIT are
-   * guaranteed to run against a single connection even when the shared client is pooled.
+   * blocks until the batch commits rather than racing past it. Uses a single dedicated,
+   * non-pooled connection for the whole run (rather than the shared dbClient) so LOCK
+   * TABLE/BEGIN/COMMIT are guaranteed to run against a single connection even when the
+   * shared client is pooled, and so batches don't each pay a fresh connect/auth round trip.
    *
    * @param {Object} opts
    * @param {String} opts.table table to delete from
@@ -1001,38 +1002,47 @@ class Rdf {
     const {table, idColumn, unusedView, lockTables, batchSize, statementTimeout} = opts;
     const schema = config.database.schema;
     let totalDeleted = 0;
+    let batchNum = 0;
 
-    while( true ) {
-      const dbClient = new Database({type: config.database.client});
-      await dbClient.connect();
+    const dbClient = new Database({type: config.database.client});
+    await dbClient.connect();
 
-      let batchCount = 0;
-      try {
-        await dbClient.query('BEGIN');
-        await dbClient.query(`SET lock_timeout TO '${statementTimeout}s'`);
-        await dbClient.query(`SET statement_timeout TO '${statementTimeout}s'`);
+    try {
+      while( true ) {
+        batchNum++;
+        const batchStart = Date.now();
+        let batchCount = 0;
 
-        const lockList = lockTables.map(t => `${schema}.${t}`).join(', ');
-        await dbClient.query(`LOCK TABLE ${lockList} IN SHARE ROW EXCLUSIVE MODE`);
+        try {
+          await dbClient.query('BEGIN');
+          await dbClient.query(`SET lock_timeout TO '${statementTimeout}s'`);
+          await dbClient.query(`SET statement_timeout TO '${statementTimeout}s'`);
 
-        const resp = await dbClient.query(`
-          DELETE FROM ${schema}.${table}
-          WHERE ${idColumn} IN (SELECT ${idColumn} FROM ${schema}.${unusedView} LIMIT $1)
-          RETURNING ${idColumn}
-        `, [batchSize]);
+          const lockList = lockTables.map(t => `${schema}.${t}`).join(', ');
+          await dbClient.query(`LOCK TABLE ${lockList} IN SHARE ROW EXCLUSIVE MODE`);
 
-        await dbClient.query('COMMIT');
-        batchCount = resp.rows.length;
-      } catch(err) {
-        await dbClient.query('ROLLBACK');
-        await dbClient.end();
-        throw err;
+          const resp = await dbClient.query(`
+            DELETE FROM ${schema}.${table}
+            WHERE ${idColumn} IN (SELECT ${idColumn} FROM ${schema}.${unusedView} LIMIT $1)
+            RETURNING ${idColumn}
+          `, [batchSize]);
+
+          await dbClient.query('COMMIT');
+          batchCount = resp.rows.length;
+        } catch(err) {
+          await dbClient.query('ROLLBACK');
+          throw err;
+        }
+
+        totalDeleted += batchCount;
+        this.logger.info(`Batch delete from ${schema}.${table}`, {
+          batchNum, batchCount, totalDeleted, batchMs: Date.now() - batchStart
+        });
+
+        if( batchCount === 0 ) break;
       }
-
+    } finally {
       await dbClient.end();
-      totalDeleted += batchCount;
-
-      if( batchCount === 0 ) break;
     }
 
     return totalDeleted;
